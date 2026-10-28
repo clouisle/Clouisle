@@ -25,6 +25,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Aligned the confirmation panel with the composer parameters panel and cleared the previous conversation's pending confirmation when switching chats; returning to the conversation restores its pending approval.
 - Chat confirmations show the called tool's description when available, including MCP child-tool descriptions; existing pending confirmations without a captured description remain actionable.
 - Preserve unstarted calls when a multi-tool Agent turn pauses for approval. Calls resume in order and receive independent decisions; remaining arguments are encrypted in the durable run payload.
+- Made the chat tool-confirmation panel background transparent.
 
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 

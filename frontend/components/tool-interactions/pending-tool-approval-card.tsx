@@ -146,7 +146,7 @@ export function PendingToolApprovalCard({
   return (
     <div className={cn('mx-auto w-full max-w-3xl px-4', className)}>
       <div
-        className={cn('mx-auto w-[70%] overflow-hidden rounded-t-lg border border-b-0 bg-muted/30 px-3.5 pb-3 pt-2.5 shadow-xs', compact && 'text-xs')}
+        className={cn('mx-auto w-[70%] overflow-hidden rounded-t-lg border border-b-0 bg-transparent px-3.5 pb-3 pt-2.5 shadow-xs', compact && 'text-xs')}
         data-testid="pending-tool-approval-card"
       >
         <div className={cn('space-y-2', compact && 'space-y-1.5')}>
