@@ -309,7 +309,14 @@ principal that initiated an Agent call can confirm or reject it —
 the signed-in user, or for an API-key Agent run the same API key. Workflow tool
 calls never create approval gates. Stored user/role approver policies in a tool
 definition fail closed until the tool editor re-saves them with caller
-confirmation. See
+confirmation.
+
+Team Owners/Admins can also review and change each editable tool's own policy
+in one place from **Team management → Tool Approvals**
+(`/app/team?tab=approvals`). That page edits the same per-tool policy through
+the normal update authorization; it adds no team-level layer, never lists
+another member's private tool, and keeps tools shared into the team read-only
+without revealing the owning team. See
 [MCP Connections and Approvals](mcp-connections-and-approvals.md) for identity
 modes, connection bindings, OAuth, caller confirmation, resource/prompt use and live
 subscription limits.

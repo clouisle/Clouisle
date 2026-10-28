@@ -27,6 +27,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Team management now has a **Tool Approvals** tab (`/app/team?tab=approvals`) that lists the current team's built-in, custom, MCP, and shared tools and edits each tool's own approval policy: a default decision plus exact-name per-operation overrides for MCP. It creates no team, site, entrypoint, or workflow approval layer. Another member's private tool is never listed, tools shared into the team stay read-only without exposing the owning team, and saving uses the existing tool-update authorization.
+- Audit logs now record `approve_tool_execution` and `reject_tool_execution` decisions and `update_tool_approval_policy` changes with the actor, authentication method and API key id, team/tool/execution/run identifiers, outcome, and error code. Tool parameters, credentials, key material, and reviewer reasons are never stored; idempotent decision replays do not duplicate success events, and best-effort audit failures never roll back a decision or policy save.
 - The profile Settings dialog now has a Tool Connections tab for the active team. It lists every connection available to the user with its tool, account label, scope, default flag and status, and supports adding a connection from a tool picker, setting a default, re-authenticating an expired account and deleting one. The tab and those actions are hidden when the caller cannot perform them: it requires `tool:read`, while team-wide connections are managed only by team owners/admins.
 
 ### Changed

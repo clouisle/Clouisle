@@ -11,7 +11,7 @@ from app.api.v1.endpoints.tools import (
     list_tools_legacy,
     test_tool as execute_test_tool,
 )
-from app.models.tool import CustomToolType, ToolType as DBToolType
+from app.models.tool import CustomToolType, ToolType as DBToolType, ToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolExecuteRequest, ToolOut, ToolType
 
@@ -152,6 +152,7 @@ async def test_list_tools_legacy_includes_shared_custom_and_mcp_tools():
         tool=SimpleNamespace(
             id=uuid4(),
             type=DBToolType.CUSTOM,
+            visibility=ToolVisibility.TEAM,
             team_id=uuid4(),
             team=SimpleNamespace(name="Owner"),
             created_by=None,
@@ -161,6 +162,7 @@ async def test_list_tools_legacy_includes_shared_custom_and_mcp_tools():
     shared_mcp = SimpleNamespace(
         tool=SimpleNamespace(
             id=uuid4(),
+            visibility=ToolVisibility.TEAM,
             type=DBToolType.MCP,
             team_id=uuid4(),
             team=SimpleNamespace(name="Owner"),

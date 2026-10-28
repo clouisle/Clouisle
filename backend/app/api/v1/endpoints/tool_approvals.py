@@ -14,7 +14,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api import deps
 from app.models.tool_approval import ToolApprovalRequest
@@ -112,6 +112,7 @@ async def submit_approval_decision(
     request_id: UUID,
     payload: ToolApprovalDecisionIn,
     auth_result: Any = Depends(deps.get_current_user_or_api_key),
+    request: Request = None,  # type: ignore[assignment]  # injected by FastAPI
 ):
     """Decision is idempotent and never edits the bound execution parameters."""
     current_user, api_key = _split_principal(auth_result)
@@ -122,6 +123,7 @@ async def submit_approval_decision(
         reason=payload.reason,
         idempotency_key=payload.idempotency_key,
         api_key=api_key,
+        request=request,
     )
     execution = await get_execution(decision.execution_id)
     if execution.run_kind == ExecutionRunKind.AGENT:
@@ -209,29 +211,31 @@ async def submit_execution_decision(
     execution_id: UUID,
     payload: ToolApprovalDecisionIn,
     auth_result: Any = Depends(deps.get_current_user_or_api_key),
+    request: Request = None,  # type: ignore[assignment]  # injected by FastAPI
 ):
     """Directly decide the pending approval gate for an execution in chat."""
     current_user, api_key = _split_principal(auth_result)
     execution = await get_execution_for_viewer(
         execution_id, current_user, api_key=api_key
     )
-    request = await ToolApprovalRequest.filter(
+    request_row = await ToolApprovalRequest.filter(
         execution_id=execution.id,
         status=ApprovalRequestStatus.PENDING,
     ).first()
-    if not request:
+    if not request_row:
         raise BusinessError(
             code=ResponseCode.TOOL_APPROVAL_REQUEST_NOT_FOUND,
             msg_key="tool_approval_request_not_found",
             status_code=404,
         )
     decision = await decide_approval(
-        request.id,
+        request_row.id,
         current_user,
         decision=payload.decision,
         reason=payload.reason,
         idempotency_key=payload.idempotency_key,
         api_key=api_key,
+        request=request,
     )
     fresh_execution = await get_execution(decision.execution_id)
     if fresh_execution.run_kind == ExecutionRunKind.AGENT:

@@ -101,6 +101,54 @@
     "addMemberPrompt": "Select a user from the system to join the team",
     "addMemberExactHint": "Enter the exact username or email address of the user to add them directly",
     "userIdentifier": "Username or Email",
-    "userIdentifierPlaceholder": "Enter exact username or email, e.g. john or john@example.com"
+    "userIdentifierPlaceholder": "Enter exact username or email, e.g. john or john@example.com",
+    "toolApprovals": {
+      "tab": "Tool Approvals",
+      "title": "Tool approval policies",
+      "description": "Each tool keeps its own approval policy. Choose whether its calls run immediately, are always denied, or wait for the caller to confirm. This page changes only tool-level policies; it never creates team, site, entrypoint, or workflow approval steps.",
+      "loadFailed": "Could not load the tools available to this team.",
+      "readDenied": "You do not have permission to view this team's tools.",
+      "retry": "Try again",
+      "empty": "No tools available to this team",
+      "emptyHint": "Built-in tools and tools created or shared with this team will appear here.",
+      "count": "{count} tools",
+      "searchPlaceholder": "Search tools...",
+      "noMatches": "No tools match your search.",
+      "decisions": {
+        "allow": "Run without confirmation",
+        "deny": "Always deny",
+        "require_approval": "Require caller confirmation"
+      },
+      "types": {
+        "builtin": "Built-in",
+        "custom": "Custom",
+        "mcp": "MCP",
+        "skill": "Skill"
+      },
+      "visibility": {
+        "private": "Private",
+        "team": "Team",
+        "shared": "Shared"
+      },
+      "legacyBadge": "Legacy approvers",
+      "legacyBlocked": "This policy still names approvers that are no longer supported. Reset them in the editor before saving.",
+      "policyUnavailable": "Policy unavailable",
+      "edit": "Edit policy",
+      "editTitle": "Approval policy: {name}",
+      "editDescription": "Only this tool's own approval policy changes. Choose a default decision and, for MCP tools, optional per-operation overrides using the exact operation name (for example tool:search).",
+      "save": "Save policy",
+      "saving": "Saving...",
+      "saved": "Approval policy updated",
+      "saveFailed": "Could not update the approval policy.",
+      "cancel": "Cancel",
+      "readOnly": {
+        "sharedTool": "Managed by the team that shared this tool.",
+        "permissionDenied": "You do not have permission to update tools.",
+        "viewerOnly": "Viewers cannot change tool policies.",
+        "privateTool": "Only the creator can change this private tool.",
+        "teamAdminOnly": "Only the creator or a team admin can change this tool.",
+        "policyUnavailable": "This tool's team definition could not be loaded, so its approval policy is unavailable. Reload the list before editing it."
+      }
+    }
   }
 }

@@ -1114,3 +1114,215 @@ async def test_api_key_entrypoint_identity_falls_back_to_entrypoint_id():
             entrypoint_id=None,
         )
         assert chat_execution.api_key_id is None
+
+
+@pytest.mark.asyncio
+async def test_expired_key_cannot_view_or_decide_an_unexpired_execution():
+    """Liveness is authoritative even when the request reaches the service."""
+    from datetime import datetime, timedelta, timezone
+
+    async with _database():
+        owner = await _user("expired-key")
+        team = await _team("expired-team", owner)
+        agent = await _agent(team, "expired-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+        request = await _pending_request(execution.id)
+        assert request is not None
+
+        await APIKey.filter(id=key.id).update(
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1)
+        )
+        assert key.is_active is True  # the in-memory row still looks usable
+
+        with pytest.raises(BusinessError) as view_error:
+            await get_my_execution(execution_id=execution.id, auth_result=(owner, key))
+        _assert_business_error(
+            view_error, code=ResponseCode.TOOL_EXECUTION_ACCESS_DENIED, status_code=403
+        )
+
+        with pytest.raises(BusinessError) as decide_error:
+            await submit_approval_decision(
+                request_id=request.id,
+                payload=_decision(key="expired-1"),
+                auth_result=(owner, key),
+            )
+        _assert_business_error(
+            decide_error,
+            code=ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+            status_code=403,
+        )
+
+        assert (
+            await service.ToolApprovalDecision.filter(execution_id=execution.id).count()
+            == 0
+        )
+        executions = await list_my_executions(
+            page=1,
+            page_size=20,
+            status=None,
+            tool_id=None,
+            run_kind=None,
+            run_id=None,
+            auth_result=(owner, key),
+        )
+        assert executions["data"].total == 0
+        inbox = await list_pending_approval_requests(
+            page=1, page_size=20, auth_result=(owner, key)
+        )
+        assert inbox["data"].total == 0
+
+
+@pytest.mark.asyncio
+async def test_revoked_key_cannot_replay_its_own_decision():
+    """Deactivation closes replay too, not only new decisions."""
+    async with _database():
+        owner = await _user("revoke-replay")
+        team = await _team("revoke-replay-team", owner)
+        agent = await _agent(team, "revoke-replay-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+        request = await _pending_request(execution.id)
+
+        first = await submit_approval_decision(
+            request_id=request.id,
+            payload=_decision(key="revoke-replay-1"),
+            auth_result=(owner, key),
+        )
+        assert first["data"].execution_status == ToolExecutionStatus.READY
+
+        await APIKey.filter(id=key.id).update(is_active=False)
+
+        with pytest.raises(BusinessError) as replay_error:
+            await submit_approval_decision(
+                request_id=request.id,
+                payload=_decision(key="revoke-replay-1"),
+                auth_result=(owner, key),
+            )
+        _assert_business_error(
+            replay_error,
+            code=ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+            status_code=403,
+        )
+        assert (
+            await service.ToolApprovalDecision.filter(execution_id=execution.id).count()
+            == 1
+        )
+        assert (
+            await service.get_execution(execution.id)
+        ).status == ToolExecutionStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_decided_api_key_run_recovers_worker_with_the_original_key(monkeypatch):
+    """decision -> queued marker -> worker restart keeps the API-key identity."""
+    from app.api.v1.endpoints import chat_tools
+    from app.services.agent_run_worker import _execute_approved_pending_tool
+    from app.services.sandbox.gateway import sandbox_gateway
+    from app.services.tool_context import current_tool_identity
+
+    async with _database():
+        owner = await _user("resume-key")
+        team = await _team("resume-key-team", owner)
+        agent = await _agent(team, "resume-key-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=key.id, tool_name="ticket_close")
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        decided = await submit_execution_decision(
+            execution_id=execution.id,
+            payload=_decision(key="resume-key-1"),
+            auth_result=(owner, key),
+        )
+        assert decided["data"].execution_status == ToolExecutionStatus.READY
+
+        queued = await AgentRun.get(id=run.id)
+        assert queued.status == AgentRunStatus.QUEUED
+        assert queued.worker_payload["resume_tool_approval"]["execution_id"] == str(
+            execution.id
+        )
+        conversation = await Conversation.get(id=queued.conversation_id)
+
+        async def _session(**_kwargs):
+            return "session-1"
+
+        monkeypatch.setattr(sandbox_gateway, "create_session", _session)
+        observed = []
+
+        async def fake_execute_call(tool_name, arguments, **kwargs):
+            identity = current_tool_identity()
+            assert identity is not None
+            observed.append(identity)
+            return {"ticket": "closed"}
+
+        monkeypatch.setattr(chat_tools, "execute_tool_call", fake_execute_call)
+
+        # Simulate a worker restart: a fresh process claims the queued run.
+        queued.status = AgentRunStatus.RUNNING
+        await queued.save(update_fields=["status"])
+        payload = await _execute_approved_pending_tool(
+            dict(queued.worker_payload or {}),
+            run=queued,
+            agent=agent,
+            conversation=conversation,
+        )
+
+        assert payload is not None
+        assert len(observed) == 1
+        identity = observed[0]
+        assert identity.api_key_id == key.id
+        assert identity.entrypoint == ExecutionEntrypoint.API_KEY.value
+        assert identity.entrypoint_id == str(key.id)
+        assert identity.run_id == run.id
+        assert identity.run_kind == ExecutionRunKind.AGENT.value
+        assert identity.interactive is False
+        result = payload["resume_tool_result"]
+        assert result["is_error"] is False
+        assert "closed" in result["result"]
+        fresh_run = await AgentRun.get(id=run.id)
+        assert fresh_run.api_key_id == key.id
+
+
+@pytest.mark.asyncio
+async def test_api_key_rejection_cancels_and_resumes_with_a_tool_error():
+    """Reject is terminal for the key's own call and never executes the tool."""
+    async with _database():
+        owner = await _user("reject-key")
+        team = await _team("reject-key-team", owner)
+        agent = await _agent(team, "reject-key-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=key.id)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        result = await submit_execution_decision(
+            execution_id=execution.id,
+            payload=_decision("reject", key="reject-key-1"),
+            auth_result=(owner, key),
+        )
+
+        assert result["data"].execution_status == ToolExecutionStatus.CANCELLED
+        fresh_execution = await service.get_execution(execution.id)
+        assert fresh_execution.cancel_reason == (
+            service.ToolExecutionCancelReason.REJECTED
+        )
+        fresh_run = await AgentRun.get(id=run.id)
+        assert fresh_run.status == AgentRunStatus.QUEUED
+        assert "resume_tool_approval" not in fresh_run.worker_payload
+        resume = fresh_run.worker_payload["resume_tool_result"]
+        assert resume["is_error"] is True
+        assert "rejected" in resume["result"].lower()
+        assert fresh_run.api_key_id == key.id

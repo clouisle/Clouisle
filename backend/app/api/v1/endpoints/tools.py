@@ -32,6 +32,7 @@ from app.services.error_messages import resolve_user_visible_error
 from app.services.mcp_errors import map_mcp_error
 from app.services.audit_log import AuditLogService
 from app.services.tool import ToolExecutor
+from app.services.tool_approvals import audit_tool_approval_policy_update
 from app.services.tool_execution import (
     PendingToolApproval,
     ToolCallContext,
@@ -583,6 +584,11 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
         )
         for share in shares:
             db_tool = share.tool
+            # Defense in depth: PRIVATE means creator-only. A stale share row
+            # (for example a tool made private through an older admin update
+            # that did not clear shares) must never widen that audience.
+            if _tool_visibility(db_tool) == DBToolVisibility.PRIVATE:
+                continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
             tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = False
@@ -789,6 +795,10 @@ async def list_tools_legacy(
 
         for share in shares:
             tool = share.tool
+            # PRIVATE is creator-only; a stale share row must not expose the
+            # tool (or its approval policy) to the team it was once shared with.
+            if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
+                continue
             creator_name = tool.created_by.username if tool.created_by else None
             tool_out = db_tool_to_out(tool, creator_name)
             tool_out.is_owned = False
@@ -852,6 +862,15 @@ async def list_file_parsers(
     ).all()
 
     for tool in custom_tools:
+        # PRIVATE is creator-only; a parser definition must not be selected by
+        # another team member merely because they can read the team.
+        if (
+            _tool_visibility(tool) == DBToolVisibility.PRIVATE
+            and getattr(tool, "created_by_id", None)
+            != getattr(current_user, "id", None)
+            and not getattr(current_user, "is_superuser", False)
+        ):
+            continue
         parameters = (
             [
                 ToolParameterSchema(**p)
@@ -1085,6 +1104,7 @@ async def update_tool(
         )
 
     audit_before = AuditLogService.snapshot(tool, "tool")
+    audit_policy_before = getattr(tool, "approval_policy", None)
 
     await check_tool_write_access(tool, current_user)
     await check_team_permission(tool.team_id, current_user, "tool:update")
@@ -1172,6 +1192,13 @@ async def update_tool(
         changes=AuditLogService.build_changes(
             audit_before, AuditLogService.snapshot(tool, "tool")
         ),
+    )
+    await audit_tool_approval_policy_update(
+        tool=tool,
+        before=audit_policy_before,
+        after=tool.approval_policy,
+        actor=current_user,
+        http_request=request,
     )
 
     creator_name = tool.created_by.username if tool.created_by else None
@@ -1719,6 +1746,11 @@ async def list_shared_tools(
 
     for share in shares:
         tool = share.tool
+        # PRIVATE is creator-only. Sharing is forbidden for private tools, but
+        # an older admin visibility update may leave a stale share row behind;
+        # never let that row disclose the definition to the former team.
+        if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
+            continue
 
         # 构建工具输出
         tool_out = ToolOut(

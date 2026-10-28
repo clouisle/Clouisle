@@ -76,6 +76,8 @@ Viewer (lowest permissions)
 | Execute approved tools | ✅ | ✅ | ✅ | ✅ |
 | Execute approved skills | ✅ | ✅ | ✅ | ✅ |
 
+Editing a tool's approval policy follows the same rule as editing the tool itself: Members can change their own tools; Owners and Admins can also change non-private team tools; tools shared into the team are read-only. Approval decisions remain caller-only. See [Team Management § Tool Approvals](../settings/team-settings.md#tool-approvals).
+
 ### Knowledge Bases
 
 | Permission | Owner | Admin | Member | Viewer |

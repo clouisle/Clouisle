@@ -162,6 +162,18 @@ changed. Site, team and entrypoint approval policies are no longer evaluated or
 editable; only the tool's stored policy and the Agent binding switch below
 participate.
 
+### Managing approvals across a team
+
+Team owners and administrators can review and edit the policy of every editable
+tool available to the current team from **Team management → Tool Approvals**
+(`/app/team?tab=approvals`). The page writes only each tool's own stored policy
+through the normal tool-update authorization; it does not add a team, site,
+entrypoint, or workflow approval layer. Another member's private tool is never
+listed, your own private tool is editable by you, and a tool shared into the
+team stays read-only there without disclosing the owning team's identity. See
+[Team management § Tool Approvals](../../user-guide/settings/team-settings.md#tool-approvals)
+for the row-level permissions and read-only reasons.
+
 Tool-execution approval is caller-only. An interactive Agent conversation
 pauses for the user who initiated the call, including authenticated Feishu and
 WeChat Agent conversations. An Agent run started with an API key pauses for
@@ -190,6 +202,18 @@ Parameters, identity, connection version and tool definition are bound to the
 approval. Another team member, team administrator, superuser, or a different
 API key owned by the same user cannot decide, and rejection, expiry, revocation
 and stopped runs never become approvals.
+
+Approval decisions and policy changes are audited. `approve_tool_execution`
+and `reject_tool_execution` entries record the actor (a user, or the API key id
+for key decisions), the tool and execution identifiers, operation, entrypoint,
+run, connection scope, decision and outcome. `update_tool_approval_policy`
+records the before/after policy of a tool whose approval settings actually
+changed. Not-authorized, expired, already-decided, binding-changed, and
+idempotency-conflict attempts are recorded as failed decisions. Tool call
+parameters, credentials, API key material, and the reviewer's reason are never
+recorded. Audit writes are best-effort: a logging failure never rolls back or
+reports a durable decision or policy save as failed. See
+[Audit Log Management § Tool Approval Events](../audit-logs/audit-log-management.md#tool-approval-events).
 
 An API-key Agent client keeps using the same key for the whole run. When the
 run enters `waiting`, it can list gates at `GET /api/v1/tool-approvals` or read

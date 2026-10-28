@@ -69,6 +69,8 @@ from app.schemas.tool_approval import (
 )
 
 if TYPE_CHECKING:
+    from fastapi import Request
+
     from app.models.tool import Tool
     from app.services.tool_connections import ConnectionBinding
 
@@ -1891,7 +1893,192 @@ def _normalize_reason(reason: str | None) -> str | None:
     return cleaned or None
 
 
-async def decide_approval(
+# Decision failures worth an audit row: authorization denials, expired gates,
+# invalidated bindings and conflicted/repeated decisions. Pure request-shape
+# validation (unknown vote, missing idempotency key) stays out of the log.
+_DECISION_FAILURE_AUDIT_CODES = frozenset(
+    {
+        ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+        ResponseCode.TOOL_APPROVAL_EXPIRED,
+        ResponseCode.TOOL_APPROVAL_ALREADY_DECIDED,
+        ResponseCode.TOOL_APPROVAL_BINDING_CHANGED,
+        ResponseCode.TOOL_APPROVAL_CONFLICT,
+        ResponseCode.TOOL_APPROVAL_IDEMPOTENCY_CONFLICT,
+    }
+)
+
+_DECISION_ACTIONS = {
+    ApprovalVote.APPROVE.value: "approve_tool_execution",
+    ApprovalVote.REJECT.value: "reject_tool_execution",
+}
+
+
+def _decision_vote(value: Any) -> str | None:
+    try:
+        return ApprovalVote(value).value
+    except (TypeError, ValueError):
+        return None
+
+
+def _policy_audit_payload(value: Any) -> Any:
+    """Default-expanded, JSON-safe policy body for before/after comparison."""
+    try:
+        return normalize_tool_approval_policy(value).model_dump(mode="json")
+    except (TypeError, ValueError):
+        return value
+
+
+def approval_policy_changed(before: Any, after: Any) -> bool:
+    """Whether a write really changes the stored approval policy.
+
+    Comparisons use the normalized policy (defaults included) so an explicit
+    body that restates the current policy does not emit a second audit event.
+    """
+    try:
+        return _canonical_json(_policy_audit_payload(before)) != _canonical_json(
+            _policy_audit_payload(after)
+        )
+    except (TypeError, ValueError):
+        # A malformed stored body is not a valid "unchanged" signal.
+        return repr(before) != repr(after)
+
+
+def _decision_audit_metadata(
+    execution: ToolExecution | None,
+    *,
+    execution_id: UUID | None,
+    request_id: UUID | None,
+    vote: str | None,
+    outcome: str | None,
+) -> dict[str, Any]:
+    """Minimal non-secret identifiers; parameters and the reason never enter."""
+    execution_status = _enum_value(execution.status) if execution is not None else None
+    metadata = {
+        "execution_id": str(execution.id if execution is not None else execution_id)
+        if (execution is not None or execution_id is not None)
+        else None,
+        "approval_request_id": str(request_id) if request_id is not None else None,
+        "team_id": str(execution.team_id) if execution is not None else None,
+        "tool_id": str(execution.tool_id) if execution is not None else None,
+        "operation": execution.operation if execution is not None else None,
+        "entrypoint": _enum_value(execution.entrypoint)
+        if execution is not None
+        else None,
+        "run_kind": _enum_value(execution.run_kind)
+        if execution is not None and execution.run_kind is not None
+        else None,
+        "run_id": str(execution.run_id)
+        if execution is not None and execution.run_id is not None
+        else None,
+        "connection_scope": execution.connection_scope
+        if execution is not None
+        else None,
+        "decision": vote,
+        "outcome": outcome,
+        "execution_status": execution_status,
+    }
+    return {key: value for key, value in metadata.items() if value is not None}
+
+
+async def _audit_decision_event(
+    *,
+    approver: User,
+    vote: str | None,
+    execution: ToolExecution | None,
+    execution_id: UUID | None,
+    request_id: UUID | None,
+    outcome: str | None,
+    status: str,
+    error_message: str | None,
+    api_key: Any | None,
+    http_request: Request | None,
+) -> None:
+    """Best-effort audit write.
+
+    The decision is already durable (or was definitively refused); an audit
+    failure must never turn it into an API error that invites a retry.
+    """
+    try:
+        from app.services.audit_log import AuditLogService
+
+        await AuditLogService.log(
+            user=approver,
+            action=_DECISION_ACTIONS.get(vote or "", "decide_tool_execution"),
+            resource_type="tool_execution",
+            resource_id=(execution.id if execution is not None else execution_id),
+            resource_name=(execution.operation if execution is not None else None),
+            operation=vote or "decide",
+            status=status,
+            request=http_request,
+            metadata=_decision_audit_metadata(
+                execution,
+                execution_id=execution_id,
+                request_id=request_id,
+                vote=vote,
+                outcome=outcome,
+            ),
+            error_message=error_message,
+            api_key=api_key,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to audit tool approval decision request=%s execution=%s",
+            request_id,
+            execution_id,
+        )
+
+
+async def audit_tool_approval_policy_update(
+    *,
+    tool: "Tool",
+    before: Any,
+    after: Any,
+    actor: User,
+    http_request: Request | None = None,
+    api_key: Any | None = None,
+) -> bool:
+    """Audit one tool approval-policy change at the definition update boundary.
+
+    Returns ``False`` without writing when the normalized policy is unchanged.
+    Only policy structure (decisions, gates, approver ids/roles and declared
+    sensitive field names) is recorded; credentials and call arguments never
+    enter the audit row.
+    """
+    if not approval_policy_changed(before, after):
+        return False
+    try:
+        from app.services.audit_log import AuditLogService
+
+        before_payload = _policy_audit_payload(before)
+        after_payload = _policy_audit_payload(after)
+        await AuditLogService.log(
+            user=actor,
+            action="update_tool_approval_policy",
+            resource_type="tool",
+            resource_id=tool.id,
+            resource_name=tool.name,
+            operation="update",
+            status="success",
+            request=http_request,
+            changes={
+                "before": {"approval_policy": before_payload},
+                "after": {"approval_policy": after_payload},
+            },
+            metadata={
+                "team_id": str(tool.team_id),
+                "definition_version": getattr(tool, "definition_version", None),
+                "source": "tool_definition",
+            },
+            api_key=api_key,
+        )
+    except Exception:
+        # The definition update is already committed; losing the audit row must
+        # not report the update as failed and invite a duplicate retry.
+        logger.exception("Failed to audit approval policy update tool=%s", tool.id)
+    return True
+
+
+async def _decide_approval_record(
     request_id: UUID,
     approver: User,
     *,
@@ -1900,8 +2087,9 @@ async def decide_approval(
     reason: str | None = None,
     now: datetime | None = None,
     api_key: Any | None = None,
+    state: dict[str, Any],
 ) -> ToolApprovalDecision:
-    """Record one decision atomically. One approval per gate; reject wins.
+    """Record one decision atomically; audit state is reported to the caller.
 
     This never executes the tool. The last required approval moves the
     execution to ``ready``; the durable worker claims it separately.
@@ -1923,6 +2111,7 @@ async def decide_approval(
 
     existing = await ToolApprovalDecision.filter(idempotency_key=key).first()
     if existing is not None:
+        state["execution_id"] = existing.execution_id
         # A replay is only meaningful for the approver who made the decision;
         # otherwise the key would disclose it to anyone who learns the value.
         if existing.decided_by_id not in (None, approver.id):
@@ -1936,6 +2125,8 @@ async def decide_approval(
             replay_execution = await ToolExecution.filter(
                 id=existing.execution_id
             ).first()
+            if replay_execution is not None:
+                state["execution"] = replay_execution
             if replay_execution is None or not await execution_owned_by_api_key(
                 replay_execution, api_key
             ):
@@ -1945,6 +2136,7 @@ async def decide_approval(
                     msg_key="tool_approval_not_authorized",
                     status_code=403,
                 )
+        state["replayed"] = True
         return _verify_replay(
             existing, request_id=request_id, request_hash=request_hash
         )
@@ -1953,6 +2145,7 @@ async def decide_approval(
     if request_stub is None:
         raise _not_found()
     execution_id = request_stub.execution_id
+    state["execution_id"] = execution_id
 
     outcome: str | None = None
     created: ToolApprovalDecision | None = None
@@ -1966,6 +2159,7 @@ async def decide_approval(
             )
             if execution is None:
                 raise _not_found(execution=True)
+            state["execution"] = execution
             if api_key is not None and not await execution_owned_by_api_key(
                 execution, api_key
             ):
@@ -2084,6 +2278,33 @@ async def decide_approval(
     except IntegrityError as exc:
         replay = await ToolApprovalDecision.filter(idempotency_key=key).first()
         if replay is not None:
+            state["execution_id"] = replay.execution_id
+            state["replayed"] = True
+            # A concurrent insert must not bypass the same identity checks as
+            # the pre-transaction replay path: another approver (or another
+            # API key of the same owner) may not receive this stored decision.
+            if replay.decided_by_id not in (None, approver.id):
+                raise _error(
+                    ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+                    "You are not an approver for this request",
+                    msg_key="tool_approval_not_authorized",
+                    status_code=403,
+                ) from exc
+            if api_key is not None:
+                replay_execution = await ToolExecution.filter(
+                    id=replay.execution_id
+                ).first()
+                if replay_execution is not None:
+                    state["execution"] = replay_execution
+                if replay_execution is None or not await execution_owned_by_api_key(
+                    replay_execution, api_key
+                ):
+                    raise _error(
+                        ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+                        "You are not an approver for this request",
+                        msg_key="tool_approval_not_authorized",
+                        status_code=403,
+                    ) from exc
             return _verify_replay(
                 replay, request_id=request_id, request_hash=request_hash
             )
@@ -2104,8 +2325,7 @@ async def decide_approval(
             status_code=409,
         ) from exc
 
-    if outcome in {"ready", "rejected", "expired", "binding_changed"}:
-        await _schedule_run_resume(request_stub.execution_id)
+    state["outcome"] = outcome
     if outcome == "expired":
         raise _error(
             ResponseCode.TOOL_APPROVAL_EXPIRED,
@@ -2128,6 +2348,85 @@ async def decide_approval(
             status_code=409,
         )
     return created
+
+
+async def decide_approval(
+    request_id: UUID,
+    approver: User,
+    *,
+    decision: ApprovalVote,
+    idempotency_key: str,
+    reason: str | None = None,
+    now: datetime | None = None,
+    api_key: Any | None = None,
+    request: Request | None = None,
+) -> ToolApprovalDecision:
+    """Record one decision and audit it exactly once.
+
+    Successful approvals/rejections and security-relevant failures
+    (unauthorized, expired, binding changed, already decided, idempotency
+    conflict) produce one audit row. An idempotent replay of an existing
+    decision returns the stored row without a second success event. Audit
+    metadata never contains tool parameters, credentials, bearer tokens or
+    the reviewer's reason text.
+    """
+    requested_vote = _decision_vote(decision)
+    state: dict[str, Any] = {
+        "execution": None,
+        "execution_id": None,
+        "replayed": False,
+        "outcome": None,
+    }
+    try:
+        recorded = await _decide_approval_record(
+            request_id,
+            approver,
+            decision=decision,
+            idempotency_key=idempotency_key,
+            reason=reason,
+            now=now,
+            api_key=api_key,
+            state=state,
+        )
+    except BusinessError as exc:
+        if exc.code in _DECISION_FAILURE_AUDIT_CODES:
+            await _audit_decision_event(
+                approver=approver,
+                vote=requested_vote,
+                execution=state["execution"],
+                execution_id=state["execution_id"],
+                request_id=request_id,
+                outcome=state["outcome"],
+                status="failed",
+                error_message=exc.msg_key or "tool_approval_decision_failed",
+                api_key=api_key,
+                http_request=request,
+            )
+        if state["outcome"] in {
+            "ready",
+            "rejected",
+            "expired",
+            "binding_changed",
+        }:
+            await _schedule_run_resume(state["execution_id"])
+        raise
+
+    if not state["replayed"]:
+        await _audit_decision_event(
+            approver=approver,
+            vote=_decision_vote(recorded.decision),
+            execution=state["execution"],
+            execution_id=state["execution_id"],
+            request_id=request_id,
+            outcome=state["outcome"],
+            status="success",
+            error_message=None,
+            api_key=api_key,
+            http_request=request,
+        )
+    if state["outcome"] in {"ready", "rejected"}:
+        await _schedule_run_resume(state["execution_id"])
+    return recorded
 
 
 # ---------------------------------------------------------------------------
@@ -2802,6 +3101,8 @@ __all__ = [
     "MAX_INBOX_SCAN",
     "ParameterSnapshot",
     "PolicyConfigurationError",
+    "approval_policy_changed",
+    "audit_tool_approval_policy_update",
     "binding_hash_for_execution",
     "build_parameter_snapshot",
     "can_view_approval_request",

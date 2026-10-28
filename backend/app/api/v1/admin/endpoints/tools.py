@@ -7,7 +7,7 @@ import time
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api import deps
 from app.api.v1.endpoints.tools import (
@@ -29,6 +29,7 @@ from app.core.i18n import t
 from app.llm.tools import tool_registry
 from app.llm.tools.mcp_client import list_mcp_tools
 from app.services.mcp_errors import map_mcp_error
+from app.services.tool_approvals import audit_tool_approval_policy_update
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool_approval import ExecutionEntrypoint
 from app.models.tool import (
@@ -321,8 +322,10 @@ async def update_tool(
     tool_id: UUID,
     tool_in: ToolUpdateInput,
     current_user: User = Depends(deps.PermissionChecker("admin:capability:update")),
+    request: Request = None,  # type: ignore[assignment]  # injected by FastAPI
 ) -> Any:
     tool = await _get_db_tool(tool_id, detail=True)
+    audit_policy_before = getattr(tool, "approval_policy", None)
     if any(
         value is not None
         for value in (
@@ -382,6 +385,14 @@ async def update_tool(
         tool.approval_policy = tool_in.approval_policy.model_dump(mode="json")
     tool.definition_version += 1
     await tool.save()
+
+    await audit_tool_approval_policy_update(
+        tool=tool,
+        before=audit_policy_before,
+        after=tool.approval_policy,
+        actor=current_user,
+        http_request=request,
+    )
 
     creator_name = tool.created_by.username if tool.created_by else None
     return success(data=db_tool_to_detail(tool, creator_name), msg_key="tool_updated")

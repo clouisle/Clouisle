@@ -33,6 +33,16 @@ async def migrate_api_key_approval_schema() -> None:
             ADD COLUMN IF NOT EXISTS api_key_id UUID
         """,
     )
+    # This runs before ``generate_schemas()``. On a brand-new database the
+    # table does not exist yet, and PostgreSQL rejects even
+    # ``CREATE INDEX IF NOT EXISTS ... ON tool_executions`` with
+    # ``relation does not exist``. ``generate_schemas()`` then creates the
+    # table together with the identical Meta index, so only existing
+    # installations need the explicit statement here.
+    from app.core.tool_approval_caller_migration import existing_tables
+
+    if "tool_executions" not in await existing_tables(connection, ("tool_executions",)):
+        return
     # Name matches the Tortoise Meta index so a fresh schema does not end up
     # with two identical indexes.
     await execute_startup_migration_query(

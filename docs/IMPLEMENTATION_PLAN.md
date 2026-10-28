@@ -1,6 +1,13 @@
 # Implementation Plan
 
 ## Active
+
+- **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
+  - [x] 1. Add team-level view of individual tool approval settings
+  - [x] 2. Audit approval decisions and tool approval configuration changes
+  - [x] 3. Verify authorization, API-key approval and workflow boundaries
+  - [x] 4. Update user guidance and changelogs
+
 - **tool-only-api-key-approval** — Completed. See `docs/plan/tool-only-api-key-approval.md`.
   - [x] 1. Remove site, team and entrypoint policy layers
   - [x] 2. Support API-key-bound Agent approval and resume

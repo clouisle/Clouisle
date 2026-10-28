@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-27T04:04:22.668Z
+// GENERATED — 2026-10-28T13:25:31.466Z
 // Source: i18n/en/teams.json
 export type TeamsMessages = {
   teams: {
@@ -104,5 +104,53 @@ export type TeamsMessages = {
     addMemberExactHint: string
     userIdentifier: string
     userIdentifierPlaceholder: string
+    toolApprovals: {
+      tab: string
+      title: string
+      description: string
+      loadFailed: string
+      readDenied: string
+      retry: string
+      empty: string
+      emptyHint: string
+      count: string
+      searchPlaceholder: string
+      noMatches: string
+      decisions: {
+        allow: string
+        deny: string
+        require_approval: string
+      }
+      types: {
+        builtin: string
+        custom: string
+        mcp: string
+        skill: string
+      }
+      visibility: {
+        private: string
+        team: string
+        shared: string
+      }
+      legacyBadge: string
+      legacyBlocked: string
+      policyUnavailable: string
+      edit: string
+      editTitle: string
+      editDescription: string
+      save: string
+      saving: string
+      saved: string
+      saveFailed: string
+      cancel: string
+      readOnly: {
+        sharedTool: string
+        permissionDenied: string
+        viewerOnly: string
+        privateTool: string
+        teamAdminOnly: string
+        policyUnavailable: string
+      }
+    }
   }
 }

@@ -370,3 +370,111 @@ async def test_parked_workflow_execution_is_cancelled_not_resumed():
         assert request.status == ApprovalRequestStatus.CANCELLED
     finally:
         await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_approved_api_key_execution_claims_and_runs_original_parameters():
+    """Decision -> READY -> worker re-entry keeps the stored policy hash.
+
+    Re-entering ``execute_stored_tool`` for an approved API-key execution must
+    claim it even though the resume path does not pass the creation-only
+    ``caller_self_approvable`` hint: that hint affects configuration errors,
+    not the policy fingerprint. Empty/placeholder resume arguments are ignored
+    in favour of the approved encrypted parameters.
+    """
+    from app.models.agent import Agent, Conversation
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.models.api_key import APIKey
+    from app.schemas.tool_approval import ApprovalVote
+    from app.services import tool_approvals
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team, tool = await _fixture(
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            }
+        )
+        agent = await Agent.create(id=uuid4(), team_id=team.id, name="api-key-agent")
+        conversation = await Conversation.create(
+            id=uuid4(), agent_id=agent.id, user_id=user.id
+        )
+        run = await AgentRun.create(
+            id=uuid4(),
+            agent_id=agent.id,
+            conversation_id=conversation.id,
+            user_id=user.id,
+            mode=AgentRunMode.SEND,
+            status=AgentRunStatus.RUNNING,
+        )
+        key = await APIKey.create(
+            id=uuid4(),
+            name="bound key",
+            key_prefix=f"clou_{uuid4().hex[:6]}"[:12],
+            key_hash="x",
+            user_id=user.id,
+            is_active=True,
+        )
+        run.api_key_id = key.id
+        await run.save(update_fields=["api_key_id"])
+
+        identity = RuntimeToolIdentity(
+            run_id=run.id,
+            tool_call_id="call-1",
+            entrypoint=ExecutionEntrypoint.API_KEY.value,
+            entrypoint_id=str(key.id),
+            api_key_id=key.id,
+            interactive=False,
+        )
+        context = _context(
+            user,
+            team,
+            ExecutionEntrypoint.API_KEY,
+            run_kind=ExecutionRunKind.AGENT,
+            run_id=run.id,
+            tool_call_id="call-1",
+            interactive=False,
+            entrypoint_id=str(key.id),
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        with tool_identity_scope(identity):
+            pending = await execute_stored_tool(
+                tool, "read", {"ticket": "T-1"}, context, invoke
+            )
+        assert isinstance(pending, PendingToolApproval)
+        execution = await ToolExecution.get(id=pending.execution_id)
+        assert execution.api_key_id == key.id
+        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
+        request = await ToolApprovalRequest.get(
+            execution_id=execution.id, status=ApprovalRequestStatus.PENDING
+        )
+
+        await tool_approvals.decide_approval(
+            request.id,
+            user,
+            decision=ApprovalVote.APPROVE,
+            idempotency_key="api-key-resume-1",
+            api_key=key,
+        )
+        assert (
+            await ToolExecution.get(id=execution.id)
+        ).status == ToolExecutionStatus.READY
+
+        with tool_identity_scope(identity):
+            result = await execute_stored_tool(tool, "read", {}, context, invoke)
+
+        assert result == {"ok": True}
+        assert calls == [{"ticket": "T-1"}]
+        stored = await ToolExecution.get(id=execution.id)
+        assert stored.status == ToolExecutionStatus.SUCCEEDED
+        assert stored.api_key_id == key.id
+    finally:
+        await Tortoise.close_connections()
