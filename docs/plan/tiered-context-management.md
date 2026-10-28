@@ -35,6 +35,11 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Specific logic**: Test complete AgentRun including tools, pressure, recovery and authorization across relevant adapters.
 - **Validation**: Run backend and frontend full test suites, lint, type checks and i18n checks; run real application and browser UI scenarios; record actual results.
 
+### Current verification and open items
+- Backend full suite: 10,853 passed, 4 skipped; line coverage 96.79%, branch coverage 95.14%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
+- Browser validation is blocked pending the user's human verification on the registration page.
+- Provider-side context overflow recovery with bounded, safe retry is not implemented. Active-round semantic checkpointing and a full durable end-to-end long-run verification remain outstanding; current compaction replaces completed tool results with readback references.
+
 ## Testing Strategy
 
 Cover long history, first-turn repeated tools, parallel protocol pairing, failed summary, irreducible inputs, disabled compression, estimated model limits, model overflow, authorization and raw-result recovery. Verify no duplicate side effects across retry, approval and worker recovery. Run full suites and an actual browser flow with live application dependencies.
