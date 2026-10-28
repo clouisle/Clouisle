@@ -151,9 +151,9 @@ Authorization and connection identity checks still apply.
 
 The tool editor's **Require confirmation before calling** switch controls the default: on requires caller confirmation; off does not. Other authorization and security policies still apply. MCP operation rules can inherit the default or explicitly require or skip confirmation. Existing deny policies remain blocked and are not silently converted: the default deny can be explicitly replaced with caller confirmation, and an operation deny remains until its rule is explicitly changed.
 
-Tool-execution approval is caller-only and applies only to interactive Agent
-chat, never to tool discovery, direct testing, workflows (including workflow
-Agent nodes), or background entrypoints.
+Tool-execution approval is caller-only and applies to interactive Agent chat,
+including authenticated Feishu and WeChat Agent conversations. Tool discovery,
+direct testing, workflows and other background entrypoints do not prompt.
 
 Enable **Require Confirmation** on the Agent's MCP server binding to confirm
 every child call. To require approval for selected children, configure an exact
@@ -172,6 +172,8 @@ approval. Another team member, team administrator or superuser cannot decide,
 and rejection, expiry, revocation and stopped runs never become approvals.
 
 The confirmation card shows the action, its status and the account label when available. Expand **View action details** to inspect redacted parameters; choose **Allow** to continue or **Decline** to cancel the call.
+
+In Feishu and WeChat, the caller receives a redacted confirmation message. Reply with the exact `/approve <execution UUID>` or `/reject <execution UUID>` shown in that message. Each decision applies only to that call; ordinary answers remain reserved for `ask_user`.
 
 When one model turn requests several tools, each call that requires confirmation is presented separately. After an approval or rejection, the run continues with the remaining calls in their original order; rejecting one call does not approve or cancel the others. Calls that do not require confirmation execute according to their own policy.
 

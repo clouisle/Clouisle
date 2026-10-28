@@ -3957,3 +3957,21 @@ msgstr "模型无法完成采样请求"
 
 msgid "run_interaction_model_quota_exceeded"
 msgstr "该采样请求的模型额度已用尽"
+
+msgid "channel_approval_prompt"
+msgstr "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n回复 /approve {code} 允许，或 /reject {code} 拒绝。"
+
+msgid "channel_approval_invalid"
+msgstr "该确认无效、已过期或已处理。"
+
+msgid "channel_approval_approved"
+msgstr "已批准，原运行将继续。"
+
+msgid "channel_approval_rejected"
+msgstr "已拒绝，该工具不会执行；原运行将继续。"
+
+msgid "channel_approval_waiting"
+msgstr "工具正在等待确认，请按上方完整命令回复 /approve 或 /reject。"
+
+msgid "channel_approval_unsupported"
+msgstr "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。"

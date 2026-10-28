@@ -54,6 +54,13 @@ from app.models.wechat_agent import (
 from app.models.wechat_knowledge import WeChatKnowledgeBinding
 from app.schemas.agent import ChatRequest
 from app.schemas.response import BusinessError
+from app.schemas.tool_approval import ExecutionEntrypoint
+from app.services.channel_tool_approval import (
+    approval_preview,
+    decide_channel_approval,
+    is_ask_user,
+    is_tool_approval,
+)
 from app.services.wechat_connection import collection_error, utcnow
 from app.services.wechat_purpose import authorized_agent
 from app.services.integration_features import enabled_features, require_feature
@@ -88,6 +95,10 @@ COMMANDS = {
     "/智能体": "agents",
     "/use": "use",
     "/使用": "use",
+}
+APPROVAL_COMMANDS = {
+    "/approve": "approve",
+    "/reject": "reject",
 }
 
 
@@ -141,6 +152,16 @@ async def _active_run(session) -> AgentRun | None:
     if not session or not session.active_run_id:
         return None
     return await AgentRun.get_or_none(id=session.active_run_id)
+
+
+def _session_binds_run(session, run: AgentRun) -> bool:
+    """The authorized session must still own this exact run and conversation."""
+    return (
+        session is not None
+        and session.active_run_id == run.id
+        and session.agent_id == run.agent_id
+        and session.conversation_id == run.conversation_id
+    )
 
 
 async def _clear_active_run(session, run: AgentRun | None) -> None:
@@ -252,12 +273,158 @@ async def _answer_cutoff(run: AgentRun):
     return delivery.created_at if delivery else None
 
 
+def _approval_event_key(run: AgentRun) -> str | None:
+    """The outbox key of the confirmation this run is waiting on."""
+    pending = run.pending_tool_input
+    if not isinstance(pending, dict):
+        return None
+    execution_id = str(pending.get("execution_id") or "").strip()
+    return f"approval:{execution_id}" if execution_id else None
+
+
+async def _approval_cutoff(run: AgentRun):
+    """Only commands created after the confirmation may decide it."""
+    event_key = _approval_event_key(run)
+    if event_key is None:
+        return None
+    receipt_ids = await WeChatAgentReceipt.filter(run_id=run.id).values_list(
+        "id", flat=True
+    )
+    if not receipt_ids:
+        return None
+    delivery = (
+        await IntegrationDelivery.filter(
+            provider_type="wechat",
+            receipt_id__in=list(receipt_ids),
+            event_key=event_key,
+        )
+        .order_by("sequence")
+        .first()
+    )
+    return delivery.created_at if delivery else None
+
+
+async def _announce_approval(receipt: WeChatAgentReceipt, run: AgentRun) -> None:
+    """Persist the redacted confirmation; its created_at fences old commands."""
+    try:
+        _, user, _ = await _authorized_context(receipt)
+    except BusinessError:
+        # A revoked binding cannot receive the confirmation; the delivery
+        # layer would only mark it unavailable.
+        return
+    set_language(getattr(user, "locale", None) or "en")
+    try:
+        code, text = await approval_preview(
+            run, user, ExecutionEntrypoint.WECHAT_CHANNEL, receipt.binding_id
+        )
+    except BusinessError:
+        # The execution was already decided or no longer matches this run.
+        # The approval store resumes the run, so there is nothing to announce.
+        logger.warning("WeChat approval preview unavailable for run %s", run.id)
+        return
+    event_key = f"approval:{code}"
+    if await IntegrationDelivery.filter(
+        provider_type="wechat", receipt_id=receipt.id, event_key=event_key
+    ).exists():
+        return
+    for sequence, chunk in enumerate(_split_text_chunks(text)):
+        await _create_delivery(
+            receipt,
+            event_key=event_key,
+            sequence=sequence,
+            payload={"kind": "text", "text": chunk},
+        )
+
+
+async def _reply_approval_waiting(receipt: WeChatAgentReceipt) -> None:
+    """Explain that only an explicit command can decide the waiting call."""
+    await _reply_text(receipt, t("channel_approval_waiting"), key="approval_waiting")
+    await _consume(receipt, error="channel_approval_waiting")
+
+
+async def _decide_approval(
+    receipt: WeChatAgentReceipt,
+    binding: WeChatKnowledgeBinding,
+    session,
+    run: AgentRun | None,
+    user: User,
+    decision: str,
+    token: str,
+) -> None:
+    """Apply one ``/approve`` or ``/reject`` command to the waiting run.
+
+    The session was already authorized for this Agent; the shared service
+    re-validates the caller, origin, execution and pending call. A refused,
+    stale or replayed command is always consumed with an explanation so
+    recovery never turns it into a decision or an ordinary chat message.
+    """
+    if (
+        run is None
+        or run.status != AgentRunStatus.WAITING
+        or not is_tool_approval(run)
+        or run.user_id != user.id
+        or session is None
+        or session.binding_id != binding.id
+        or not _session_binds_run(session, run)
+    ):
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    cutoff = await _approval_cutoff(run)
+    if cutoff is None:
+        # The confirmation has not been persisted yet; persist it on the
+        # receipt that owns the run, then compare this message against it.
+        owner = await WeChatAgentReceipt.filter(run_id=run.id).first()
+        if owner is not None:
+            await _announce_approval(owner, run)
+        cutoff = await _approval_cutoff(run)
+    if cutoff is None or receipt.created_at <= cutoff:
+        # A command queued before the confirmation was announced cannot
+        # decide it.
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    try:
+        await decide_channel_approval(
+            run,
+            user,
+            ExecutionEntrypoint.WECHAT_CHANNEL,
+            binding.id,
+            token,
+            decision,
+            receipt.id,
+        )
+    except BusinessError:
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    outcome = (
+        "channel_approval_approved"
+        if decision == "approve"
+        else "channel_approval_rejected"
+    )
+    await _reply_text(receipt, t(outcome), key="approval_result")
+    await _consume(receipt)
+
+
 def _command_of(text: str) -> str | None:
     stripped = text.strip()
     parts = stripped.split(maxsplit=1)
     if parts and parts[0] in ("/use", "/使用"):
         return "use"
+    if parts and parts[0] in APPROVAL_COMMANDS:
+        # A decision command is never merged with neighbouring chat text.
+        return APPROVAL_COMMANDS[parts[0]]
     return COMMANDS.get(stripped)
+
+
+def _approval_command_of(text: str) -> tuple[str, str] | None:
+    """``(decision, token)`` for ``/approve`` or ``/reject``, else ``None``."""
+    parts = text.strip().split(maxsplit=1)
+    decision = APPROVAL_COMMANDS.get(parts[0]) if parts else None
+    if decision is None:
+        return None
+    return decision, (parts[1].strip() if len(parts) > 1 else "")
 
 
 async def _stop_current(session, run: AgentRun | None) -> None:
@@ -461,7 +628,7 @@ async def _apply_command(
             status = t(f"run_status_{run.status.value}")
         await _reply_text(receipt, t("wechat_agent_status", status=status))
     elif command == "skip":
-        if run is None or run.status != AgentRunStatus.WAITING:
+        if run is None or run.status != AgentRunStatus.WAITING or not is_ask_user(run):
             return False
         from app.services.agent_run_store import submit_user_answers
 
@@ -552,8 +719,6 @@ async def _submit_receipt(
             raise collection_error("wechat_agent_binding_disconnected", 403)
         agent = await authorized_agent(receipt.agent_id, user)
         await require_feature("wechat", "agent_chat")
-        from app.models.tool_approval import ExecutionEntrypoint
-
         submission = await submit_chat_run(
             agent.id,
             prepared,
@@ -561,7 +726,7 @@ async def _submit_receipt(
             mode=AgentRunMode.SEND,
             conversation_id=session.conversation_id,
             defer_dispatch=True,
-            tool_entrypoint=ExecutionEntrypoint.CHANNEL,
+            tool_entrypoint=ExecutionEntrypoint.WECHAT_CHANNEL,
             tool_entrypoint_id=str(binding.id),
         )
         claimed = (
@@ -812,8 +977,39 @@ async def _process_submitted(
         await _finalize_receipt(receipt, session, run)
         return
     if run.status == AgentRunStatus.WAITING:
-        # Announce (idempotently); answers arrive as separate new receipts.
-        await _announce_questions(receipt, run, answered=session.pending_answers or {})
+        if (
+            not _session_binds_run(session, run)
+            or session.binding_id != receipt.binding_id
+            or run.user_id != receipt.user_id
+        ):
+            # A run owned by another session, binding or user must never be
+            # announced here.
+            return
+        recipient = await User.filter(id=receipt.user_id).first()
+        set_language(getattr(recipient, "locale", None) or "en")
+        if is_tool_approval(run):
+            # A decision can land while the worker is still parking. The
+            # post-park recheck returns the queued run, which this channel
+            # then re-dispatches; otherwise the approval is still pending.
+            from app.services import agent_run_store
+
+            resumed = await agent_run_store.queue_agent_run_resume_if_approval_terminal(
+                run.id
+            )
+            if resumed is not None:
+                await _dispatch_or_defer(receipt, resumed)
+                return
+            await _announce_approval(receipt, run)
+        elif is_ask_user(run):
+            # Announce (idempotently); answers arrive as separate new receipts.
+            await _announce_questions(
+                receipt, run, answered=session.pending_answers or {}
+            )
+        else:
+            # An interaction this channel cannot drive must not look answerable.
+            await _reply_text(
+                receipt, t("channel_approval_unsupported"), key="waiting_unsupported"
+            )
         return
     await _dispatch_or_defer(receipt, run)
 
@@ -848,6 +1044,12 @@ async def _process_pending(
     set_language(getattr(user, "locale", None) or "en")
 
     if text:
+        approval = _approval_command_of(text)
+        if approval is not None:
+            # An explicit decision command never becomes chat input or an
+            # ask_user answer, whether or not an approval is actually waiting.
+            await _decide_approval(receipt, binding, session, run, user, *approval)
+            return
         command = _command_of(text)
         if command:
             if command in ("agents", "use"):
@@ -859,10 +1061,22 @@ async def _process_pending(
                 command == "skip"
                 and run is not None
                 and run.status == AgentRunStatus.WAITING
+                and is_ask_user(run)
             ):
                 return
 
     if run is not None and run.status == AgentRunStatus.WAITING:
+        if is_tool_approval(run):
+            # Only the exact decision command decides a tool approval; any
+            # other text (or media) is explained and consumed.
+            await _reply_approval_waiting(receipt)
+            return
+        if not is_ask_user(run):
+            await _reply_text(
+                receipt, t("channel_approval_unsupported"), key="waiting_unsupported"
+            )
+            await _consume(receipt, error="channel_approval_unsupported")
+            return
         if not text:
             # Media cannot answer a structured question; consume it with an
             # explicit explanation instead of leaving it pending forever.

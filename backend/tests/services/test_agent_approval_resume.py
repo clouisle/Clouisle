@@ -710,3 +710,77 @@ async def test_worker_original_call_failure_records_tool_error_and_continues(
         metric = payload["resume_dependency_metrics"][0]
         assert metric["status"] == "failed"
         assert metric["error_category"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "origin", [ExecutionEntrypoint.FEISHU_CHANNEL, ExecutionEntrypoint.WECHAT_CHANNEL]
+)
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+async def test_channel_decision_is_bound_to_run_actor_origin_and_execution(
+    monkeypatch, origin, decision
+):
+    from app.schemas.response import BusinessError
+    from app.services.channel_tool_approval import (
+        approval_preview,
+        decide_channel_approval,
+    )
+    from app.services import agent_submission
+
+    async with _database(monkeypatch):
+        user = await _user()
+        other = await _user()
+        team, agent, conversation = await _team_and_agent(user)
+        tool = await _allow_tool(team)
+        run = await _waiting_run(agent, conversation, user)
+        origin_id = str(uuid4())
+        execution = await _execution(
+            tool=tool,
+            actor=user,
+            team=team,
+            run=run,
+            entrypoint=origin,
+            entrypoint_id=origin_id,
+            policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        )
+        run.pending_tool_input = {
+            "interaction_kind": "tool_approval",
+            "execution_id": str(execution.id),
+            "tool_description": "Changes a task",
+        }
+        await run.save(update_fields=["pending_tool_input"])
+        token, text = await approval_preview(run, user, origin, origin_id)
+        assert token == str(execution.id)
+        assert "Changes a task" in text and token in text
+        with pytest.raises(BusinessError):
+            await approval_preview(run, other, origin, origin_id)
+        with pytest.raises(BusinessError):
+            await approval_preview(run, user, origin, str(uuid4()))
+        with pytest.raises(BusinessError):
+            await decide_channel_approval(
+                run, user, origin, origin_id, str(uuid4()), decision, uuid4()
+            )
+        dispatched = []
+
+        async def dispatch(payload, queued):
+            dispatched.append(queued.id)
+
+        monkeypatch.setattr(agent_submission, "dispatch_run", dispatch)
+        await decide_channel_approval(
+            run, user, origin, origin_id, token, decision, uuid4()
+        )
+        current = await AgentRun.get(id=run.id)
+        assert current.status == AgentRunStatus.QUEUED
+        assert dispatched == [run.id]
+        assert (await tool_approvals.get_execution(execution.id)).status == (
+            ToolExecutionStatus.READY
+            if decision == "approve"
+            else ToolExecutionStatus.CANCELLED
+        )
+        with pytest.raises(BusinessError):
+            await decide_channel_approval(
+                current, user, origin, origin_id, token, decision, uuid4()
+            )

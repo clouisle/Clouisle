@@ -2,6 +2,12 @@
 
 ## Active
 
+- **im-agent-tool-approval** — Completed. See `docs/plan/im-agent-tool-approval.md`.
+  - [x] 1. Define trusted channel origins and shared approval boundary
+  - [x] 2. Implement Feishu and WeChat confirmation delivery and decisions
+  - [x] 3. Verify authorization, replay, recovery and ask-user regressions
+  - [x] 4. Update channel and deployment documentation
+
 - **multi-tool-approval-resume** — Completed. See `docs/plan/multi-tool-approval-resume.md`.
   - [x] 1. Preserve and resume unstarted calls across approvals
   - [x] 2. Verify separate decisions, ordering, and interruption safety

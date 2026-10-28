@@ -88,6 +88,8 @@ class ExecutionEntrypoint(str, Enum):
     API_KEY = "api_key"
     SCHEDULE = "schedule"
     CHANNEL = "channel"
+    FEISHU_CHANNEL = "feishu_channel"
+    WECHAT_CHANNEL = "wechat_channel"
     EMBED = "embed"
     SUBWORKFLOW = "subworkflow"
     NESTED_AGENT = "nested_agent"

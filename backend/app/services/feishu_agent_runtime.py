@@ -31,7 +31,11 @@ Guarantees:
   ``QUEUED`` run that recovery re-dispatches with a bounded backoff,
 - a waiting ``ask_user`` run consumes only messages created after the
   question delivery was persisted, so an already-queued message is never
-  silently used as an answer.
+  silently used as an answer,
+- a waiting tool approval is announced with a redacted preview and can only be
+  decided by ``/approve <execution uuid>`` or ``/reject <execution uuid>``
+  sent after that preview; ordinary text never approves, and the shared
+  service re-validates the caller, entrypoint and pending call.
 """
 
 from __future__ import annotations
@@ -94,6 +98,8 @@ COMMANDS = {
     "/状态": "status",
     "/stop": "stop",
     "/停止": "stop",
+    "/approve": "approve",
+    "/reject": "reject",
     "/help": "help",
     "/帮助": "help",
 }
@@ -393,6 +399,19 @@ async def _active_run(session: FeishuAgentSession | None) -> AgentRun | None:
     return await AgentRun.get_or_none(id=session.active_run_id)
 
 
+def _session_bound_to_run(
+    session: FeishuAgentSession | None, run: AgentRun, user: User
+) -> bool:
+    """The session must still own this exact run, chat identity and Agent."""
+    return bool(
+        session is not None
+        and session.active_run_id == run.id
+        and session.conversation_id == run.conversation_id
+        and session.agent_id == run.agent_id
+        and session.user_id == user.id
+    )
+
+
 async def _clear_active_run(
     session: FeishuAgentSession | None,
     run: AgentRun | None,
@@ -476,7 +495,6 @@ async def _announce_questions(
         provider_type="feishu",
         receipt_id=receipt.id,
         event_key=event_key,
-        status="sent",
     ).exists():
         return
     total = len(questions)
@@ -521,6 +539,144 @@ async def _answer_cutoff(run: AgentRun) -> Any:
             event_key=f"ask:{run.pending_tool_call_id}",
         )
         .order_by("sequence")
+        .first()
+    )
+    return delivery.created_at if delivery else None
+
+
+async def _announce_approval(
+    receipt: FeishuAgentReceipt,
+    run: AgentRun,
+    integration: Integration,
+    user: User,
+) -> None:
+    """Persist the redacted approval preview; its created_at fences commands."""
+    from app.schemas.tool_approval import ExecutionEntrypoint
+    from app.services.channel_tool_approval import approval_preview
+
+    set_language(getattr(user, "locale", None) or "en")
+    execution_id = str((run.pending_tool_input or {}).get("execution_id") or "")
+    if (
+        execution_id
+        and await IntegrationDelivery.filter(
+            provider_type="feishu",
+            receipt_id=receipt.id,
+            event_key=f"approval:{execution_id}",
+        ).exists()
+    ):
+        # Already announced; a resolved approval is never re-previewed.
+        return
+    try:
+        code, text = await approval_preview(
+            run, user, ExecutionEntrypoint.FEISHU_CHANNEL, str(integration.id)
+        )
+    except BusinessError:
+        # The execution was already decided or no longer matches this run.
+        # The approval store resumes the run, so there is nothing to announce.
+        logger.warning("Feishu approval preview unavailable for run %s", run.id)
+        return
+    event_key = f"approval:{code}"
+    if await IntegrationDelivery.filter(
+        provider_type="feishu",
+        receipt_id=receipt.id,
+        event_key=event_key,
+    ).exists():
+        return
+    for sequence, chunk in enumerate(_split_text_chunks(text)):
+        await _create_delivery(
+            receipt, event_key=event_key, sequence=sequence, text=chunk
+        )
+
+
+async def _reply_approval_waiting(receipt: FeishuAgentReceipt) -> None:
+    """Explain that only an explicit command can decide the waiting call."""
+    await _reply_text(receipt, t("channel_approval_waiting"), key="approval_waiting")
+    await _consume(receipt, error="channel_approval_waiting")
+
+
+async def _handle_approval_command(
+    receipt: FeishuAgentReceipt,
+    session: FeishuAgentSession | None,
+    run: AgentRun | None,
+    command: str,
+    argument: str,
+    integration: Integration,
+    user: User,
+) -> None:
+    """Apply one ``/approve`` or ``/reject`` command to the active run.
+
+    The session was already authorized for this Agent, and the shared service
+    re-validates the caller, entrypoint, execution and pending call. A refused
+    or replayed command is always consumed so recovery never retries it.
+    """
+    from app.schemas.tool_approval import ExecutionEntrypoint
+    from app.services.channel_tool_approval import (
+        decide_channel_approval,
+        is_tool_approval,
+    )
+
+    if (
+        run is None
+        or run.status != AgentRunStatus.WAITING
+        or not is_tool_approval(run)
+        or not _session_bound_to_run(session, run, user)
+    ):
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    cutoff = await _approval_cutoff(run)
+    if cutoff is None:
+        # The preview has not been persisted yet; persist it on the receipt
+        # that owns the run, then compare this message against it.
+        owner = await FeishuAgentReceipt.filter(run_id=run.id).first()
+        if owner is not None:
+            await _announce_approval(owner, run, integration, user)
+        cutoff = await _approval_cutoff(run)
+    if cutoff is None or receipt.created_at <= cutoff:
+        # A command queued before the preview was announced cannot decide it.
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    try:
+        await decide_channel_approval(
+            run,
+            user,
+            ExecutionEntrypoint.FEISHU_CHANNEL,
+            str(integration.id),
+            argument,
+            command,
+            receipt.id,
+        )
+    except BusinessError:
+        await _reply_text(receipt, t("channel_approval_invalid"), key="approval_result")
+        await _consume(receipt, error="channel_approval_invalid")
+        return
+    outcome = (
+        "channel_approval_approved"
+        if command == "approve"
+        else "channel_approval_rejected"
+    )
+    await _reply_text(receipt, t(outcome), key="approval_result")
+    await _consume(receipt)
+
+
+async def _approval_cutoff(run: AgentRun) -> Any:
+    """Only commands created after this call's preview may decide it."""
+    execution_id = str((run.pending_tool_input or {}).get("execution_id") or "")
+    if not execution_id:
+        return None
+    receipt_ids = await FeishuAgentReceipt.filter(run_id=run.id).values_list(
+        "id", flat=True
+    )
+    if not receipt_ids:
+        return None
+    delivery = (
+        await IntegrationDelivery.filter(
+            provider_type="feishu",
+            receipt_id__in=list(receipt_ids),
+            event_key=f"approval:{execution_id}",
+        )
+        .order_by("created_at", "sequence")
         .first()
     )
     return delivery.created_at if delivery else None
@@ -881,7 +1037,7 @@ async def _submit_receipt(
             mode=AgentRunMode.SEND,
             conversation_id=locked.conversation_id,
             defer_dispatch=True,
-            tool_entrypoint=ExecutionEntrypoint.CHANNEL,
+            tool_entrypoint=ExecutionEntrypoint.FEISHU_CHANNEL,
             tool_entrypoint_id=str(receipt.integration_id),
         )
         claimed = (
@@ -1036,15 +1192,46 @@ async def _process_submitted(
     receipt: FeishuAgentReceipt,
     session: FeishuAgentSession | None,
     run: AgentRun,
+    integration: Integration,
+    user: User,
 ) -> None:
     if run.status in TERMINAL_RUN_STATUSES:
         await _finalize_receipt(receipt, session, run)
         return
     if run.status == AgentRunStatus.WAITING:
-        # Announce (idempotently); answers arrive as separate new receipts.
-        await _announce_questions(
-            receipt, run, answered=(session.pending_answers if session else {}) or {}
-        )
+        from app.services.channel_tool_approval import is_ask_user, is_tool_approval
+
+        if is_tool_approval(run):
+            if not _session_bound_to_run(session, run, user):
+                # A session that no longer owns this run must never receive or
+                # drive its approval.
+                logger.warning(
+                    "Feishu approval notification blocked for run %s", run.id
+                )
+                return
+            # A decision can land while the worker is still parking. The
+            # post-park recheck returns the queued run, which this channel
+            # then re-dispatches; otherwise the approval is still pending.
+            from app.services import agent_run_store
+
+            resumed = await agent_run_store.queue_agent_run_resume_if_approval_terminal(
+                run.id
+            )
+            if resumed is not None:
+                await _dispatch_or_defer(receipt, resumed)
+                return
+            await _announce_approval(receipt, run, integration, user)
+        elif is_ask_user(run):
+            # Announce (idempotently); answers arrive as separate new receipts.
+            await _announce_questions(
+                receipt,
+                run,
+                answered=(session.pending_answers if session else {}) or {},
+            )
+        else:
+            await _reply_text(
+                receipt, t("channel_approval_unsupported"), key="waiting_unsupported"
+            )
         return
     await _dispatch_or_defer(receipt, run)
 
@@ -1060,6 +1247,12 @@ async def _process_pending(
     command = _command_of(receipt.text)
     if receipt.agent_id is None:
         if command is not None:
+            if command[0] in ("approve", "reject"):
+                await _reply_text(
+                    receipt, t("channel_approval_invalid"), key="approval_result"
+                )
+                await _consume(receipt, error="channel_approval_invalid")
+                return
             applied, _ = await _apply_command(
                 receipt, None, None, None, command[0], command[1], integration, user
             )
@@ -1088,6 +1281,11 @@ async def _process_pending(
         )
         return
     command = _command_of(receipt.text)
+    if command is not None and command[0] in ("approve", "reject"):
+        await _handle_approval_command(
+            receipt, session, run, command[0], command[1], integration, user
+        )
+        return
     if command is not None:
         applied, session = await _apply_command(
             receipt, session, agent, run, command[0], command[1], integration, user
@@ -1096,6 +1294,19 @@ async def _process_pending(
             return
         # A refused command falls through to the ordinary message path.
     if run is not None and run.status == AgentRunStatus.WAITING:
+        from app.services.channel_tool_approval import is_ask_user, is_tool_approval
+
+        if is_tool_approval(run):
+            # Only an explicit /approve or /reject command decides a tool
+            # approval; any other text is never an answer or a decision.
+            await _reply_approval_waiting(receipt)
+            return
+        if not is_ask_user(run):
+            await _reply_text(
+                receipt, t("channel_approval_unsupported"), key="waiting_unsupported"
+            )
+            await _consume(receipt, error="channel_approval_unsupported")
+            return
         if session is None:
             return
         if receipt.attachments:
@@ -1196,7 +1407,7 @@ async def _process_receipt(receipt: FeishuAgentReceipt) -> None:
                 updated_at=utcnow(),
             )
             return
-        await _process_submitted(receipt, session, run)
+        await _process_submitted(receipt, session, run, integration, user)
         return
 
     if receipt.status == "pending":

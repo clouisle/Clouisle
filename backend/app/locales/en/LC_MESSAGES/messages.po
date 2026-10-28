@@ -3921,3 +3921,21 @@ msgstr "The model could not complete the sampling request"
 
 msgid "run_interaction_model_quota_exceeded"
 msgstr "The model quota for this sampling request is exhausted"
+
+msgid "channel_approval_prompt"
+msgstr "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply /approve {code} to allow or /reject {code} to decline."
+
+msgid "channel_approval_invalid"
+msgstr "This confirmation is invalid, expired, or no longer pending."
+
+msgid "channel_approval_approved"
+msgstr "Approved. The original run will continue."
+
+msgid "channel_approval_rejected"
+msgstr "Declined. The tool will not run; the original run will continue."
+
+msgid "channel_approval_waiting"
+msgstr "A tool confirmation is pending. Reply with the exact /approve or /reject command shown above."
+
+msgid "channel_approval_unsupported"
+msgstr "This waiting interaction is not supported in this channel. Use /stop to stop the run."

@@ -30,6 +30,8 @@ def test_interactive_origin_is_derived_from_known_entrypoints():
     assert entrypoint_is_interactive("chat") is True
     assert entrypoint_is_interactive("agent_run") is True
     assert entrypoint_is_interactive("tool_test") is True
+    assert entrypoint_is_interactive("feishu_channel") is True
+    assert entrypoint_is_interactive("wechat_channel") is True
     for entrypoint in (
         "api_key",
         "embed",
@@ -107,6 +109,21 @@ async def test_personal_default_is_not_used_by_background_origins(database):
             entrypoint=entrypoint,
             entrypoint_id=str(uuid4()),
             interactive=False,
+        )
+        with pytest.raises(BusinessError) as blocked:
+            await resolve_tool_connection(tool, context, "read")
+        assert int(blocked.value.code) == int(ResponseCode.TOOL_CONNECTION_REQUIRED)
+
+    for entrypoint in (
+        ExecutionEntrypoint.FEISHU_CHANNEL,
+        ExecutionEntrypoint.WECHAT_CHANNEL,
+    ):
+        context = ToolCallContext(
+            actor=owner,
+            team_id=team.id,
+            entrypoint=entrypoint,
+            entrypoint_id=str(uuid4()),
+            interactive=True,
         )
         with pytest.raises(BusinessError) as blocked:
             await resolve_tool_connection(tool, context, "read")

@@ -33,6 +33,8 @@ export type ToolExecutionEntrypoint =
   | 'api_key'
   | 'schedule'
   | 'channel'
+  | 'feishu_channel'
+  | 'wechat_channel'
   | 'embed'
   | 'subworkflow'
   | 'nested_agent'

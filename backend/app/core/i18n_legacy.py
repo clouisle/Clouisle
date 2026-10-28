@@ -1263,6 +1263,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This attachment type is not allowed by the Agent.",
         "zh": "当前智能体不允许此附件类型。",
     },
+    "channel_approval_prompt": {
+        "en": "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply /approve {code} to allow or /reject {code} to decline.",
+        "zh": "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n回复 /approve {code} 允许，或 /reject {code} 拒绝。",
+    },
+    "channel_approval_invalid": {
+        "en": "This confirmation is invalid, expired, or no longer pending.",
+        "zh": "该确认无效、已过期或已处理。",
+    },
+    "channel_approval_approved": {
+        "en": "Approved. The original run will continue.",
+        "zh": "已批准，原运行将继续。",
+    },
+    "channel_approval_rejected": {
+        "en": "Declined. The tool will not run; the original run will continue.",
+        "zh": "已拒绝，该工具不会执行；原运行将继续。",
+    },
+    "channel_approval_waiting": {
+        "en": "A tool confirmation is pending. Reply with the exact /approve or /reject command shown above.",
+        "zh": "工具正在等待确认，请按上方完整命令回复 /approve 或 /reject。",
+    },
+    "channel_approval_unsupported": {
+        "en": "This waiting interaction is not supported in this channel. Use /stop to stop the run.",
+        "zh": "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。",
+    },
     "feishu_agent_help": {
         "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
         "zh": "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。",

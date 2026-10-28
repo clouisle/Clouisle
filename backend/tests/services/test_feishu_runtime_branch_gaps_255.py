@@ -508,6 +508,7 @@ async def test_question_cutoff_is_persisted_on_the_owning_receipt(world, monkeyp
     await AgentRun.filter(id=run.id).update(
         status=AgentRunStatus.WAITING,
         pending_tool_call_id="call-cutoff",
+        pending_tool_name="ask_user",
         pending_tool_input={
             "questions": [{"id": "q1", "question": "Why?", "required": True}]
         },

@@ -117,7 +117,14 @@ def resolve_tool_origin(
             msg_key="tool_entrypoint_invalid",
             status_code=400,
         ) from exc
-    if entrypoint in NON_INTERACTIVE_ENTRYPOINTS and not tool_entrypoint_id:
+    if (
+        entrypoint in NON_INTERACTIVE_ENTRYPOINTS
+        or entrypoint
+        in {
+            ExecutionEntrypoint.FEISHU_CHANNEL,
+            ExecutionEntrypoint.WECHAT_CHANNEL,
+        }
+    ) and not tool_entrypoint_id:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="tool_entrypoint_invalid",

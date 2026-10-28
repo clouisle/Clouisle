@@ -152,8 +152,12 @@ async def resolve_tool_connection(
     manual_workflow = context.entrypoint == ExecutionEntrypoint.WORKFLOW and bool(
         context.entrypoint_id
     )
+    im_origin = context.entrypoint in {
+        ExecutionEntrypoint.FEISHU_CHANNEL,
+        ExecutionEntrypoint.WECHAT_CHANNEL,
+    }
     auto_select = context.connection_id is None and (
-        context.interactive or manual_workflow
+        (context.interactive and not im_origin) or manual_workflow
     )
     binding_trusted = context.entrypoint in {
         ExecutionEntrypoint.WORKFLOW,
@@ -161,6 +165,8 @@ async def resolve_tool_connection(
         ExecutionEntrypoint.SCHEDULE,
         ExecutionEntrypoint.API_KEY,
         ExecutionEntrypoint.CHANNEL,
+        ExecutionEntrypoint.FEISHU_CHANNEL,
+        ExecutionEntrypoint.WECHAT_CHANNEL,
         ExecutionEntrypoint.EMBED,
         ExecutionEntrypoint.AGENT_RUN,
     } or (
@@ -272,7 +278,13 @@ async def execute_stored_tool(
     _reject_legacy_external_gates(tool, policy=policy, execution=execution)
     resolved, binding = await resolve_tool_connection(tool, context, operation)
     is_agent_call = (
-        context.entrypoint in {ExecutionEntrypoint.CHAT, ExecutionEntrypoint.AGENT_RUN}
+        context.entrypoint
+        in {
+            ExecutionEntrypoint.CHAT,
+            ExecutionEntrypoint.AGENT_RUN,
+            ExecutionEntrypoint.FEISHU_CHANNEL,
+            ExecutionEntrypoint.WECHAT_CHANNEL,
+        }
         and context.run_kind != ExecutionRunKind.WORKFLOW
         and context.interactive
     )
