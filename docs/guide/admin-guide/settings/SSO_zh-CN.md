@@ -52,7 +52,7 @@
 
 用户只能通过私聊纯文本使用机器人。`/agents` 查看自己可访问的已发布 Agent，`/use <序号>` 与个人设置共用选择；`/new` 在当前运行结束后新建对话，`/status` 查看状态，`/stop` 停止所选 Agent 的当前运行，`/help` 查看命令。所选 Agent 等待 `ask_user` 回答时，普通文本恢复原运行。
 
-需要确认的工具调用会发送脱敏消息；调用者回复消息中的完整 `/approve <执行 UUID>` 或 `/reject <执行 UUID>` 作出决定。
+需要确认的工具调用会发送脱敏消息；调用者须回复消息中的完整 `/approve <执行 UUID>` 或 `/reject <执行 UUID>` 作出决定。直接回复“同意”或“拒绝”等普通文字不会触发确认。
 
 回调 API 详见[飞书 Agent 对话 API](../../api-reference/endpoints/feishu-agent.md)。该地址只供飞书事件回调使用，不是公开应用 API。
 

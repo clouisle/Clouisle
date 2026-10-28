@@ -799,6 +799,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Human verification is required",
         "zh": "请完成人机验证",
     },
+    "channel_approval_approved": {
+        "en": "Approved. The original run will continue.",
+        "zh": "已批准，原运行将继续。",
+    },
+    "channel_approval_invalid": {
+        "en": "This confirmation is invalid, expired, or no longer pending.",
+        "zh": "该确认无效、已过期或已处理。",
+    },
+    "channel_approval_prompt": {
+        "en": "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply with the full command /approve {code} to allow or /reject {code} to decline. Ordinary text, including 'agree' or 'reject', cannot decide this call.",
+        "zh": "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n请回复完整命令 /approve {code} 允许，或 /reject {code} 拒绝。直接回复“同意”或“拒绝”等普通文字不能作出决定。",
+    },
+    "channel_approval_rejected": {
+        "en": "Declined. The tool will not run; the original run will continue.",
+        "zh": "已拒绝，该工具不会执行；原运行将继续。",
+    },
+    "channel_approval_unsupported": {
+        "en": "This waiting interaction is not supported in this channel. Use /stop to stop the run.",
+        "zh": "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。",
+    },
+    "channel_approval_waiting": {
+        "en": "A tool confirmation is pending. Reply with the full /approve or /reject command and execution UUID shown above; ordinary text cannot decide it.",
+        "zh": "工具正在等待确认，请回复上方包含完整执行 UUID 的 /approve 或 /reject 命令；普通文字不能作出决定。",
+    },
     "chat_context_summary_applied": {
         "en": "Applied a context summary before the next model call",
         "zh": "已在下一次模型调用前应用上下文摘要",
@@ -1262,30 +1286,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "feishu_agent_file_type_unsupported": {
         "en": "This attachment type is not allowed by the Agent.",
         "zh": "当前智能体不允许此附件类型。",
-    },
-    "channel_approval_prompt": {
-        "en": "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply /approve {code} to allow or /reject {code} to decline.",
-        "zh": "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n回复 /approve {code} 允许，或 /reject {code} 拒绝。",
-    },
-    "channel_approval_invalid": {
-        "en": "This confirmation is invalid, expired, or no longer pending.",
-        "zh": "该确认无效、已过期或已处理。",
-    },
-    "channel_approval_approved": {
-        "en": "Approved. The original run will continue.",
-        "zh": "已批准，原运行将继续。",
-    },
-    "channel_approval_rejected": {
-        "en": "Declined. The tool will not run; the original run will continue.",
-        "zh": "已拒绝，该工具不会执行；原运行将继续。",
-    },
-    "channel_approval_waiting": {
-        "en": "A tool confirmation is pending. Reply with the exact /approve or /reject command shown above.",
-        "zh": "工具正在等待确认，请按上方完整命令回复 /approve 或 /reject。",
-    },
-    "channel_approval_unsupported": {
-        "en": "This waiting interaction is not supported in this channel. Use /stop to stop the run.",
-        "zh": "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。",
     },
     "feishu_agent_help": {
         "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
@@ -3321,10 +3321,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This tool needs an approval policy with a valid approver before it can run",
         "zh": "该工具需要配置有效的审批人才能执行",
     },
-    "tool_approval_policy_external_audience_unsupported": {
-        "en": "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run.",
-        "zh": "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。",
-    },
     "tool_approval_policy_duplicate": {
         "en": "An approval policy already exists for this scope and tool",
         "zh": "该作用域和工具已存在审批策略",
@@ -3332,6 +3328,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_approval_policy_entrypoint_invalid": {
         "en": "The entrypoint does not belong to this team",
         "zh": "该入口不属于此团队",
+    },
+    "tool_approval_policy_external_audience_unsupported": {
+        "en": "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run.",
+        "zh": "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。",
     },
     "tool_approval_policy_not_found": {
         "en": "Approval policy not found",
