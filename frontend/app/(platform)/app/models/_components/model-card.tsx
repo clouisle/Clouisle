@@ -89,29 +89,31 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
         </div>
         
         {/* 中部：模态、供应商和类型 */}
-        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
           <ModelModalities capabilities={model.capabilities} />
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {model.provider_display_name || getProviderName(model.provider)}
-          </Badge>
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {getTypeName(model.model_type)}
-          </Badge>
-          {teamModel.priority > 0 && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5">
-                    <TrendingUp className="h-2.5 w-2.5" />
-                    {teamModel.priority}
-                  </Badge>
-                }
-              />
-              <TooltipContent>
-                {teamsT('priorityHint')}
-              </TooltipContent>
-            </Tooltip>
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-1.5 ml-auto">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              {model.provider_display_name || getProviderName(model.provider)}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              {getTypeName(model.model_type)}
+            </Badge>
+            {teamModel.priority > 0 && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5">
+                      <TrendingUp className="h-2.5 w-2.5" />
+                      {teamModel.priority}
+                    </Badge>
+                  }
+                />
+                <TooltipContent>
+                  {teamsT('priorityHint')}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
         
         {/* 底部：配额使用情况 */}
