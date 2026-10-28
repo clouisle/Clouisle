@@ -259,7 +259,10 @@
       "image": "图像",
       "audio": "音频",
       "video": "视频",
-      "file": "文件"
+      "file": "文件",
+      "embedding": "嵌入向量",
+      "decision": "决策",
+      "ranking": "排序"
     }
   }
 }

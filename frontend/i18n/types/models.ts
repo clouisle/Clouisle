@@ -86,6 +86,9 @@ export type ModelsMessages = {
       audio: string
       video: string
       file: string
+      embedding: string
+      decision: string
+      ranking: string
     }
     supportsFunctionCall: string
     supportsFunctionCallHint: string

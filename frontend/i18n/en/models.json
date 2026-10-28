@@ -83,7 +83,10 @@
       "image": "Image",
       "audio": "Audio",
       "video": "Video",
-      "file": "File"
+      "file": "File",
+      "embedding": "Embedding vector",
+      "decision": "Decision",
+      "ranking": "Ranking"
     },
     "supportsFunctionCall": "Function Call",
     "supportsFunctionCallHint": "Supports tool/function calling",

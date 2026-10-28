@@ -90,7 +90,7 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
         
         {/* 中部：模态、供应商和类型 */}
         <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
-          <ModelModalities capabilities={model.capabilities} />
+          <ModelModalities capabilities={model.capabilities} modelType={model.model_type} />
           <div className="flex flex-wrap items-center justify-end gap-1.5 ml-auto">
             <Badge variant="outline" className="text-[10px] px-1.5 py-0">
               {model.provider_display_name || getProviderName(model.provider)}

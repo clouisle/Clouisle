@@ -508,7 +508,7 @@ export function ModelsClient() {
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {model.model_id}
                   </TableCell>
-                  <TableCell><ModelModalities capabilities={model.capabilities} /></TableCell>
+                  <TableCell><ModelModalities capabilities={model.capabilities} modelType={model.model_type} /></TableCell>
                   <TableCell>{getStatusBadge(model)}</TableCell>
                   <TableCell>
                     {model.has_api_key ? (

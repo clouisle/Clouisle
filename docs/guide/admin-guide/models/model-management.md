@@ -61,7 +61,7 @@ The model list shows:
    - **Max Output Tokens**: Maximum response length
    - **Chat input modalities**: Declare only modalities the model accepts: `text`, `image`, `audio`, `video`, and `file`. Effective inputs are limited to serialization and MIME support in the selected provider adapter. Existing `vision` flags migrate to canonical input modalities during upgrade.
    - **Output modalities**: Declare generated modalities independently from inputs; this does not enable generation unless the model type and adapter provide it.
-   - The admin model list and team model cards display declared input and output modalities as icons separated by an arrow. A dash indicates that no modalities are declared; these icons do not guarantee adapter support.
+   - The admin model list and team model cards show the baseline input and output implied by each model type, together with any declared modalities. An arrow separates inputs from outputs; a dash indicates no known modalities. These icons do not guarantee adapter support for additional declared modalities.
    - **Input limits** can be configured through the model API as optional per-modality `mime_types` and `max_bytes` entries in capabilities. Example: `{"input_modalities":["text","image"],"input_limits":{"image":{"mime_types":["image/png"],"max_bytes":10485760}}}`. The model editor preserves these limits when saving modality changes; omitted adapter limits remain unknown rather than unlimited guarantees.
 
 6. Configure pricing:
