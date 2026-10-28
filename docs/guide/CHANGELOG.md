@@ -31,6 +31,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Authenticated Feishu and WeChat Agent chat now resolves the caller's personal tool connection automatically; team accounts still require an explicit binding.
 - Fixed IM tool executions failing before confirmation on databases created before Feishu and WeChat origins were added. Restart the API to widen the existing execution entrypoint column before running IM tools.
 - Opening a conversation in Chat now recovers an active IM run and its pending tool confirmation without relying on browser-local run history.
+- Open Chat conversations refresh idle history to pick up IM messages and load the incoming message before reconnecting its active run.
 
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 

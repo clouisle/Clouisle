@@ -1029,6 +1029,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       try {
         const conversation = await api.getConversation(targetConversationId)
         if (reconnectGenerationRef.current !== generation || conversationIdRef.current !== targetConversationId) return
+        await reloadConversationMessages(targetConversationId, () => (
+          reconnectGenerationRef.current === generation && conversationIdRef.current === targetConversationId
+        ))
+        if (reconnectGenerationRef.current !== generation || conversationIdRef.current !== targetConversationId) return
         if (!conversation.activeRunId) return
         stored = { runId: conversation.activeRunId, lastSequence: 0 }
       } catch {
@@ -1164,6 +1168,30 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
   }, [reconnect])
+
+  useEffect(() => {
+    if (!conversationId || !runApi.getRunStatus) return
+    let cancelled = false
+    let checking = false
+    const refresh = async () => {
+      if (checking || cancelled || conversationIdRef.current !== conversationId || runIdRef.current || statusRef.current !== 'idle') return
+      checking = true
+      try {
+        await reloadConversationMessages(conversationId, () => (
+          !cancelled && conversationIdRef.current === conversationId && !runIdRef.current && statusRef.current === 'idle'
+        ))
+        if (!cancelled && conversationIdRef.current === conversationId && !runIdRef.current && statusRef.current === 'idle') {
+          await reconnectToRun(conversationId)
+        }
+      } catch {
+        // Retry on the next interval; transient failures must not clear chat.
+      } finally {
+        checking = false
+      }
+    }
+    const timer = globalThis.setInterval(() => { void refresh() }, 3000)
+    return () => { cancelled = true; globalThis.clearInterval(timer) }
+  }, [conversationId, reconnectToRun, reloadConversationMessages, runApi])
 
   useEffect(() => () => {
     disconnectLocalSubscription()

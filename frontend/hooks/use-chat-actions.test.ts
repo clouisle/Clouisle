@@ -672,7 +672,8 @@ describe('useChat failure and lifecycle actions', () => {
   it('discovers an IM approval without a browser run snapshot', async () => {
     const never = deferred<Response>()
     streamRun.mockReturnValue({ stream: never.promise, abort: mock() })
-    getConversation.mockResolvedValue({ messages: [], active_run_id: 'im-run' })
+    const imMessage = { id: 'im-user', role: 'user', parts: [{ type: 'text', text: '来自 IM' }], createdAt: new Date() }
+    getConversation.mockResolvedValue({ messages: [imMessage], active_run_id: 'im-run' })
     getRunStatus.mockResolvedValue({
       id: 'im-run', status: 'waiting', pending_tool_call_id: 'call-1',
       pending_tool_name: 'web_search',
@@ -684,10 +685,33 @@ describe('useChat failure and lifecycle actions', () => {
       runEffects()
       await waitFor(() => result.pendingToolApproval?.executionId === 'execution-1')
       expect(result.runStatus).toBe('waiting')
+      expect(result.messages.some((message) => message.id === 'im-user')).toBe(true)
       expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'im-run')
     } finally {
       result.reset()
       unmount()
+    }
+  })
+
+  it('refreshes IM messages while an open conversation is idle', async () => {
+    const originalSetInterval = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    let tick: (() => void) | undefined
+    globalThis.setInterval = ((callback: () => void) => { tick = callback; return 1 }) as typeof setInterval
+    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    try {
+      options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+      renderHookHarness()
+      runEffects()
+      await flush()
+      getConversation.mockResolvedValue({ messages: [{ id: 'im-message', role: 'user', parts: [{ type: 'text', text: 'IM 消息' }], createdAt: new Date() }] })
+      tick?.()
+      await waitFor(() => result.messages.some((message) => message.id === 'im-message'))
+    } finally {
+      result.reset()
+      unmount()
+      globalThis.setInterval = originalSetInterval
+      globalThis.clearInterval = originalClearInterval
     }
   })
 
