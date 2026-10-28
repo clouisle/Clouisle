@@ -558,7 +558,7 @@ export default function PlatformTeamPage() {
                                   provider={tm.model.provider}
                                   displayName={tm.model.provider_display_name}
                                   modelId={tm.model.model_id}
-                                  size={12}
+                                  showIcon={false}
                                 />
                                 <span className="truncate">· {tm.model.model_id}</span>
                               </div>
