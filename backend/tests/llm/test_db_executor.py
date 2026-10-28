@@ -138,3 +138,17 @@ async def test_execute_database_query_requires_host_or_url():
     # validate_database_config is patched in this module, so the executor's
     # own incomplete-config guard must still fail closed.
     assert result == {"error": "database_host_invalid", "success": False}
+
+
+@pytest.mark.asyncio
+async def test_invalid_numeric_connection_field_returns_structured_error():
+    result = await execute_database_query(
+        {"db_type": "postgresql", "host": "db.test", "max_limit": "many"}, {}
+    )
+    assert result == {"error": "database_max_limit_invalid", "success": False}
+
+
+def test_legacy_float_timeout_string_is_accepted():
+    from app.llm.tools.builtin.db_executor import _normalize_config
+
+    assert _normalize_config({"timeout": "15.0"})["timeout"] == 15
