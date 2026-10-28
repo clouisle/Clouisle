@@ -229,6 +229,59 @@ describe('useChat', () => {
     expect(hook.status).toBe('idle')
   })
 
+  test('clears the previous conversation approval and restores it on return', async () => {
+    const originalWindow = globalThis.window
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 0 })],
+    ])
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+    })
+    getRunStatus.mockResolvedValue({
+      id: 'run-1', status: 'waiting', pending_tool_call_id: 'call-1',
+      pending_tool_name: 'tool:delete',
+      pending_tool_input: { interaction_kind: 'tool_approval', execution_id: 'execution-1' },
+    })
+    getRunEvents.mockResolvedValue([])
+    const options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    let hook = useRenderedChat(options)
+    try {
+      runEffects()
+      await Promise.resolve()
+      await Promise.resolve()
+      hook = rerender(options)
+      expect(hook.pendingToolApproval?.executionId).toBe('execution-1')
+
+      hook.setConversationId('conversation-2')
+      hook = rerender(options)
+      runEffects()
+      hook = rerender(options)
+      expect(hook.pendingToolApproval).toBeNull()
+      expect(hook.runStatus).toBeNull()
+
+      hook.setConversationId('conversation-1')
+      hook = rerender(options)
+      runEffects()
+      await Promise.resolve()
+      await Promise.resolve()
+      hook = rerender(options)
+      expect(hook.pendingToolApproval?.executionId).toBe('execution-1')
+      expect(stopRun).not.toHaveBeenCalled()
+    } finally {
+      hook.reset()
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    }
+  })
+
   test('stops only the local subscription on conversation switch and reconnects from the saved sequence', async () => {
     const originalWindow = globalThis.window
     const storage = new Map<string, string>([

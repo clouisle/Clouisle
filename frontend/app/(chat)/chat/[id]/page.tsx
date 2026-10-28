@@ -961,10 +961,10 @@ export default function PublicChatPage({
     <>
       {pendingToolApproval ? (
         <PendingToolApprovalCard
+          key={pendingToolApproval.executionId}
           executionId={pendingToolApproval.executionId}
           toolName={pendingToolApproval.toolName}
           onRefreshRun={reconnect}
-          className="mb-2"
         />
       ) : hasPendingAskUser ? pendingAskUserPanel : (pendingInstructionsPanel || variablePanel)}
       <RunInteractionPanel

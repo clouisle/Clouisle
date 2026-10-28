@@ -1139,12 +1139,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         appliedSequenceKeysRef.current.clear()
         setRunId(null)
         setCurrentRunStatus(null)
+        setPendingAskUserToolCallId(null)
+        setPendingToolApproval(null)
         setCurrentStatus('idle')
       }
       previousConversationRef.current = conversationId
     }
     if (conversationId) void reconnectToRun(conversationId)
-  }, [conversationId, disconnectLocalSubscription, reconnectToRun, resetStreamingState, setCurrentRunStatus, setCurrentStatus])
+  }, [conversationId, disconnectLocalSubscription, reconnectToRun, resetStreamingState, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return

@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { toolExecutionsApi, type ToolExecution, type ToolExecutionStatus } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -143,12 +142,12 @@ export function PendingToolApprovalCard({
   const displayName = execution?.operation || toolName || executionId
 
   return (
-    <Card
-      size={compact ? 'sm' : 'default'}
-      className={cn('mx-auto w-[70%] border-amber-500/40 bg-amber-500/5', className)}
-      data-testid="pending-tool-approval-card"
-    >
-      <CardContent className={cn('space-y-2 px-4', compact && 'space-y-1.5')}>
+    <div className={cn('mx-auto w-full max-w-3xl px-4', className)}>
+      <div
+        className={cn('mx-auto w-[70%] overflow-hidden rounded-t-lg border border-b-0 bg-muted/30 px-3.5 pb-3 pt-2.5 shadow-xs', compact && 'text-xs')}
+        data-testid="pending-tool-approval-card"
+      >
+        <div className={cn('space-y-2', compact && 'space-y-1.5')}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-2">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -253,7 +252,8 @@ export function PendingToolApprovalCard({
             </Button>
           </div>
         )}
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </div>
   )
 }

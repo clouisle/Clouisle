@@ -337,10 +337,10 @@ export function AgentChatSurface({
       <div className="relative shrink-0 pb-4">
         {pendingToolApproval ? (
           <PendingToolApprovalCard
+            key={pendingToolApproval.executionId}
             executionId={pendingToolApproval.executionId}
             toolName={pendingToolApproval.toolName}
             onRefreshRun={onRefreshRun}
-            className="mb-2"
           />
         ) : hasPendingAskUser ? (
           <PendingAskUserForm
