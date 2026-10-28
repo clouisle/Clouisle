@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -8,15 +7,11 @@ import pytest
 from app.api.v1.endpoints.tools import (
     _build_accessible_tools,
     _get_accessible_teams,
-    create_tool_config,
-    delete_tool_config,
-    list_tool_configs,
     list_tools,
     list_tools_legacy,
     test_tool as execute_test_tool,
-    update_tool_config,
 )
-from app.models.tool import CustomToolType, ToolType as DBToolType
+from app.models.tool import CustomToolType, ToolType as DBToolType, ToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolExecuteRequest, ToolOut, ToolType
 
@@ -45,10 +40,6 @@ class QueryResult:
             return self.value
 
         return result().__await__()
-
-
-class DummyRequest:
-    pass
 
 
 def user(*, is_superuser=False):
@@ -161,6 +152,7 @@ async def test_list_tools_legacy_includes_shared_custom_and_mcp_tools():
         tool=SimpleNamespace(
             id=uuid4(),
             type=DBToolType.CUSTOM,
+            visibility=ToolVisibility.TEAM,
             team_id=uuid4(),
             team=SimpleNamespace(name="Owner"),
             created_by=None,
@@ -170,6 +162,7 @@ async def test_list_tools_legacy_includes_shared_custom_and_mcp_tools():
     shared_mcp = SimpleNamespace(
         tool=SimpleNamespace(
             id=uuid4(),
+            visibility=ToolVisibility.TEAM,
             type=DBToolType.MCP,
             team_id=uuid4(),
             team=SimpleNamespace(name="Owner"),
@@ -223,21 +216,18 @@ async def test_list_tools_legacy_skips_shared_query_when_disabled():
 @pytest.mark.parametrize(
     ("custom_tool", "expected_error"),
     [
-        (SimpleNamespace(type=DBToolType.MCP, mcp_config={}), "no configuration"),
+        (
+            SimpleNamespace(name="saved_tool", type=DBToolType.MCP, mcp_config={}),
+            "no configuration",
+        ),
         (
             SimpleNamespace(
+                name="saved_tool",
                 type=DBToolType.CUSTOM,
                 custom_type=CustomToolType.CODE,
                 code_config={},
             ),
             "code",
-        ),
-        (
-            SimpleNamespace(
-                type=DBToolType.CUSTOM,
-                custom_type=None,
-            ),
-            "unsupported",
         ),
     ],
 )
@@ -245,12 +235,16 @@ async def test_test_tool_returns_failures_for_invalid_saved_tools(
     custom_tool, expected_error
 ):
     request = ToolExecuteRequest(name="saved_tool", arguments={})
+    execute = AsyncMock()
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
         patch(
             "app.api.v1.endpoints.tools.Tool.filter",
             return_value=QueryResult(custom_tool),
+        ),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
         ),
     ):
         response = await execute_test_tool(
@@ -259,72 +253,105 @@ async def test_test_tool_returns_failures_for_invalid_saved_tools(
 
     assert response["data"].success is False
     assert expected_error in response["data"].error.lower()
+    execute.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_test_tool_reports_unsupported_custom_type_from_executor():
+    custom_tool = SimpleNamespace(
+        name="saved_tool",
+        team_id=uuid4(),
+        type=DBToolType.CUSTOM,
+        custom_type=None,
+    )
+    request = ToolExecuteRequest(name="saved_tool", arguments={})
+    execute = AsyncMock(side_effect=ValueError("unsupported custom tool type"))
+    with (
+        patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
+        patch(
+            "app.api.v1.endpoints.tools.Tool.filter",
+            return_value=QueryResult(custom_tool),
+        ),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
+    ):
+        response = await execute_test_tool(
+            request, team_id=custom_tool.team_id, current_user=user()
+        )
+
+    assert response["data"].success is False
+    assert response["data"].error
 
 
 @pytest.mark.anyio
 async def test_test_tool_executes_http_saved_tool():
     custom_tool = SimpleNamespace(
+        name="http_tool",
+        team_id=uuid4(),
         type=DBToolType.CUSTOM,
         custom_type=CustomToolType.HTTP,
         http_config={"url": "https://example.test"},
         credentials={"token": "secret"},
     )
     request = ToolExecuteRequest(name="http_tool", arguments={"q": "value"})
+    execute = AsyncMock(return_value={"success": True, "result": "ok"})
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
         patch(
             "app.api.v1.endpoints.tools.Tool.filter",
             return_value=QueryResult(custom_tool),
         ),
         patch(
-            "app.api.v1.endpoints.tools.execute_http_tool",
-            new=AsyncMock(return_value={"success": True, "result": "ok"}),
-        ) as execute_http,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await execute_test_tool(
-            request, team_id=uuid4(), current_user=user()
+            request, team_id=custom_tool.team_id, current_user=user()
         )
 
     assert response["data"].result == "ok"
-    execute_http.assert_awaited_once_with(
-        custom_tool.http_config, {"q": "value"}, custom_tool.credentials
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom_tool
+    assert args_arg == {"q": "value"}
+    assert execute.await_args.kwargs["operation"] == "http_tool"
 
 
 @pytest.mark.anyio
 async def test_test_tool_returns_localized_mcp_exception():
     custom_tool = SimpleNamespace(
+        name="mcp_server",
+        team_id=uuid4(),
         type=DBToolType.MCP,
         mcp_config={"transport": "http", "url": "https://mcp.test"},
     )
     request = ToolExecuteRequest(
         name="mcp_server", arguments={"__tool_name__": "remote_tool", "x": 1}
     )
+    execute = AsyncMock(side_effect=RuntimeError("connection failed"))
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
         patch(
             "app.api.v1.endpoints.tools.Tool.filter",
             return_value=QueryResult(custom_tool),
         ),
         patch(
-            "app.api.v1.endpoints.tools.execute_mcp_tool",
-            new=AsyncMock(side_effect=RuntimeError("connection failed")),
-        ) as execute_mcp,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await execute_test_tool(
-            request, team_id=uuid4(), current_user=user()
+            request, team_id=custom_tool.team_id, current_user=user()
         )
 
     assert response["data"].success is False
     assert response["data"].error
-    execute_mcp.assert_awaited_once_with(
-        mcp_config=custom_tool.mcp_config,
-        tool_name="remote_tool",
-        arguments={"x": 1},
-        timeout=60.0,
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom_tool
+    assert args_arg == {"x": 1}
+    assert execute.await_args.kwargs["operation"] == "remote_tool"
 
 
 @pytest.mark.anyio
@@ -338,102 +365,3 @@ async def test_test_tool_without_team_raises_not_found():
             team_id=None,
             current_user=user(),
         )
-
-
-@pytest.mark.anyio
-async def test_list_tool_configs_covers_team_and_global_guards():
-    team_id = uuid4()
-    config = SimpleNamespace(
-        id=uuid4(),
-        tool_name="search",
-        team_id=team_id,
-        credentials={},
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
-    query = QueryResult([config])
-    with (
-        patch(
-            "app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()
-        ) as access,
-        patch(
-            "app.models.tool_config.ToolConfig.filter", return_value=query
-        ) as filter_,
-    ):
-        response = await list_tool_configs(team_id, user())
-
-    assert len(response["data"]) == 1
-    access.assert_awaited_once_with(team_id, response_user := access.await_args.args[1])
-    assert response_user.is_superuser is False
-    filter_.assert_called_once_with(team_id=team_id)
-
-    with pytest.raises(BusinessError):
-        await list_tool_configs(None, user())
-
-    with patch(
-        "app.models.tool_config.ToolConfig.filter", return_value=QueryResult([])
-    ) as global_filter:
-        response = await list_tool_configs(None, user(is_superuser=True))
-
-    assert response["data"] == []
-    global_filter.assert_called_once_with(team_id=None)
-
-
-@pytest.mark.anyio
-async def test_create_tool_config_checks_team_admin_and_duplicate():
-    team_id = uuid4()
-    current_user = user()
-    with (
-        patch(
-            "app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()
-        ) as access,
-        patch(
-            "app.models.tool_config.ToolConfig.filter",
-            return_value=QueryResult(SimpleNamespace(id=uuid4())),
-        ),
-        pytest.raises(BusinessError),
-    ):
-        await create_tool_config(
-            {"tool_name": "search", "credentials": {}},
-            DummyRequest(),
-            team_id,
-            current_user,
-        )
-
-    access.assert_awaited_once_with(team_id, current_user, require_admin=True)
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("endpoint", [update_tool_config, delete_tool_config])
-async def test_tool_config_mutations_reject_non_superuser_global_access(endpoint):
-    args = ["search"]
-    if endpoint is update_tool_config:
-        args.append({"credentials": {}})
-    args.extend([DummyRequest(), None, user()])
-
-    with pytest.raises(BusinessError):
-        await endpoint(*args)
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("endpoint", [update_tool_config, delete_tool_config])
-async def test_tool_config_mutations_raise_not_found_for_team_config(endpoint):
-    team_id = uuid4()
-    current_user = user()
-    args = ["search"]
-    if endpoint is update_tool_config:
-        args.append({"credentials": {}})
-    args.extend([DummyRequest(), team_id, current_user])
-
-    with (
-        patch(
-            "app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()
-        ) as access,
-        patch(
-            "app.models.tool_config.ToolConfig.filter", return_value=QueryResult(None)
-        ),
-        pytest.raises(BusinessError),
-    ):
-        await endpoint(*args)
-
-    access.assert_awaited_once_with(team_id, current_user, require_admin=True)

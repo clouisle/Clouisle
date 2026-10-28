@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -15,12 +15,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
+import { VariableInput } from '@/components/tools/variable-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { FieldError } from '@/components/ui/field'
 import {
   clearValidationError,
@@ -37,8 +35,34 @@ import {
   McpConfig, 
   McpTransportType,
   McpToolInfo,
+  ToolApprovalPolicy,
+  ToolConnectionField,
+  ToolIdentityPolicy,
 } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { adminToolsApi } from '@/lib/api/admin'
+import { toolMcpApi } from '@/lib/api/tool-mcp'
+import {
+  EMPTY_CONNECTION_BINDING,
+  ToolConnectionPicker,
+  type ToolConnectionBinding,
+} from '@/components/tools/connection-picker'
+import {
+  DEFAULT_MCP_CAPABILITIES,
+  McpCapabilitiesEditor,
+  getMcpCapabilities,
+  mcpCapabilitiesConfig,
+  hasMcpCapabilityErrors,
+  validateMcpCapabilities,
+  type McpCapabilitySettings,
+} from '@/components/tools/mcp-capabilities-editor'
 
 interface McpToolDialogProps {
   tool?: ToolDetail | null
@@ -76,6 +100,7 @@ export function McpToolDialog({
 }: McpToolDialogProps) {
   const t = useTranslations('tools')
   const tCommon = useTranslations('common')
+  const tMcpCaps = useTranslations('tools.mcpCapabilities')
 
   const isEditing = !!tool
 
@@ -84,6 +109,11 @@ export function McpToolDialog({
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // 传输类型
@@ -97,6 +127,10 @@ export function McpToolDialog({
   // SSE/HTTP 配置
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState<Header[]>([{ key: '', value: '' }])
+  const [mcpCapabilities, setMcpCapabilities] = useState<McpCapabilitySettings>(
+    DEFAULT_MCP_CAPABILITIES
+  )
+  const [discoveryConnection, setDiscoveryConnection] = useState<ToolConnectionBinding>(EMPTY_CONNECTION_BINDING)
 
   // MCP 工具列表
   const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([])
@@ -120,9 +154,14 @@ export function McpToolDialog({
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
         setIsEnabled(tool.is_enabled)
+        setIdentityPolicy(getToolIdentityPolicy(tool))
+        setConnectionFields(getToolConnectionFields(tool))
+        setApprovalPolicy(getToolApprovalPolicy(tool))
         setFieldErrors({})
 
         if (tool.mcp_config) {
+          setMcpCapabilities(getMcpCapabilities(tool.mcp_config))
+        setDiscoveryConnection(EMPTY_CONNECTION_BINDING)
           const transport = tool.mcp_config.transport || 'stdio'
           setTransportType(transport)
           
@@ -156,6 +195,9 @@ export function McpToolDialog({
         setDisplayName('')
         setIcon('')
         setIsEnabled(true)
+        setIdentityPolicy('none')
+        setConnectionFields([])
+        setApprovalPolicy(getToolApprovalPolicy(null))
         setFieldErrors({})
         setTransportType('stdio')
         setCommand('')
@@ -163,6 +205,8 @@ export function McpToolDialog({
         setEnvVars([{ key: '', value: '' }])
         setUrl('')
         setHeaders([{ key: '', value: '' }])
+        setMcpCapabilities(DEFAULT_MCP_CAPABILITIES)
+        setDiscoveryConnection(EMPTY_CONNECTION_BINDING)
         resetToolsState()
       }
     }
@@ -217,14 +261,35 @@ export function McpToolDialog({
     setFieldErrors({})
     setIsLoadingTools(true)
     try {
-      const response = await adminToolsApi.listMcpTools(config)
-      setMcpTools(response.tools)
+      let tools: McpToolInfo[]
+      if (isEditing && tool?.id && tool.team_id) {
+        const outcome = await toolMcpApi.listTools(tool.id, {
+          teamId: tool.team_id,
+          connection_mode: discoveryConnection.connection_mode ?? undefined,
+          connection_id: discoveryConnection.connection_id ?? undefined,
+        })
+        if (outcome.status === 'pending_approval') {
+          toast.info(t('mcpDialog.toolsPendingApproval'))
+          setMcpTools([])
+          setToolsLoaded(false)
+          return
+        }
+        tools = (outcome.result?.items ?? []).map((item) => ({
+          name: item.name,
+          description: item.description ?? undefined,
+          parameters: item.parameters,
+        }))
+      } else {
+        const response = await adminToolsApi.listMcpTools(config)
+        tools = response.tools
+      }
+      setMcpTools(tools)
       setToolsLoaded(true)
-      
-      if (response.tools.length === 0) {
+
+      if (tools.length === 0) {
         toast.info(t('mcpDialog.noToolsFound'))
       } else {
-        toast.success(t('mcpDialog.toolsLoaded', { count: response.tools.length }))
+        toast.success(t('mcpDialog.toolsLoaded', { count: tools.length }))
       }
     } catch (error) {
       console.error('Failed to fetch MCP tools:', error)
@@ -240,6 +305,21 @@ export function McpToolDialog({
   }
 
   const handleSave = async () => {
+    const capabilityErrors = validateMcpCapabilities(mcpCapabilities, {
+      invalidRoot: tMcpCaps('invalidRootUri'),
+      invalidHost: tMcpCaps('invalidElicitationHost'),
+      missingAllowlist: tMcpCaps('rootsRequireAllowlist'),
+      rootNotAllowed: tMcpCaps('rootOutsideAllowlist'),
+    })
+    if (hasMcpCapabilityErrors(capabilityErrors)) {
+      toast.error(
+        capabilityErrors.allowlist
+          ?? Object.values(capabilityErrors.roots)[0]
+          ?? tMcpCaps('invalidElicitationHost')
+      )
+      return
+    }
+
     const nextErrors: Record<string, string> = {}
     if (!name.trim()) nextErrors.name = t('error.nameRequired')
     if (!displayName.trim()) nextErrors.displayName = t('form.displayNameRequired')
@@ -254,12 +334,15 @@ export function McpToolDialog({
     setFieldErrors({})
     setIsLoading(true)
     try {
-      const mcpConfig = buildMcpConfig()
+      const mcpConfig = { ...buildMcpConfig(), ...mcpCapabilitiesConfig(mcpCapabilities) }
 
-      // 生成工具描述
+      // Generate a readable single-line summary; raw markdown bullets are
+      // truncated to garbage in the tool card.
       let toolsDescription = ''
       if (mcpTools.length > 0) {
-        toolsDescription = mcpTools.map(t => `- ${t.name}: ${t.description || 'No description'}`).join('\n')
+        toolsDescription = mcpTools
+          .map(tool => `${tool.name}: ${(tool.description || t('mcpDialog.noDescription')).replace(/\s+/g, ' ').trim()}`)
+          .join('; ')
       }
 
       const data: ToolCreateInput | ToolUpdateInput = {
@@ -270,6 +353,9 @@ export function McpToolDialog({
         is_enabled: isEnabled,
         type: 'mcp',
         mcp_config: mcpConfig,
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(data)
@@ -513,12 +599,13 @@ export function McpToolDialog({
                           onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={envVar.value}
-                          onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
-                          className="flex-1 font-mono"
+                          onChange={(value) => updateEnvVar(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           type="password"
+                          className="flex-1 font-mono"
                         />
                         <Button
                           variant="ghost"
@@ -573,10 +660,11 @@ export function McpToolDialog({
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
-                          onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                          onChange={(value) => updateHeader(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
                           type="password"
                         />
@@ -633,10 +721,11 @@ export function McpToolDialog({
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
-                          onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                          onChange={(value) => updateHeader(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
                           type="password"
                         />
@@ -659,6 +748,15 @@ export function McpToolDialog({
               </TabsContent>
             </Tabs>
 
+            {isEditing && tool?.id && tool.team_id && (tool.identity_policy ?? 'none') !== 'none' && (
+              <ToolConnectionPicker
+                tool={tool}
+                teamId={tool.team_id}
+                value={discoveryConnection}
+                onChange={setDiscoveryConnection}
+              />
+            )}
+
             {/* 获取工具列表按钮 */}
             <div className="pt-2">
               <Button 
@@ -677,43 +775,19 @@ export function McpToolDialog({
             </div>
           </div>
 
-          {/* 工具列表 */}
-          {toolsLoaded && (
-            <div className="space-y-3 border rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium flex items-center gap-2">
-                  {t('mcpDialog.availableTools')}
-                  <Badge variant="secondary">{mcpTools.length}</Badge>
-                </h4>
-                {mcpTools.length > 0 && (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                )}
-              </div>
+          <McpCapabilitiesEditor value={mcpCapabilities} onChange={setMcpCapabilities} />
 
-              {mcpTools.length > 0 ? (
-                <ScrollArea className="h-[200px] -m-1">
-                  <div className="space-y-2 p-1">
-                    {mcpTools.map((mcpTool, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{mcpTool.name}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-2">
-                              {mcpTool.description || t('mcpDialog.noDescription')}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="text-center text-muted-foreground py-4">
-                  {t('mcpDialog.noToolsAvailable')}
-                </div>
-              )}
-            </div>
-          )}
+
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+            operationTools={mcpTools}
+            toolsLoaded={toolsLoaded}
+          />
         </div>
 
         <DialogFooter>

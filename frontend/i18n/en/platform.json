@@ -230,8 +230,9 @@
       },
       "noSearchResults": "No tools found",
       "requiresConfig": "Requires configuration",
-      "webSearchManaged": "Web search is configured centrally by site administrators. Team-level search keys are no longer used.",
-      "webSearchConfigure": "Configure search",
+      "configured": "Configured",
+      "configureConnections": "Configure connections",
+      "manageConnections": "Manage connections",
       "parameters": "Parameters",
       "searchEngine": "Search engine",
       "noParameters": "No parameters required",
@@ -257,6 +258,9 @@
       "visibilityTeam": "Team",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+      "mcpBrowser": {
+        "open": "Browse resources & prompts"
+      },
       "filters": {
         "all": "All",
         "builtin": "Built-in",
@@ -316,6 +320,12 @@
         "title": "Configure {name}",
         "description": "Set up API keys and credentials for this tool"
       },
+      "connectionDialog": {
+        "description": "Manage encrypted identities and defaults for this tool. Secrets are never shown again after saving.",
+        "notRequired": "This tool does not need a stored identity.",
+        "teamRequired": "Select a team before managing tool connections.",
+        "definitionUnavailable": "This tool's definition policy is not available yet. Refresh the page; if it persists, the built-in definition needs to be materialized for this team."
+      },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",
         "editTitle": "Edit HTTP Tool",
@@ -345,41 +355,18 @@
         "timeout": "Timeout",
         "parameters": "Input Parameters",
         "addParameter": "Add Parameter",
-        "parametersHint": "Define parameters for tool invocation. Use '{{paramName}}' in URL, headers, query params or body template",
+        "parametersHint": "Define parameters for tool invocation. Use '{{paramName}}' or a declared connection field name in URL, headers, query params or body template",
         "noParameters": "No parameters defined. Click the button above to add",
         "paramName": "Parameter name",
         "paramDescription": "Description (optional)",
         "required": "Required",
-        "variableCompletion": "Parameter suggestions",
+        "variableCompletion": "Variable suggestions",
         "toolNamePlaceholder": "my_api_tool",
         "urlPlaceholder": "https://api.example.com/｛｛id｝｝/data",
         "keyPlaceholder": "Key",
         "headerValuePlaceholder": "｛｛token｝｝",
         "queryValuePlaceholder": "｛｛query｝｝",
         "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
-      },
-      "databaseDialog": {
-        "connectionFailed": "Connection failed, please check configuration and network",
-        "connectionSettings": "Connection Settings",
-        "connectionSuccess": "Database connection successful",
-        "createTitle": "Add Database Tool",
-        "databaseName": "Database Name",
-        "dbType": "Database Type",
-        "description": "Configure database connection parameters. Credentials are encrypted and never exposed to the LLM.",
-        "descriptionPlaceholder": "Describe the business domain and contents stored in this database to guide Agent selection",
-        "editTitle": "Edit Database Tool",
-        "host": "Host",
-        "hostRequired": "Please enter database host",
-        "maxLimit": "Max Return Rows",
-        "paramsMode": "Parameters",
-        "password": "Password",
-        "port": "Port",
-        "testConnection": "Test Connection",
-        "timeout": "Query Timeout (s)",
-        "url": "Connection URL",
-        "urlMode": "Connection URL",
-        "urlRequired": "Please enter connection URL",
-        "username": "Username"
       },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
@@ -417,16 +404,25 @@
         "headerValuePlaceholder": "value",
         "sseUrlPlaceholder": "http://localhost:3000/sse",
         "headerNamePlaceholder": "Header-Name",
-        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+        "httpUrlPlaceholder": "http://localhost:3000/mcp",
+        "toolsPendingApproval": "Listing MCP tools requires approval. Approve it, then fetch again."
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "'{\"key\": \"value\"}'"
+        "objectPlaceholder": "'{\"key\": \"value\"}'",
+        "pendingApproval": "This call is waiting for approval. It will not run again automatically.",
+        "executionId": "Execution {id}",
+        "resume": "Resume after approval",
+        "openApprovals": "Open approvals",
+        "resumeFailed": "The tool call could not be resumed. A completed or rejected request is never re-run.",
+        "loadFailed": "Could not list MCP tools for this saved connection.",
+        "selectConnectionBeforeLoad": "Select a connection to load the MCP tool list."
       },
       "codeEditor": {
         "newTitle": "New Code Tool",
         "subtitle": "Extend AI capabilities with code",
         "run": "Run",
+        "connectionRunHint": "Run previews the raw snippet without a connection. Save the tool, then use Test in the capabilities list to run it with its selected connection credentials.",
         "settings": "Settings",
         "output": "Output",
         "basicInfo": "Basic Info",
@@ -495,6 +491,7 @@
         "saveFailed": "Failed to save",
         "nameRequired": "Tool name is required",
         "unknownToolType": "Unknown tool type",
+        "loadToolDetailFailed": "Failed to load tool detail",
         "cannotDeleteBuiltin": "Cannot delete built-in tools",
         "cannotShareBuiltin": "Cannot share built-in tools",
         "noTeamSelected": "No team selected",
@@ -511,8 +508,6 @@
         "httpDesc": "Call external REST APIs",
         "code": "Code Tool",
         "codeDesc": "Write JavaScript/Python code",
-        "database": "Database Tool",
-        "databaseDesc": "Connect to external databases",
         "mcp": "MCP Server",
         "mcpDesc": "Connect to MCP protocol servers"
       },

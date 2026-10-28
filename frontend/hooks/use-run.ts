@@ -7,6 +7,7 @@ import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 import type { ChatImageContent, ChatFileUrl } from '@/lib/api'
 import type { AgentRunAnswerPayload, AgentRunStatus, WorkflowAssetRef } from '@/lib/api/agents'
+import type { PendingToolApproval } from '@/lib/chat/pending-approval'
 
 export type RunType = 'agent' | 'workflow'
 
@@ -32,6 +33,8 @@ export interface UseRunReturn {
   runStatus?: AgentRunStatus | null
   /** Tool call id of the ask_user interaction the server is waiting on. */
   pendingAskUserToolCallId?: string | null
+  /** Durable tool execution awaiting approval; never answerable as ask_user. */
+  pendingToolApproval?: PendingToolApproval | null
   /** Submit one structured answer result for the waiting ask_user interaction. */
   submitAskUser?: (toolCallId: string, answer: AgentRunAnswerPayload) => Promise<void>
   sendMessage: (
@@ -154,6 +157,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       runId: agentChat.runId,
       runStatus: agentChat.runStatus,
       pendingAskUserToolCallId: agentChat.pendingAskUserToolCallId,
+      pendingToolApproval: agentChat.pendingToolApproval,
       submitAskUser: agentChat.submitAskUser,
       sendMessage: agentChat.sendMessage,
       stop: agentChat.stop,

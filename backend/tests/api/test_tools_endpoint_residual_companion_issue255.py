@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import tools
+from app.schemas.response import BusinessError
 from app.schemas.tool import ToolType
 
 
@@ -49,6 +50,10 @@ def db_tool(team_id, *, http_config=None, name="parser"):
         icon=None,
         parameters=[],
         is_enabled=True,
+        identity_policy="none",
+        connection_fields=[],
+        approval_policy={},
+        definition_version=1,
         credentials={},
         custom_type=tools.DBCustomToolType.HTTP,
         http_config=http_config,
@@ -151,9 +156,7 @@ async def test_filter_options_include_dynamic_categories_and_skip_empty_creators
 
 
 @pytest.mark.anyio
-async def test_builtin_execution_uses_team_credentials_before_global_fallback(
-    monkeypatch,
-):
+async def test_builtin_execution_uses_unified_boundary(monkeypatch):
     team_id = uuid4()
     execute = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(
@@ -161,67 +164,46 @@ async def test_builtin_execution_uses_team_credentials_before_global_fallback(
         "get_tool",
         lambda name: tool_info(name) if name == "builtin" else None,
     )
-    monkeypatch.setattr(tools.tool_registry, "execute", execute)
-
-    from app.models.tool_config import ToolConfig
-
     monkeypatch.setattr(
-        ToolConfig,
-        "filter",
-        MagicMock(
-            side_effect=[
-                Chain(SimpleNamespace(credentials={"team": "secret"})),
-            ]
-        ),
+        tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    current = SimpleNamespace(id=uuid4(), locale="en")
 
     response = await tools.test_tool(
         tools.ToolExecuteRequest(name="builtin", arguments={"q": "x"}),
         team_id=team_id,
-        current_user=SimpleNamespace(),
+        current_user=current,
     )
 
     assert response_data(response).success is True
-    execute.assert_awaited_once_with(
-        "builtin", {"q": "x"}, credentials={"team": "secret"}
-    )
-    ToolConfig.filter.assert_called_once_with(tool_name="builtin", team_id=team_id)
+    assert response_data(response).result == {"ok": True}
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["tool_name"] == "builtin"
+    assert call_kwargs["arguments"] == {"q": "x"}
+    assert call_kwargs["team_id"] == team_id
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.TOOL_TEST
+    assert call_kwargs["context"].team_id == team_id
+    assert call_kwargs["context"].interactive is True
 
 
 @pytest.mark.anyio
-async def test_builtin_execution_uses_global_credentials_when_team_config_empty(
-    monkeypatch,
-):
-    team_id = uuid4()
-    execute = AsyncMock(return_value="global-ok")
+async def test_builtin_execution_requires_team_context(monkeypatch):
+    execute = AsyncMock()
+    monkeypatch.setattr(tools.tool_registry, "get_tool", lambda name: tool_info(name))
     monkeypatch.setattr(
-        tools.tool_registry,
-        "get_tool",
-        lambda name: tool_info(name) if name == "builtin" else None,
-    )
-    monkeypatch.setattr(tools.tool_registry, "execute", execute)
-
-    from app.models.tool_config import ToolConfig
-
-    monkeypatch.setattr(
-        ToolConfig,
-        "filter",
-        MagicMock(
-            side_effect=[
-                Chain(SimpleNamespace(credentials={})),
-                Chain(SimpleNamespace(credentials={"global": "secret"})),
-            ]
-        ),
+        tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )
 
-    response = await tools.test_tool(
-        tools.ToolExecuteRequest(name="builtin"),
-        team_id=team_id,
-        current_user=SimpleNamespace(),
-    )
+    with pytest.raises(BusinessError) as exc_info:
+        await tools.test_tool(
+            tools.ToolExecuteRequest(name="builtin"),
+            team_id=None,
+            current_user=SimpleNamespace(id=uuid4(), locale="en"),
+        )
 
-    assert response_data(response).result == "global-ok"
-    execute.assert_awaited_once_with("builtin", {}, credentials={"global": "secret"})
+    assert exc_info.value.msg_key == "team_id_required"
+    execute.assert_not_awaited()
 
 
 def test_db_tool_to_out_maps_optional_fields_and_credentials():

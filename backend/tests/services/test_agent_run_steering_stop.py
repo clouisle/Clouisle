@@ -384,6 +384,9 @@ async def test_stop_queued_run_store_branches(monkeypatch):
 
     monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Tx())
     monkeypatch.setattr(agent_run_store, "_write_state_cache", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.tool_approvals.cancel_pending_for_run", AsyncMock()
+    )
 
     # 1. Missing run
     monkeypatch.setattr(agent_run_store.AgentRun, "filter", lambda **_kw: _Query(None))

@@ -192,6 +192,9 @@ msgstr "包导入会话不存在"
 msgid "clouisle_invalid_extension"
 msgstr "仅支持 .clouisle 文件"
 
+msgid "clouisle_builtin_tool_duplicate"
+msgstr "该包重复引用了同一个内置工具"
+
 msgid "clouisle_invalid_resource_type"
 msgstr "包资源类型无效"
 
@@ -734,6 +737,30 @@ msgstr "Python strftime 格式字符串，如 '%Y-%m-%d %H:%M:%S'"
 
 msgid "builtin_tool_format_datetime_param_timezone_name_description"
 msgstr "时区名称，默认为 UTC"
+
+msgid "builtin_tool_mongodb_query"
+msgstr "MongoDB 查询"
+
+msgid "builtin_tool_mongodb_query_description"
+msgstr "以只读方式查看 MongoDB：列出集合、推断文档字段、find/count 文档或执行安全的聚合管道。数据库由连接决定。"
+
+msgid "builtin_tool_mysql_query"
+msgstr "MySQL 查询"
+
+msgid "builtin_tool_mysql_query_description"
+msgstr "以只读方式查看 MySQL/MariaDB：查看表结构并执行单条 SELECT 语句。数据库由连接决定。"
+
+msgid "builtin_tool_postgresql_query"
+msgstr "PostgreSQL 查询"
+
+msgid "builtin_tool_postgresql_query_description"
+msgstr "以只读方式查看 PostgreSQL：查看表结构并执行单条 SELECT 语句。数据库由连接决定。"
+
+msgid "builtin_tool_redis_query"
+msgstr "Redis 查询"
+
+msgid "builtin_tool_redis_query_description"
+msgstr "以只读方式查看 Redis：扫描键名、读取单个键或执行白名单内的只读命令。数据库由连接决定。"
 
 msgid "builtin_tool_generate_image"
 msgstr "生成图片"
@@ -1362,8 +1389,32 @@ msgstr "登录成功。您必须先修改密码才能继续。"
 msgid "logout_successful"
 msgstr "登出成功"
 
+msgid "mcp_capability_unavailable"
+msgstr "MCP 服务器不支持该能力：{capability}"
+
 msgid "mcp_connection_failed"
 msgstr "连接 MCP 服务器失败"
+
+msgid "mcp_content_too_large"
+msgstr "MCP 响应内容超过大小限制"
+
+msgid "mcp_input_required"
+msgstr "MCP 服务器需要额外输入，当前请求无法继续"
+
+msgid "mcp_invalid_request"
+msgstr "MCP 请求无效或不完整"
+
+msgid "mcp_invalid_resource_uri"
+msgstr "MCP 资源 URI 无效或仍包含未替换的模板变量"
+
+msgid "mcp_request_timeout"
+msgstr "MCP 请求超时"
+
+msgid "mcp_server_error"
+msgstr "MCP 服务器拒绝了请求"
+
+msgid "mcp_tool_invalid_type"
+msgstr "该工具不是 MCP 服务器定义"
 
 msgid "memory_entity_deleted"
 msgstr "记忆实体删除成功"
@@ -2454,6 +2505,140 @@ msgstr "工具配置不存在"
 msgid "tool_config_updated"
 msgstr "工具配置更新成功"
 
+msgid "tool_connection_access_denied"
+msgstr "你没有使用该连接的权限"
+
+msgid "agent_tool_access_denied"
+msgstr "你无权使用 Agent 的工具“{tool_name}”。请联系工具所有者或团队管理员开通权限。"
+
+msgid "agent_tool_connection_required"
+msgstr "工具“{tool_name}”需要连接。请在该工具的连接设置中添加账号或登录后重试。"
+
+msgid "agent_tool_connection_inactive"
+msgstr "工具“{tool_name}”的连接需要重新授权。请在该工具的连接设置中重新登录。"
+
+msgid "agent_tool_connection_default_required"
+msgstr "工具“{tool_name}”有多个个人连接。请在该工具的连接设置中设定默认连接后重试。"
+
+msgid "agent_tool_connection_access_denied"
+msgstr "你无权使用工具“{tool_name}”配置的连接。请联系 Agent 所有者检查连接设置。"
+
+msgid "tool_access_denied"
+msgstr "你无权使用此工具。请联系工具所有者或团队管理员开通权限。"
+
+msgid "tool_connection_default_conflict"
+msgstr "另一个默认连接被同时选中，请刷新后重试"
+
+msgid "tool_connection_default_required"
+msgstr "该工具存在多个个人连接，请在连接设置中设定默认连接或显式选择连接"
+
+
+
+
+
+
+msgid "tool_connection_inactive"
+msgstr "该连接已撤销或需要重新认证，请在连接设置中重新连接"
+
+msgid "tool_connection_invalid"
+msgstr "连接配置无效"
+
+msgid "tool_connection_not_found"
+msgstr "未找到连接"
+
+msgid "tool_connection_required"
+msgstr "需要连接：请在连接设置中添加账号或重新登录，然后重试"
+
+msgid "tool_connection_secret_unreadable"
+msgstr "无法读取已保存的连接凭据，请重新认证该连接"
+
+msgid "tool_connection_version_conflict"
+msgstr "连接在选中后已变更，请刷新后重试"
+
+msgid "oauth_not_supported"
+msgstr "该工具不支持 OAuth"
+
+msgid "oauth_configuration_invalid"
+msgstr "OAuth 提供方配置无效"
+
+msgid "oauth_state_invalid"
+msgstr "OAuth 请求无效或已被使用"
+
+msgid "oauth_expired"
+msgstr "OAuth 请求已过期，请重新发起"
+
+msgid "oauth_exchange_failed"
+msgstr "OAuth 授权未能完成"
+
+msgid "oauth_reauth_required"
+msgstr "该连接需要重新授权"
+
+msgid "oauth_discovery_failed"
+msgstr "OAuth 提供方发现失败"
+
+msgid "oauth_scope_escalation"
+msgstr "OAuth 提供方返回的权限范围超出已授权范围"
+
+msgid "oauth_provider_error"
+msgstr "OAuth 提供方返回错误"
+
+msgid "oauth_refresh_failed"
+msgstr "OAuth 令牌刷新失败"
+
+msgid "oauth_version_conflict"
+msgstr "连接在授权开始后已变更，请重试"
+
+msgid "oauth_callback_failed"
+msgstr "OAuth 授权失败"
+
+msgid "oauth_client_registration_required"
+msgstr "未注册 OAuth 客户端，且无法自动注册"
+
+msgid "oauth_client_registration_failed"
+msgstr "OAuth 客户端自动注册失败"
+
+msgid "oauth_client_secret_required"
+msgstr "需要 OAuth 客户端密钥，请联系工具管理员配置"
+
+msgid "oauth_pkce_unsupported"
+msgstr "OAuth 提供方不支持 PKCE S256"
+
+msgid "run_interaction_not_found"
+msgstr "交互请求不存在"
+
+msgid "run_interaction_access_denied"
+msgstr "你无权响应该交互请求"
+
+msgid "run_interaction_not_pending"
+msgstr "该交互请求已不处于待处理状态"
+
+msgid "run_interaction_expired"
+msgstr "该交互请求已过期"
+
+msgid "run_interaction_connection_lost"
+msgstr "MCP 连接已断开，该请求无法恢复"
+
+msgid "run_interaction_invalid_response"
+msgstr "交互响应无效"
+
+msgid "run_interaction_schema_invalid"
+msgstr "交互响应与请求的 schema 不匹配"
+
+msgid "run_interaction_secret_field_rejected"
+msgstr "不能通过交互表单收集敏感字段"
+
+msgid "run_interaction_url_not_allowed"
+msgstr "该交互 URL 不被允许"
+
+msgid "run_interaction_content_too_large"
+msgstr "交互响应内容过大"
+
+msgid "run_interaction_sampling_failed"
+msgstr "模型无法完成采样请求"
+
+msgid "run_interaction_model_quota_exceeded"
+msgstr "该采样请求的模型额度已用尽"
+
 msgid "tool_create_memory_entity"
 msgstr "创建记忆实体"
 
@@ -2481,8 +2666,17 @@ msgstr "知识库搜索"
 msgid "tool_name_exists"
 msgstr "该工具名称已存在"
 
+msgid "tool_builtin_not_creatable"
+msgstr "内置工具由平台提供，不能通过此接口创建"
+
+msgid "team_id_required"
+msgstr "请先选择团队后再执行该操作"
+
 msgid "tool_not_found"
 msgstr "工具未找到"
+
+msgid "tool_secret_inline_not_allowed"
+msgstr "工具定义不接受明文密钥：{fields}。请声明连接字段并将密钥保存到连接中，然后以 {{{{field}}}} 占位符引用。"
 
 msgid "tool_search_memory"
 msgstr "搜索记忆"
@@ -2555,8 +2749,8 @@ msgstr "未找到 MCP 工具：{server_name}"
 msgid "mcp_tool_missing_configuration"
 msgstr "MCP 工具缺少配置：{tool_name}"
 
-msgid "http_tool_url_templates_not_supported"
-msgstr "HTTP 工具不支持 URL 模板"
+msgid "http_tool_url_template_values_missing"
+msgstr "HTTP URL 缺少模板字段的值：{fields}"
 
 msgid "mcp_tool_execution_failed"
 msgstr "MCP 工具执行失败"
@@ -2720,6 +2914,21 @@ msgstr "Memory 工具执行失败"
 msgid "tool_execution_failed"
 msgstr "工具执行失败"
 
+msgid "tool_approval_rejected"
+msgstr "工具执行审批已被拒绝，未执行该调用"
+
+msgid "tool_approval_cancelled"
+msgstr "工具执行审批已取消或已失效"
+
+msgid "tool_approval_unavailable"
+msgstr "该工具需要审批，但当前执行上下文不支持审批，未执行该调用"
+
+msgid "tool_execution_outcome_unknown"
+msgstr "工具调用结果未知，未自动重试"
+
+msgid "tool_approval_inside_container"
+msgstr "迭代或循环内部不支持工具审批，未执行该调用"
+
 msgid "http_tool_request_failed_status"
 msgstr "HTTP 请求失败，状态码：{status_code}"
 
@@ -2729,6 +2938,9 @@ msgid "http_tool_url_host_not_allowed"
 msgstr "不允许访问该 HTTP URL 主机"
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "无法解析 HTTP URL 主机"
+
+msgid "database_engine_unsupported"
+msgstr "内置数据库工具不支持该数据库引擎"
 
 msgid "database_connection_failed"
 msgstr "数据库连接失败"
@@ -3604,3 +3816,159 @@ msgstr "正在使用 {agent}。"
 
 msgid "feishu_agent_use_selected"
 msgstr "已切换到 {agent}，下一条消息将发送给它。"
+
+msgid "tool_execution_not_found"
+msgstr "未找到工具执行记录"
+
+msgid "tool_execution_access_denied"
+msgstr "您没有权限访问此工具执行记录"
+
+msgid "tool_execution_invalid_state"
+msgstr "此工具执行记录当前状态不允许该操作"
+
+msgid "tool_execution_parameters_unreadable"
+msgstr "无法读取已批准的工具参数"
+
+msgid "tool_execution_claim_conflict"
+msgstr "此工具执行正在被处理"
+
+msgid "tool_execution_not_ready"
+msgstr "此工具执行当前状态无法运行"
+
+msgid "tool_approval_request_not_found"
+msgstr "未找到审批请求"
+
+msgid "tool_approval_not_authorized"
+msgstr "您不是此请求的审批人"
+
+msgid "tool_approval_expired"
+msgstr "审批请求已过期"
+
+msgid "tool_approval_already_decided"
+msgstr "此审批请求已处理"
+
+msgid "tool_approval_binding_changed"
+msgstr "工具、参数或连接已变更，此审批不再有效"
+
+msgid "tool_approval_conflict"
+msgstr "提交审批时状态已发生变化，请刷新后重试"
+
+msgid "tool_approval_idempotency_conflict"
+msgstr "该请求 ID 已用于其他审批决定"
+
+msgid "tool_approval_input_invalid"
+msgstr "审批输入无效"
+
+msgid "tool_approval_policy_configuration_required"
+msgstr "该工具需要配置有效的审批人才能执行"
+
+msgid "tool_approval_policy_external_audience_unsupported"
+msgstr "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。"
+
+msgid "approval_policy_invalid"
+msgstr "审批策略无效"
+
+msgid "tool_oauth_not_supported"
+msgstr "此服务器不支持 OAuth"
+
+msgid "tool_oauth_config_invalid"
+msgstr "工具 OAuth 配置无效"
+
+msgid "tool_oauth_state_invalid"
+msgstr "OAuth 授权请求无效或已过期"
+
+msgid "tool_oauth_exchange_failed"
+msgstr "OAuth 授权码交换失败"
+
+msgid "tool_oauth_reauth_required"
+msgstr "外部账号需要重新授权"
+
+msgid "tool_oauth_discovery_failed"
+msgstr "此服务器的 OAuth 发现失败"
+
+msgid "tool_oauth_scope_escalation"
+msgstr "OAuth 提供方请求的权限范围超出了已批准范围"
+
+msgid "tool_oauth_expired"
+msgstr "OAuth 授权请求已过期，请重新发起"
+
+msgid "tool_oauth_provider_error"
+msgstr "OAuth 提供方返回错误"
+
+msgid "tool_oauth_refresh_failed"
+msgstr "OAuth 令牌刷新失败"
+
+msgid "tool_oauth_version_conflict"
+msgstr "连接在授权开始后已变更，请重试"
+
+msgid "tool_oauth_callback_failed"
+msgstr "OAuth 授权失败"
+
+msgid "tool_oauth_client_registration_required"
+msgstr "未注册 OAuth 客户端，且无法自动注册"
+
+msgid "tool_oauth_client_registration_failed"
+msgstr "OAuth 客户端自动注册失败"
+
+msgid "tool_oauth_client_secret_required"
+msgstr "需要 OAuth 客户端密钥，请联系工具管理员配置"
+
+msgid "tool_oauth_pkce_unsupported"
+msgstr "OAuth 提供方不支持 PKCE S256"
+
+msgid "run_interaction_not_found"
+msgstr "交互请求不存在"
+
+msgid "run_interaction_access_denied"
+msgstr "你无权响应该交互请求"
+
+msgid "run_interaction_not_pending"
+msgstr "该交互请求已不处于待处理状态"
+
+msgid "run_interaction_expired"
+msgstr "该交互请求已过期"
+
+msgid "run_interaction_connection_lost"
+msgstr "MCP 连接已断开，该请求无法恢复"
+
+msgid "run_interaction_invalid_response"
+msgstr "交互响应无效"
+
+msgid "run_interaction_schema_invalid"
+msgstr "交互响应与请求的 schema 不匹配"
+
+msgid "run_interaction_secret_field_rejected"
+msgstr "不能通过交互表单收集敏感字段"
+
+msgid "run_interaction_url_not_allowed"
+msgstr "该交互 URL 不被允许"
+
+msgid "run_interaction_content_too_large"
+msgstr "交互响应内容过大"
+
+msgid "run_interaction_sampling_failed"
+msgstr "模型无法完成采样请求"
+
+msgid "run_interaction_model_quota_exceeded"
+msgstr "该采样请求的模型额度已用尽"
+
+msgid "run_interaction_idempotency_conflict"
+msgstr "该交互响应与之前的提交冲突"
+
+msgid "channel_approval_prompt"
+msgstr "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n请回复完整命令 /approve {code} 允许，或 /reject {code} 拒绝。直接回复“同意”或“拒绝”等普通文字不能作出决定。"
+
+msgid "channel_approval_invalid"
+msgstr "该确认无效、已过期或已处理。"
+
+msgid "channel_approval_approved"
+msgstr "已批准，原运行将继续。"
+
+msgid "channel_approval_rejected"
+msgstr "已拒绝，该工具不会执行；原运行将继续。"
+
+msgid "channel_approval_waiting"
+msgstr "工具正在等待确认，请回复上方包含完整执行 UUID 的 /approve 或 /reject 命令；普通文字不能作出决定。"
+
+msgid "channel_approval_unsupported"
+msgstr "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。"

@@ -249,6 +249,12 @@ class ToolConfig(BaseModel):
     server_id: str | None = Field(None, description="MCP server ID")
     skill_id: str | None = Field(None, description="Skill ID")
     config: dict[str, Any] | None = Field(None, description="Tool-specific config")
+    connection_mode: str | None = Field(None, pattern="^(personal|team)$")
+    connection_id: UUID | None = None
+    require_approval: bool = Field(
+        default=False,
+        description="Require user confirmation before execution in chat",
+    )
 
     @model_validator(mode="after")
     def restrict_web_search_config(self):
@@ -797,6 +803,7 @@ class EditMessageRequest(BaseModel):
 class ConversationWithMessages(ConversationOut):
     """Conversation with messages"""
 
+    active_run_id: UUID | None = None
     messages: list[MessageOut] = []
 
 

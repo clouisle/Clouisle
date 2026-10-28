@@ -88,6 +88,20 @@ When a request fails due to authentication or authorization, the response body u
 
 > **Note:** A `3000` response means the authenticated user (or the key's agent/workflow association) lacks permission — it does not reflect the `scopes` field.
 
+## Tool approvals
+
+An Agent run started with an API key may pause for a tool approval. The same
+active key that started the run can list and decide it; another key — even one
+owned by the same user — cannot. The key must still be associated with the
+Agent, and its inbox and execution list only include executions whose durable
+AgentRun was submitted by that key. Legacy runs created before run-level key
+binding (no recorded key id) are omitted from lists for safety; if you still
+hold such an execution id, direct detail or decision validates the legacy
+binding and rejects a conflicting key. Workflow runs never create tool-approval
+gates. See [Tool Approvals and
+Executions](../../api-reference/endpoints/tools.md#tool-approvals-and-executions)
+for the endpoints and decision body.
+
 ## What Does NOT Exist
 
 - No `model:read` / `model:use` or `tool:read` / `tool:use` scopes
@@ -101,4 +115,4 @@ When a request fails due to authentication or authorization, the response body u
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-10-28

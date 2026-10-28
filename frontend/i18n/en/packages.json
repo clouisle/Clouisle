@@ -39,6 +39,7 @@
     "selectTargetTeam": "Select a target team",
     "messages": {
       "clouisle_checksum_mismatch": "Package checksum verification failed",
+      "clouisle_database_connection_required": "The migrated database tool needs a connection before it can run",
       "clouisle_dependency_forbidden": "A required package dependency is not accessible",
       "clouisle_dependency_missing": "A required package dependency is missing",
       "clouisle_kb_documents_not_updated": "Knowledge base documents were not updated",

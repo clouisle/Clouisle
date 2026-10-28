@@ -192,6 +192,9 @@ msgstr "Package import session not found"
 msgid "clouisle_invalid_extension"
 msgstr "Only .clouisle files are supported"
 
+msgid "clouisle_builtin_tool_duplicate"
+msgstr "The package attaches the same builtin tool more than once"
+
 msgid "clouisle_invalid_resource_type"
 msgstr "Package resource type is invalid"
 
@@ -725,6 +728,30 @@ msgstr "Format DateTime"
 
 msgid "builtin_tool_format_datetime_description"
 msgstr "Format a datetime. Convert a timestamp to a formatted string."
+
+msgid "builtin_tool_mongodb_query"
+msgstr "MongoDB Query"
+
+msgid "builtin_tool_mongodb_query_description"
+msgstr "Inspect a MongoDB database read-only: list collections, infer document fields, find/count documents, or run a safe aggregation pipeline. The database is chosen by the connection."
+
+msgid "builtin_tool_mysql_query"
+msgstr "MySQL Query"
+
+msgid "builtin_tool_mysql_query_description"
+msgstr "Inspect a MySQL or MariaDB database read-only: describe tables and run single SELECT statements. The database is chosen by the connection."
+
+msgid "builtin_tool_postgresql_query"
+msgstr "PostgreSQL Query"
+
+msgid "builtin_tool_postgresql_query_description"
+msgstr "Inspect a PostgreSQL database read-only: describe tables and run single SELECT statements. The database is chosen by the connection."
+
+msgid "builtin_tool_redis_query"
+msgstr "Redis Query"
+
+msgid "builtin_tool_redis_query_description"
+msgstr "Inspect a Redis database read-only: scan key names, read one key, or run an allowlisted read command. The database is chosen by the connection."
 
 msgid "builtin_tool_format_datetime_param_timestamp_description"
 msgstr "Unix timestamp (seconds). If omitted, uses current time."
@@ -1361,8 +1388,32 @@ msgstr "Login successful. You must change your password before continuing."
 msgid "logout_successful"
 msgstr "Logout successful"
 
+msgid "mcp_capability_unavailable"
+msgstr "MCP server does not support this capability: {capability}"
+
 msgid "mcp_connection_failed"
 msgstr "Failed to connect to MCP server"
+
+msgid "mcp_content_too_large"
+msgstr "MCP response exceeds the content size limit"
+
+msgid "mcp_input_required"
+msgstr "MCP server requires additional input; this request cannot continue"
+
+msgid "mcp_invalid_request"
+msgstr "The MCP request is invalid or incomplete"
+
+msgid "mcp_invalid_resource_uri"
+msgstr "The MCP resource URI is invalid or still contains an unexpanded template variable"
+
+msgid "mcp_request_timeout"
+msgstr "MCP request timed out"
+
+msgid "mcp_server_error"
+msgstr "MCP server rejected the request"
+
+msgid "mcp_tool_invalid_type"
+msgstr "The tool is not an MCP server definition"
 
 msgid "memory_entity_deleted"
 msgstr "Memory entity deleted successfully"
@@ -1884,6 +1935,54 @@ msgstr "Workflow input requested"
 
 msgid "notify_workflow_input_pending_content"
 msgstr "Workflow **{workflow_name}** is waiting for input at node **{node_name}**."
+
+msgid "oauth_callback_failed"
+msgstr "OAuth authorization failed"
+
+msgid "oauth_client_registration_failed"
+msgstr "OAuth client registration failed"
+
+msgid "oauth_client_registration_required"
+msgstr "No OAuth client is registered and automatic registration is unavailable"
+
+msgid "oauth_client_secret_required"
+msgstr "An OAuth client secret is required; contact a tool administrator"
+
+msgid "oauth_configuration_invalid"
+msgstr "OAuth provider configuration is invalid"
+
+msgid "oauth_discovery_failed"
+msgstr "OAuth provider discovery failed"
+
+msgid "oauth_exchange_failed"
+msgstr "OAuth authorization could not be completed"
+
+msgid "oauth_expired"
+msgstr "OAuth request expired; start a new authorization"
+
+msgid "oauth_not_supported"
+msgstr "This tool does not support OAuth"
+
+msgid "oauth_pkce_unsupported"
+msgstr "OAuth provider does not support PKCE S256"
+
+msgid "oauth_provider_error"
+msgstr "OAuth provider returned an error"
+
+msgid "oauth_reauth_required"
+msgstr "This connection must be authorized again"
+
+msgid "oauth_refresh_failed"
+msgstr "OAuth token refresh failed"
+
+msgid "oauth_scope_escalation"
+msgstr "OAuth provider returned scopes beyond the authorized set"
+
+msgid "oauth_state_invalid"
+msgstr "OAuth request is invalid or was already used"
+
+msgid "oauth_version_conflict"
+msgstr "The connection changed after authorization started; try again"
 
 msgid "operation_not_permitted"
 msgstr "Operation not permitted. Required: {permission}"
@@ -2454,6 +2553,56 @@ msgstr "Tool configuration not found"
 msgid "tool_config_updated"
 msgstr "Tool configuration updated successfully"
 
+msgid "tool_connection_access_denied"
+msgstr "You do not have permission to use this connection"
+
+msgid "agent_tool_access_denied"
+msgstr "You cannot access the Agent's tool ‘{tool_name}’. Ask its owner or team administrator for access."
+
+msgid "agent_tool_connection_required"
+msgstr "Tool ‘{tool_name}’ needs a connection. Open its connection settings, add your account or sign in, then try again."
+
+msgid "agent_tool_connection_inactive"
+msgstr "Tool ‘{tool_name}’ needs its connection reauthorized. Open its connection settings and sign in again."
+
+msgid "agent_tool_connection_default_required"
+msgstr "Tool ‘{tool_name}’ has multiple personal connections. Set a default in its connection settings and try again."
+
+msgid "agent_tool_connection_access_denied"
+msgstr "You cannot use the connection configured for tool ‘{tool_name}’. Ask the Agent owner to review its connection settings."
+
+msgid "tool_access_denied"
+msgstr "You do not have access to this tool. Ask its owner or team administrator for access."
+
+msgid "tool_connection_default_conflict"
+msgstr "Another default connection was selected concurrently; refresh and try again"
+
+msgid "tool_connection_default_required"
+msgstr "Multiple personal connections are available for this tool; set a default in Connection settings or select a connection explicitly"
+
+
+
+
+
+
+msgid "tool_connection_inactive"
+msgstr "This connection is revoked or requires re-authentication; reconnect it in Connection settings"
+
+msgid "tool_connection_invalid"
+msgstr "Invalid connection configuration"
+
+msgid "tool_connection_not_found"
+msgstr "Connection not found"
+
+msgid "tool_connection_required"
+msgstr "A connection is required: open Connection settings to add an account or sign in, then try again"
+
+msgid "tool_connection_secret_unreadable"
+msgstr "Stored connection credentials cannot be read; re-authenticate the connection"
+
+msgid "tool_connection_version_conflict"
+msgstr "The connection changed since it was selected; refresh and try again"
+
 msgid "tool_create_memory_entity"
 msgstr "Create Memory Entity"
 
@@ -2481,8 +2630,17 @@ msgstr "Knowledge Search"
 msgid "tool_name_exists"
 msgstr "Tool with this name already exists"
 
+msgid "tool_builtin_not_creatable"
+msgstr "Builtin tools are provided by the platform and cannot be created through this endpoint"
+
+msgid "team_id_required"
+msgstr "Select a team before running this operation"
+
 msgid "tool_not_found"
 msgstr "Tool not found"
+
+msgid "tool_secret_inline_not_allowed"
+msgstr "Secret values are not accepted in tool definitions: {fields}. Declare a connection field and store the secret in a connection, then reference it as {{{{field}}}}."
 
 msgid "tool_search_memory"
 msgstr "Search Memory"
@@ -2555,8 +2713,8 @@ msgstr "MCP tool not found: {server_name}"
 msgid "mcp_tool_missing_configuration"
 msgstr "MCP tool has no configuration: {tool_name}"
 
-msgid "http_tool_url_templates_not_supported"
-msgstr "HTTP tool URL templates are not supported"
+msgid "http_tool_url_template_values_missing"
+msgstr "HTTP URL is missing values for template fields: {fields}"
 
 msgid "mcp_tool_execution_failed"
 msgstr "MCP tool execution failed"
@@ -2720,6 +2878,21 @@ msgstr "Memory tool execution failed"
 msgid "tool_execution_failed"
 msgstr "Tool execution failed"
 
+msgid "tool_approval_rejected"
+msgstr "The tool approval was rejected, so the call was not executed"
+
+msgid "tool_approval_cancelled"
+msgstr "The tool approval was cancelled or is no longer valid"
+
+msgid "tool_approval_unavailable"
+msgstr "This tool requires approval, which is not available in this execution context, so the call was not executed"
+
+msgid "tool_execution_outcome_unknown"
+msgstr "The tool call's outcome is unknown; it was not retried automatically"
+
+msgid "tool_approval_inside_container"
+msgstr "Tool approval is not supported inside an iteration or loop; the call was not executed"
+
 msgid "http_tool_request_failed_status"
 msgstr "HTTP request failed with status {status_code}"
 
@@ -2729,6 +2902,9 @@ msgid "http_tool_url_host_not_allowed"
 msgstr "HTTP URL host is not allowed"
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "HTTP URL host cannot be resolved"
+
+msgid "database_engine_unsupported"
+msgstr "This database engine is not supported by the builtin database tools"
 
 msgid "database_connection_failed"
 msgstr "Database connection failed"
@@ -3604,3 +3780,159 @@ msgstr "Already using {agent}."
 
 msgid "feishu_agent_use_selected"
 msgstr "Now using {agent}. Your next message goes to it."
+
+msgid "tool_execution_not_found"
+msgstr "Tool execution not found"
+
+msgid "tool_execution_access_denied"
+msgstr "You do not have permission to access this tool execution"
+
+msgid "tool_execution_invalid_state"
+msgstr "This tool execution is not in a valid state for that action"
+
+msgid "tool_execution_parameters_unreadable"
+msgstr "The approved tool parameters could not be read"
+
+msgid "tool_execution_claim_conflict"
+msgstr "This tool execution is already being processed"
+
+msgid "tool_execution_not_ready"
+msgstr "This tool execution cannot run from its current state"
+
+msgid "tool_approval_request_not_found"
+msgstr "Approval request not found"
+
+msgid "tool_approval_not_authorized"
+msgstr "You are not an approver for this request"
+
+msgid "tool_approval_expired"
+msgstr "The approval request has expired"
+
+msgid "tool_approval_already_decided"
+msgstr "This approval request has already been decided"
+
+msgid "tool_approval_binding_changed"
+msgstr "This approval is no longer valid because the tool, parameters or connection changed"
+
+msgid "tool_approval_conflict"
+msgstr "The approval changed while it was being decided; refresh and try again"
+
+msgid "tool_approval_idempotency_conflict"
+msgstr "This request ID was already used for a different decision"
+
+msgid "tool_approval_input_invalid"
+msgstr "Invalid approval input"
+
+msgid "tool_approval_policy_configuration_required"
+msgstr "This tool needs an approval policy with a valid approver before it can run"
+
+msgid "tool_approval_policy_external_audience_unsupported"
+msgstr "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run."
+
+msgid "approval_policy_invalid"
+msgstr "The approval policy is invalid"
+
+msgid "tool_oauth_not_supported"
+msgstr "This server does not support OAuth"
+
+msgid "tool_oauth_config_invalid"
+msgstr "The tool OAuth configuration is invalid"
+
+msgid "tool_oauth_state_invalid"
+msgstr "The OAuth authorization request is invalid or has expired"
+
+msgid "tool_oauth_exchange_failed"
+msgstr "Failed to exchange the OAuth authorization code"
+
+msgid "tool_oauth_reauth_required"
+msgstr "The external account must be reauthorized"
+
+msgid "tool_oauth_discovery_failed"
+msgstr "OAuth discovery failed for this server"
+
+msgid "tool_oauth_scope_escalation"
+msgstr "The OAuth provider requested broader permissions than approved"
+
+msgid "tool_oauth_expired"
+msgstr "The OAuth authorization request has expired; start again"
+
+msgid "tool_oauth_provider_error"
+msgstr "The OAuth provider reported an error"
+
+msgid "tool_oauth_refresh_failed"
+msgstr "OAuth token refresh failed"
+
+msgid "tool_oauth_version_conflict"
+msgstr "The connection changed since authorization started; try again"
+
+msgid "tool_oauth_callback_failed"
+msgstr "OAuth authorization failed"
+
+msgid "tool_oauth_client_registration_required"
+msgstr "No OAuth client is registered and automatic registration is unavailable"
+
+msgid "tool_oauth_client_registration_failed"
+msgstr "Automatic OAuth client registration failed"
+
+msgid "tool_oauth_client_secret_required"
+msgstr "An OAuth client secret is required; ask a tool administrator to configure it"
+
+msgid "tool_oauth_pkce_unsupported"
+msgstr "The OAuth provider does not support PKCE S256"
+
+msgid "run_interaction_not_found"
+msgstr "Interaction request not found"
+
+msgid "run_interaction_access_denied"
+msgstr "You cannot respond to this interaction request"
+
+msgid "run_interaction_not_pending"
+msgstr "This interaction request is no longer pending"
+
+msgid "run_interaction_expired"
+msgstr "This interaction request has expired"
+
+msgid "run_interaction_connection_lost"
+msgstr "The MCP connection was lost; the request cannot be resumed"
+
+msgid "run_interaction_invalid_response"
+msgstr "The interaction response is invalid"
+
+msgid "run_interaction_idempotency_conflict"
+msgstr "This interaction response conflicts with a previous submission"
+
+msgid "run_interaction_schema_invalid"
+msgstr "The interaction response does not match the requested schema"
+
+msgid "run_interaction_secret_field_rejected"
+msgstr "Sensitive fields cannot be collected through an interaction form"
+
+msgid "run_interaction_url_not_allowed"
+msgstr "The interaction URL is not allowed"
+
+msgid "run_interaction_content_too_large"
+msgstr "The interaction response is too large"
+
+msgid "run_interaction_sampling_failed"
+msgstr "The model could not complete the sampling request"
+
+msgid "run_interaction_model_quota_exceeded"
+msgstr "The model quota for this sampling request is exhausted"
+
+msgid "channel_approval_prompt"
+msgstr "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply with the full command /approve {code} to allow or /reject {code} to decline. Ordinary text, including 'agree' or 'reject', cannot decide this call."
+
+msgid "channel_approval_invalid"
+msgstr "This confirmation is invalid, expired, or no longer pending."
+
+msgid "channel_approval_approved"
+msgstr "Approved. The original run will continue."
+
+msgid "channel_approval_rejected"
+msgstr "Declined. The tool will not run; the original run will continue."
+
+msgid "channel_approval_waiting"
+msgstr "A tool confirmation is pending. Reply with the full /approve or /reject command and execution UUID shown above; ordinary text cannot decide it."
+
+msgid "channel_approval_unsupported"
+msgstr "This waiting interaction is not supported in this channel. Use /stop to stop the run."

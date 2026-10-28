@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.workflow.execution_origin import schedule_origin
 from app.services.workflow.tasks import (
     cancel_workflow_task,
     check_scheduled_workflows,
@@ -33,6 +34,8 @@ def test_execute_workflow_success_converts_ids_and_preserves_inputs():
         user_id=user_id,
         team_id=team_id,
         stream=True,
+        # The task is the cron entry: provenance is the schedule surface.
+        origin=schedule_origin(workflow_id),
     )
 
 

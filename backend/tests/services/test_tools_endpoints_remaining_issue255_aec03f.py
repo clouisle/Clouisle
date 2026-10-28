@@ -49,6 +49,10 @@ def tool_record(**kwargs):
         "mcp_config": {},
         "credentials": {},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": None,
         "created_at": None,
@@ -117,8 +121,11 @@ async def test_create_tool_rejects_duplicate_and_creates_with_audit():
         http_config=None,
         code_config=None,
         mcp_config=None,
-        credentials={"token": "secret"},
+        credentials={},
         is_enabled=True,
+        identity_policy="none",
+        connection_fields=[],
+        approval_policy=SimpleNamespace(model_dump=lambda **_kwargs: {}),
     )
 
     with (
@@ -141,7 +148,7 @@ async def test_create_tool_rejects_duplicate_and_creates_with_audit():
         response = await tools.create_tool(team_id, tool_in, request, user)
 
     assert response["data"] == "detail"
-    assert create.await_args.kwargs["credentials"] == {"token": "secret"}
+    assert create.await_args.kwargs["credentials"] == {}
     audit.assert_awaited_once()
 
 
@@ -195,6 +202,9 @@ async def test_update_delete_toggle_and_duplicate_success_paths():
         mcp_config=None,
         credentials={},
         is_enabled=True,
+        identity_policy=None,
+        connection_fields=None,
+        approval_policy=None,
     )
     filters = [QueryResult(existing), QueryResult(None)]
     common = (
@@ -313,84 +323,110 @@ async def test_mcp_list_success_and_error_are_wrapped():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("record", "executor", "expected"),
-    [
-        (
-            tool_record(type=ToolType.MCP, custom_type=None, mcp_config={}),
-            None,
-            False,
-        ),
-        (
-            tool_record(custom_type=CustomToolType.HTTP),
-            "http",
-            True,
-        ),
-        (
-            tool_record(custom_type=CustomToolType.CODE, code_config={}),
-            None,
-            False,
-        ),
-        (
-            tool_record(custom_type=None),
-            None,
-            False,
-        ),
-    ],
-)
-async def test_tool_execute_custom_non_sandbox_branches(record, executor, expected):
-    request = ToolExecuteRequest(name=record.name, arguments={})
-    patches = [
+async def test_tool_execute_custom_non_sandbox_branches():
+    user = User()
+    mcp = tool_record(type=ToolType.MCP, custom_type=None, mcp_config={})
+    mcp_execute = AsyncMock()
+    with (
         patch.object(tools.tool_registry, "get_tool", return_value=None),
-        patch.object(tools, "check_tool_access", new=AsyncMock()),
-        patch.object(tools.Tool, "filter", return_value=QueryResult(record)),
-    ]
-    if executor == "http":
-        patches.append(
-            patch.object(
-                tools,
-                "execute_http_tool",
-                new=AsyncMock(return_value={"success": True, "result": "ok"}),
-            )
+        patch.object(tools.Tool, "filter", return_value=QueryResult(mcp)),
+        patch.object(
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute=mcp_execute),
+        ),
+    ):
+        response = await tools.test_tool(
+            ToolExecuteRequest(name=mcp.name, arguments={}), mcp.team_id, user
         )
-    with ExitStack() as stack:
-        for context in patches:
-            stack.enter_context(context)
-        response = await tools.test_tool(request, record.team_id, User())
-    assert response["data"].success is expected
+    assert response["data"].success is False
+    mcp_execute.assert_not_awaited()
+
+    http = tool_record(
+        custom_type=CustomToolType.HTTP, http_config={"url": "https://example.test"}
+    )
+    http_execute = AsyncMock(return_value={"success": True, "result": "ok"})
+    with (
+        patch.object(tools.tool_registry, "get_tool", return_value=None),
+        patch.object(tools.Tool, "filter", return_value=QueryResult(http)),
+        patch.object(
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute=http_execute),
+        ),
+    ):
+        response = await tools.test_tool(
+            ToolExecuteRequest(name=http.name, arguments={}), http.team_id, user
+        )
+    assert response["data"].success is True
+    assert response["data"].result == "ok"
+
+    code = tool_record(custom_type=CustomToolType.CODE, code_config={})
+    code_execute = AsyncMock()
+    with (
+        patch.object(tools.tool_registry, "get_tool", return_value=None),
+        patch.object(tools.Tool, "filter", return_value=QueryResult(code)),
+        patch.object(
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute=code_execute),
+        ),
+    ):
+        response = await tools.test_tool(
+            ToolExecuteRequest(name=code.name, arguments={}), code.team_id, user
+        )
+    assert response["data"].success is False
+    code_execute.assert_not_awaited()
+
+    unsupported = tool_record(custom_type=None)
+    failing = AsyncMock(side_effect=ValueError("unsupported custom tool type"))
+    with (
+        patch.object(tools.tool_registry, "get_tool", return_value=None),
+        patch.object(tools.Tool, "filter", return_value=QueryResult(unsupported)),
+        patch.object(
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute=failing),
+        ),
+    ):
+        response = await tools.test_tool(
+            ToolExecuteRequest(name=unsupported.name, arguments={}),
+            unsupported.team_id,
+            user,
+        )
+    assert response["data"].success is False
 
 
 @pytest.mark.anyio
-async def test_builtin_execute_uses_global_credentials_and_reports_executor_error():
+async def test_builtin_execute_routes_context_and_shaped_failure():
     request = ToolExecuteRequest(name="search", arguments={"q": "x"})
-    empty = QueryResult(None)
-    configured = QueryResult(SimpleNamespace(credentials={"key": "value"}))
+    execute = AsyncMock(return_value="ok")
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
-        patch(
-            "app.models.tool_config.ToolConfig.filter", side_effect=[empty, configured]
-        ),
+        patch.object(tools, "check_team_access", AsyncMock()),
         patch.object(
-            tools.tool_registry, "execute", new=AsyncMock(return_value="ok")
-        ) as execute,
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute_builtin_tool=execute),
+        ),
     ):
         response = await tools.test_tool(request, uuid4(), User())
     assert response["data"].success is True
-    assert execute.await_args.kwargs["credentials"] == {"key": "value"}
+    assert response["data"].result == "ok"
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["arguments"] == {"q": "x"}
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.TOOL_TEST
 
+    execute.return_value = {"success": False, "error": "safe"}
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
-        patch("app.models.tool_config.ToolConfig.filter", side_effect=[empty, empty]),
+        patch.object(tools, "check_team_access", AsyncMock()),
         patch.object(
-            tools.tool_registry,
-            "execute",
-            new=AsyncMock(side_effect=RuntimeError("secret failure")),
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute_builtin_tool=execute),
         ),
-        patch.object(
-            tools, "resolve_user_visible_error", return_value="safe"
-        ) as resolve,
     ):
         response = await tools.test_tool(request, uuid4(), User())
     assert response["data"].success is False
     assert response["data"].error == "safe"
-    resolve.assert_called_once_with("secret failure")

@@ -101,6 +101,54 @@
     "addMemberPrompt": "从系统中选择用户加入团队",
     "addMemberExactHint": "输入目标用户的完整用户名或邮箱直接添加",
     "userIdentifier": "用户名或邮箱",
-    "userIdentifierPlaceholder": "输入准确的用户名或邮箱，如：john 或 john@example.com"
+    "userIdentifierPlaceholder": "输入准确的用户名或邮箱，如：john 或 john@example.com",
+    "toolApprovals": {
+      "tab": "工具审批",
+      "title": "工具审批策略",
+      "description": "每个工具只保存自己的审批策略。你可以决定它的调用直接执行、始终拒绝，或等待调用者确认。此页面只修改工具级策略，不会创建团队级、站点级、入口级或工作流审批步骤。",
+      "loadFailed": "加载该团队可用的工具失败。",
+      "readDenied": "你没有查看该团队工具的权限。",
+      "retry": "重试",
+      "empty": "该团队暂无可用的工具",
+      "emptyHint": "内置工具以及由该团队创建或共享给该团队的工具会显示在这里。",
+      "count": "共 {count} 个工具",
+      "searchPlaceholder": "搜索工具...",
+      "noMatches": "没有匹配搜索条件的工具。",
+      "decisions": {
+        "allow": "无需确认直接执行",
+        "deny": "始终拒绝",
+        "require_approval": "需要调用者确认"
+      },
+      "types": {
+        "builtin": "内置",
+        "custom": "自定义",
+        "mcp": "MCP",
+        "skill": "技能"
+      },
+      "visibility": {
+        "private": "私有",
+        "team": "团队",
+        "shared": "共享"
+      },
+      "legacyBadge": "旧版审批人",
+      "legacyBlocked": "该策略仍包含不再支持的审批人。请先在编辑器中重置，再保存。",
+      "policyUnavailable": "策略不可用",
+      "edit": "编辑策略",
+      "editTitle": "审批策略：{name}",
+      "editDescription": "只修改该工具自身的审批策略。请选择默认决策；MCP 工具还可以使用准确的操作名（例如 tool:search）添加按操作覆盖。",
+      "save": "保存策略",
+      "saving": "保存中...",
+      "saved": "审批策略已更新",
+      "saveFailed": "更新审批策略失败。",
+      "cancel": "取消",
+      "readOnly": {
+        "sharedTool": "由共享该工具的团队管理。",
+        "permissionDenied": "你没有更新工具的权限。",
+        "viewerOnly": "只读成员不能修改工具策略。",
+        "privateTool": "只有创建者可以修改该私有工具。",
+        "teamAdminOnly": "只有创建者或团队管理员可以修改该工具。",
+        "policyUnavailable": "无法加载该工具的团队定义，审批策略暂不可用。请重新加载列表后再编辑。"
+      }
+    }
   }
 }

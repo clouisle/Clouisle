@@ -50,6 +50,10 @@ from app.schemas.clouisle_package import (
 from app.schemas.response import BusinessError, ResponseCode
 from app.api.v1.endpoints.upload import save_generated_upload
 from app.services.document_processor import document_processor
+from app.services.tool_secret_contract import (
+    enforce_tool_secret_contract,
+    sanitize_tool_configs_for_export,
+)
 
 
 async def _check_permission(
@@ -388,6 +392,10 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             )
         if check_scope:
             await check_team_access(tool.team_id, user)
+        http_config, mcp_config = sanitize_tool_configs_for_export(
+            http_config=tool.http_config,
+            mcp_config=tool.mcp_config,
+        )
         payload = {
             "name": tool.name,
             "display_name": tool.display_name,
@@ -397,12 +405,15 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             "type": _enum_value(tool.type),
             "custom_type": _enum_value(tool.custom_type),
             "parameters": _copy_json(tool.parameters) or [],
-            "http_config": _sanitize_dict(tool.http_config or {}),
+            "http_config": http_config,
             "code_config": _sanitize_dict(tool.code_config or {}),
-            "database_config": _sanitize_dict(
-                getattr(tool, "database_config", None) or {}
-            ),
-            "mcp_config": _sanitize_dict(tool.mcp_config or {}),
+            "mcp_config": mcp_config,
+            # Declarations are not secrets: exporting them keeps the imported
+            # definition usable while the values stay in team connections.
+            "connection_fields": _copy_json(getattr(tool, "connection_fields", None))
+            or [],
+            "identity_policy": getattr(tool, "identity_policy", "none") or "none",
+            "approval_policy": _copy_json(tool.approval_policy) or {},
             "is_enabled": tool.is_enabled,
         }
         return payload, [], tool.name
@@ -441,7 +452,25 @@ class ToolPackageAdapter(ResourcePackageAdapter):
         package_dir: Path | None = None,
         check_update_permission: bool = True,
     ) -> ClouisleImportInstallOut:
+        legacy_key = _legacy_database_builtin_key(resource_payload)
+        if legacy_key is not None:
+            return await self._install_legacy_database(
+                team=team,
+                legacy_key=legacy_key,
+                resource_payload=resource_payload,
+            )
+        # A packaged legacy audience is never silently replaced by the
+        # caller-only default; the import fails until it is reconfigured.
+        from app.services.tool_execution import require_caller_only_policy
+
+        require_caller_only_policy(resource_payload.get("approval_policy"))
         fields = _tool_fields(resource_payload)
+        enforce_tool_secret_contract(
+            credentials=resource_payload.get("credentials"),
+            http_config=fields["http_config"],
+            mcp_config=fields["mcp_config"],
+            connection_fields=fields["connection_fields"],
+        )
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
@@ -457,6 +486,12 @@ class ToolPackageAdapter(ResourcePackageAdapter):
                     )
                 for key, value in fields.items():
                     setattr(existing, key, value)
+                # Packaged definitions never carry inline credentials.
+                existing.credentials = {}
+                # A definition change must invalidate pending approvals.
+                existing.definition_version = (
+                    int(getattr(existing, "definition_version", 1) or 1) + 1
+                )
                 await existing.save()
                 return ClouisleImportInstallOut(updated=existing.id)
 
@@ -476,6 +511,40 @@ class ToolPackageAdapter(ResourcePackageAdapter):
                 **fields,
             )
             return ClouisleImportInstallOut(installed=tool.id)
+
+    async def _install_legacy_database(
+        self, *, team: Team, legacy_key: str, resource_payload: dict[str, Any]
+    ) -> ClouisleImportInstallOut:
+        """Map a pre-cutover database tool package onto the canonical builtin.
+
+        Packages never carried connection secrets, so the imported definition
+        intentionally has no connection; the target team binds one afterwards.
+        Retired legacy rows are historical records and are never revived.
+        """
+        from app.core.database_tool_migration import merge_approval_policies
+        from app.services.builtin_tools import get_builtin_definition
+        from app.services.tool_execution import require_caller_only_policy
+
+        existing = await Tool.filter(team_id=team.id, name=legacy_key).first()
+        definition = await get_builtin_definition(team.id, legacy_key)
+        merged_policy = merge_approval_policies(
+            [definition.approval_policy, resource_payload.get("approval_policy")]
+        )
+        # A package may carry a pre-cutover external audience; it is never
+        # imported (nor silently rewritten) — the existing definition stays.
+        require_caller_only_policy(merged_policy)
+        merged_enabled = bool(definition.is_enabled) and bool(
+            resource_payload.get("is_enabled", True)
+        )
+        await Tool.filter(id=definition.id).update(
+            approval_policy=merged_policy,
+            is_enabled=merged_enabled,
+            definition_version=int(definition.definition_version or 1) + 1,
+        )
+        warning = "clouisle_database_connection_required"
+        if existing is not None and existing.type == DBToolType.BUILTIN:
+            return ClouisleImportInstallOut(updated=definition.id, warnings=[warning])
+        return ClouisleImportInstallOut(installed=definition.id, warnings=[warning])
 
 
 class AgentPackageAdapter(ResourcePackageAdapter):
@@ -556,7 +625,9 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "hide_reasoning": agent.hide_reasoning,
             "enable_citations": getattr(agent, "enable_citations", False),
             "hide_artifact_list": getattr(agent, "hide_artifact_list", False),
-            "tools_config": _copy_json(agent.tools_config) or [],
+            "tools_config": _strip_connection_bindings(
+                _copy_json(agent.tools_config) or []
+            ),
             "enable_attachments": agent.enable_attachments,
             "attachment_config": _copy_json(agent.attachment_config) or {},
             "enable_user_input_request": getattr(
@@ -624,6 +695,9 @@ class AgentPackageAdapter(ResourcePackageAdapter):
         check_update_permission: bool = True,
     ) -> ClouisleImportInstallOut:
         agent_fields = _agent_fields(resource_payload, install_in.dependency_mapping)
+        agent_fields["tools_config"] = await _convert_builtin_tool_references(
+            agent_fields.get("tools_config") or []
+        )
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
@@ -685,7 +759,7 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
         if check_permission:
             self.ensure_export_permission(user)
         workflow = await check_workflow_access(resource_id, user)
-        definition = _copy_json(workflow.definition) or {}
+        definition = _strip_connection_bindings(_copy_json(workflow.definition) or {})
         dependencies = await _workflow_dependencies(definition, workflow.team_id)
         payload = {
             "name": workflow.name,
@@ -737,6 +811,9 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
         check_update_permission: bool = True,
     ) -> ClouisleImportInstallOut:
         fields = _workflow_fields(resource_payload, install_in.dependency_mapping)
+        fields["definition"] = await _convert_builtin_workflow_references(
+            fields.get("definition") or {}
+        )
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
@@ -975,6 +1052,94 @@ class KnowledgeBasePackageAdapter(ResourcePackageAdapter):
             return ClouisleImportInstallOut(installed=kb.id)
 
 
+def _legacy_database_builtin_key(payload: dict[str, Any]) -> str | None:
+    """Map a pre-cutover `custom_type=database` payload to its builtin key."""
+    if payload.get("type") != DBToolType.CUSTOM.value:
+        return None
+    if payload.get("custom_type") != "database":
+        return None
+    from app.core.database_tool_migration import engine_builtin_key
+
+    db_config = payload.get("database_config") or {}
+    key = engine_builtin_key(db_config.get("db_type"))
+    if key is None:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="database_engine_unsupported",
+            status_code=400,
+        )
+    return key
+
+
+async def _convert_builtin_tool_references(
+    configs: list[Any],
+) -> list[Any]:
+    """Turn imported custom/MCP entries referencing a builtin into builtin entries.
+
+    A package exported before the database cutover references a database tool by
+    id. Import maps that dependency to the canonical builtin definition, so the
+    Agent entry must use the builtin name instead of the obsolete custom id.
+    """
+    for entry in configs:
+        if not isinstance(entry, dict) or entry.get("type") not in {"custom", "mcp"}:
+            continue
+        tool_id = entry.get("tool_id") or entry.get("server_id")
+        if not tool_id:
+            continue
+        tool = await Tool.filter(id=tool_id).first()
+        if tool is None or tool.type != DBToolType.BUILTIN:
+            continue
+        entry["type"] = "builtin"
+        entry["name"] = tool.name
+        entry.pop("tool_id", None)
+        entry.pop("server_id", None)
+
+    builtin_names = [
+        entry.get("name")
+        for entry in configs
+        if isinstance(entry, dict) and entry.get("type") == "builtin"
+    ]
+    duplicates = sorted(
+        {name for name in builtin_names if builtin_names.count(name) > 1}
+    )
+    if duplicates:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="clouisle_builtin_tool_duplicate",
+            status_code=400,
+            fields=", ".join(str(name) for name in duplicates),
+        )
+    return configs
+
+
+async def _convert_builtin_workflow_references(
+    definition: dict[str, Any],
+) -> dict[str, Any]:
+    """Rewrite imported workflow tool nodes that now target a builtin."""
+    for node in definition.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        data = node.get("data") or {}
+        config = data.get("toolConfig")
+        if not isinstance(config, dict):
+            config = data.get("config")
+        if not isinstance(config, dict):
+            continue
+        if config.get("toolType") not in {"custom", "mcp"}:
+            continue
+        tool_id = config.get("toolId") or config.get("tool_id")
+        if not tool_id:
+            continue
+        tool = await Tool.filter(id=tool_id).first()
+        if tool is None or tool.type != DBToolType.BUILTIN:
+            continue
+        config["toolType"] = "builtin"
+        config["toolName"] = tool.name
+        config.pop("toolId", None)
+        config.pop("tool_id", None)
+    return definition
+
+
 def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "display_name": payload.get("display_name")
@@ -990,13 +1155,74 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "parameters": payload.get("parameters") or [],
         "http_config": payload.get("http_config") or {},
         "code_config": payload.get("code_config") or {},
-        "database_config": payload.get("database_config") or {},
         "mcp_config": payload.get("mcp_config") or {},
+        "connection_fields": _normalized_connection_fields(
+            payload.get("connection_fields")
+        ),
+        "identity_policy": payload.get("identity_policy") or "none",
+        "approval_policy": payload.get("approval_policy") or {},
     }
 
 
+def _normalized_connection_fields(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    fields: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        fields.append(
+            {
+                "name": name,
+                "label": str(item.get("label") or name).strip() or name,
+                "required": bool(item.get("required", True)),
+                "secret": bool(item.get("secret", True)),
+                **{
+                    key: item[key]
+                    for key in (
+                        "label_key",
+                        "input_type",
+                        "default",
+                        "options",
+                        "input_mode",
+                    )
+                    if key in item
+                },
+            }
+        )
+    return fields
+
+
+def _strip_connection_bindings(value: Any) -> Any:
+    """Remove environment-specific connection bindings from imported definitions.
+
+    A packaged Agent or workflow must not inherit another installation's
+    personal connection id; bindings are chosen again in the target team.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _strip_connection_bindings(item)
+            for key, item in value.items()
+            if key
+            not in {
+                "connection_id",
+                "connectionId",
+                "connection_mode",
+                "connectionMode",
+            }
+        }
+    if isinstance(value, list):
+        return [_strip_connection_bindings(item) for item in value]
+    return value
+
+
 def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str, Any]:
-    tools_config = copy.deepcopy(payload.get("tools_config") or [])
+    tools_config = _strip_connection_bindings(
+        copy.deepcopy(payload.get("tools_config") or [])
+    )
     for config in tools_config:
         if config.get("type") == "builtin" and config.get("name") == "web_search":
             engine = (config.get("config") or {}).get("engine", "auto")
@@ -1074,8 +1300,8 @@ async def _replace_agent_kbs(
 def _workflow_fields(
     payload: dict[str, Any], mapping: dict[str, UUID]
 ) -> dict[str, Any]:
-    definition = _rewrite_references(
-        copy.deepcopy(payload.get("definition") or {}), mapping
+    definition = _strip_connection_bindings(
+        _rewrite_references(copy.deepcopy(payload.get("definition") or {}), mapping)
     )
     trigger_type = payload.get("trigger_type") or TriggerType.MANUAL.value
     if trigger_type == TriggerType.WEBHOOK.value:

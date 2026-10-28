@@ -38,7 +38,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { formatValidationSummaryMessage } from '@/lib/validation'
 import { toast } from 'sonner'
-import { ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
+import { ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig, ToolApprovalPolicy, ToolConnectionField, ToolIdentityPolicy } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { ApiError } from '@/lib/api'
 import { adminToolsApi, teamsApi as adminTeamsApi, type Team } from '@/lib/api/admin'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -56,6 +64,7 @@ type CodeLanguage = (typeof CODE_LANGUAGES)[number]['value']
 const DEFAULT_CODE: Record<CodeLanguage, string> = {
   javascript: `// JavaScript Tool
 // Available: params (object with input parameters)
+// Optional: credentials (object with the selected connection's fields)
 // Return: result as string or object
 
 async function execute(params) {
@@ -72,6 +81,7 @@ return execute(params);
 `,
   python: `# Python Tool
 # Available: params (dict with input parameters)
+# Optional: credentials (dict with the selected connection's fields)
 # Return: result as string or dict
 
 def execute(params):
@@ -230,6 +240,11 @@ function CodeToolPageContent() {
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('code')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // 参数定义
@@ -293,6 +308,9 @@ function CodeToolPageContent() {
       setIcon(tool.icon || '')
       setCategory(tool.category || 'code')
       setIsEnabled(tool.is_enabled)
+      setIdentityPolicy(getToolIdentityPolicy(tool))
+      setConnectionFields(getToolConnectionFields(tool))
+      setApprovalPolicy(getToolApprovalPolicy(tool))
       setFieldErrors({})
 
       // 加载参数
@@ -510,6 +528,9 @@ function CodeToolPageContent() {
         custom_type: 'code',
         parameters: validParams,
         code_config: codeConfig,
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       if (isEditing && toolId) {
@@ -1182,8 +1203,22 @@ function CodeToolPageContent() {
                     <span className="text-xs text-muted-foreground">{t('codeEditor.noOutput')}</span>
                   )}
                 </div>
+                {identityPolicy !== 'none' && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t('codeEditor.connectionRunHint')}
+                  </p>
+                )}
               </CollapsibleContent>
             </Collapsible>
+
+            <ToolPolicyEditor
+              identityPolicy={identityPolicy}
+              onIdentityPolicyChange={setIdentityPolicy}
+              connectionFields={connectionFields}
+              onConnectionFieldsChange={setConnectionFields}
+              approvalPolicy={approvalPolicy}
+              onApprovalPolicyChange={setApprovalPolicy}
+            />
           </div>
         </aside>
       </div>

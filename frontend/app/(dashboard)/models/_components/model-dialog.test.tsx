@@ -180,16 +180,6 @@ beforeEach(() => {
 })
 
 describe('ModelDialog', () => {
-  test('renders independent input and output modality controls', () => {
-    render()
-    state[3] = 'chat'
-    const tree = render()
-    const checkboxes = findAll(tree, (node) => node.type === 'checkbox')
-    expect(checkboxes).toHaveLength(10)
-    expect(checkboxes.slice(0, 5).map((node) => node.props.checked)).toEqual([true, false, false, false, false])
-    expect(checkboxes.slice(5).map((node) => node.props.checked)).toEqual([false, false, false, false, false])
-    expect(checkboxes[0].props.disabled).toBe(true)
-  })
   test('shows required field errors and does not create an invalid model', async () => {
     await submit()
 

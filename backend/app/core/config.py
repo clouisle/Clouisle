@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 
+    # Tool-domain envelope encryption keyring (connections, approvals, OAuth,
+    # interactions). Comma-separated ``key_id:fernet_key`` entries; Fernet keys
+    # are urlsafe-base64 32-byte values. When unset, a derived legacy key id
+    # ``secret_key`` keeps upgrades decryptable until rotated.
+    TOOL_SECRET_KEYS: str = ""
+    TOOL_SECRET_PRIMARY_KEY_ID: str = ""
+
     # Database
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "postgres"
@@ -118,6 +125,15 @@ class Settings(BaseSettings):
     STREAM_TOOL_TIMEOUT_CODE: int = 60
     STREAM_TOOL_TIMEOUT_MCP: int = 60
     STREAM_TOOL_TIMEOUT_DOWNLOAD: int = 60
+
+    # Server-initiated MCP interactions (sampling approval, elicitation form
+    # or URL). This is the hard answer deadline and the upper bound for a
+    # live session's callback wait; the agent/workflow worker waits on the
+    # durable row, never on an unbounded browser connection.
+    MCP_INTERACTION_TTL_SECONDS: int = Field(default=300, ge=10, le=900)
+    # Live MCP resource subscriptions are request-scoped; this bounds how long
+    # one SSE request may hold the session before sending ttl_expired.
+    MCP_SUBSCRIPTION_TTL_SECONDS: int = Field(default=300, ge=10, le=3600)
 
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True

@@ -49,10 +49,7 @@
 | `artifact` | 保存 / 导出产物 | sandbox |
 | `ask_user` | 向用户追问（需 Agent 开启 `enable_user_input_request`） | interaction |
 
-数据库连接器（PostgreSQL / MySQL / MongoDB / Redis）位于同一包下
-（`backend/app/llm/tools/builtin/{postgresql,mysql_db,mongo_db,redis_db}.py`），
-但不走内置工具注册表，而是作为 `custom` 工具的 `database` 子类型由
-`db_executor.py` 执行。
+数据库查询通过 `postgresql_query`、`mysql_query`、`mongodb_query`、`redis_query` 四个内置工具注册。引擎实现位于 `backend/app/llm/tools/builtin/{postgresql,mysql_db,mongo_db,redis_db}.py`，由 `db_executor.py` 执行只读操作。地址、账号等配置来自所选个人/团队连接，不再提供 `custom_type=database` 创建入口。
 
 ### 自定义工具 (Custom)
 
@@ -82,7 +79,10 @@
 
 **变量替换：**
 - 使用 `{{variable}}` 语法在 URL、Headers、Query Params、Body 中插入变量
-- 变量来源：工具参数 (`arguments`) + 凭证 (`credentials`)
+- 变量来源：工具参数 (`arguments`) + 连接凭证 (`credentials`)
+- URL 模板在发送请求前渲染，任何未解析（缺失或 `null`）的占位符都会让调用失败，不会静默删除片段而把请求发往错误地址
+- 占位符按原值直接插入 URL（不做额外转义）；如果参数可能包含 `/`、`?`、`&`、空格等保留字符，请在参数值中自行进行 URL 编码。`query_params` 字段由 httpx 统一编码
+- 最终渲染后的 URL 统一交给 `validate_external_http_url` 做 SSRF 校验，DNS 解析与重定向防护保持生效
 
 #### 代码工具
 
@@ -235,7 +235,7 @@ MCP stdio 模式需要以下运行时环境：
 
 ### 实现位置
 
-- `backend/app/llm/tools/sandbox.py`：代码工具入口，将 Python/JavaScript snippet 编译成 `SandboxJob`。
+- `backend/app/services/tool.py`（代码工具分支）：将 Tool 的 `code_config` 通过 `compile_code_config_job` 编译成 `SandboxJob` 并提交 gateway。
 - `backend/app/services/sandbox/gateway.py`：结果轮询、session 绑定及 Celery 队列路由。
 - `backend/app/tasks/sandbox.py`：worker 侧任务检查与状态持久化。
 - `backend/app/services/sandbox/manager.py`：工作区、依赖环境、进程执行和结果收集。
@@ -243,7 +243,7 @@ MCP stdio 模式需要以下运行时环境：
 
 ### 任务路由与执行流程
 
-1. `execute_code()` 检查 `SANDBOX_RUNTIME_ENABLED`，编译 snippet 并调用 `SandboxGateway`；运行时关闭或任务失败时直接返回失败，不在调用进程执行代码。
+1. 工具代码分支编译 `SandboxJob` 后调用 `SandboxGateway`；运行时关闭或任务失败时直接返回失败，不在调用进程执行代码。
 2. Gateway 先写入 queued result，再派发 Celery 任务。无 session 的任务使用共享 `sandbox` 队列；session 任务先等待一个已就绪 worker 并确认其物理工作区已创建，然后路由到 `sandbox.worker.<sha256(worker_id)>`。
 3. Redis binding 记录 session 的 worker、process instance、node、storage、workspace 和 generation。后续 session 任务都投递到该 worker 的专属队列，并携带 binding。
 4. Worker 在执行前校验当前身份、Redis lease 和 binding。过期 generation 或错误 worker 上的消息以 obsolete 失败结束，不转发，也不自动重放。

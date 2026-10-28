@@ -246,3 +246,130 @@ def test_validate_user_answers_allows_empty_string_for_optional_options_question
     }
     validate_user_answers(pending_input, {"optional_env": ""})
     validate_user_answers(pending_input, {"optional_env": "   "})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("surface", ["chat", "workflow"])
+async def test_authenticated_mcp_discovery_uses_each_invoking_users_account(
+    monkeypatch, surface
+):
+    from contextlib import asynccontextmanager
+
+    import mcp.types as types
+    from tortoise import Tortoise
+
+    from app.llm.tools.mcp_client import McpClient, McpServerCapabilities
+    from app.models.tool import Tool
+    from app.models.user import Team, TeamMember, User
+    from app.schemas.response import BusinessError
+    from app.schemas.tool_connection import ToolConnectionCreate
+    from app.services.agent import AgentService
+    from app.services.tool_connections import ToolConnectionService
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+
+    @asynccontextmanager
+    async def authorized_catalog(client, deadline):
+        account = {"Bearer alice": "alice", "Bearer bob": "bob"}.get(
+            (client._http_headers() or {}).get("Authorization")
+        )
+        if account is None:
+            raise PermissionError("MCP catalog requires an authorized account")
+
+        async def list_tools(**_kwargs):
+            return types.ListToolsResult(
+                tools=[
+                    types.Tool(name=f"{account}_tasks", inputSchema={"type": "object"})
+                ]
+            )
+
+        yield SimpleNamespace(list_tools=list_tools), McpServerCapabilities(tools=True)
+
+    monkeypatch.setattr(McpClient, "_open", authorized_catalog)
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        team = await Team.create(name="MCP discovery")
+        users = []
+        tool = await Tool.create(
+            team=team,
+            name="tasks",
+            display_name="Tasks",
+            description="Account-specific task tools",
+            type="mcp",
+            visibility="team",
+            identity_policy="selectable",
+            connection_fields=[{"name": "token", "required": True, "secret": True}],
+            mcp_config={
+                "transport": "http",
+                "url": "https://mcp.example.test",
+                "headers": {"Authorization": "Bearer {{token}}"},
+            },
+        )
+        for name in ("alice", "bob", "missing"):
+            user = await User.create(
+                username=name,
+                email=f"{name}@discovery.test",
+                hashed_password="x",
+                is_superuser=True,
+            )
+            await TeamMember.create(team=team, user=user, role="owner")
+            users.append(user)
+            if name != "missing":
+                await ToolConnectionService.create_connection(
+                    actor=user,
+                    payload=ToolConnectionCreate(
+                        team_id=team.id,
+                        tool_id=tool.id,
+                        scope="user",
+                        name=name,
+                        config={"token": name},
+                    ),
+                )
+        agent = _agent(
+            [{"type": "mcp", "server_id": str(tool.id)}],
+            team_id=team.id,
+            enable_user_input_request=False,
+        )
+
+        async def discover(user):
+            with tool_identity_scope(
+                RuntimeToolIdentity(
+                    entrypoint=surface,
+                    entrypoint_id=str(agent.id),
+                    interactive=surface == "chat",
+                )
+            ):
+                if surface == "chat":
+                    schemas = await get_agent_tools(agent, user_id=user.id)
+                    return [schema["function"]["name"] for schema in schemas]
+                schemas = await AgentService()._get_agent_tools(
+                    agent, user_id=str(user.id)
+                )
+                return [schema.function.name for schema in schemas]
+
+        assert await discover(users[0]) == ["mcp_tasks_alice_tasks"]
+        assert await discover(users[1]) == ["mcp_tasks_bob_tasks"]
+        with pytest.raises(BusinessError) as exc:
+            await discover(users[2])
+        assert exc.value.msg_key == "agent_tool_connection_required"
+        assert exc.value.kwargs == {"tool_name": "Tasks"}
+        tool.visibility = "private"
+        tool.created_by_id = users[0].id
+        await tool.save()
+        users[1].is_superuser = False
+        await users[1].save()
+        from app.models.user import Permission, Role
+
+        permission = await Permission.create(code="team:read", scope="team")
+        role = await Role.create(name="MCP reader")
+        await role.permissions.add(permission)
+        await users[1].roles.add(role)
+        with pytest.raises(BusinessError) as exc:
+            await discover(users[1])
+        assert exc.value.msg_key == "agent_tool_access_denied"
+        assert exc.value.kwargs == {"tool_name": "Tasks"}
+        assert (await Tool.get(id=tool.id)).mcp_config["headers"] == {
+            "Authorization": "Bearer {{token}}"
+        }
+    finally:
+        await Tortoise.close_connections()

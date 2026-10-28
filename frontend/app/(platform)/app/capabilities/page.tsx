@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -35,12 +35,12 @@ import {
 } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
+import { toolConnectionsApi } from '@/lib/api/tool-connections'
 import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
-import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
-import { ToolConfigDialog } from './_components/tool-config-dialog'
+import { ToolConnectionDialog } from '@/components/tools/tool-connection-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
-import { DatabaseToolDialog } from './_components/database-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
+import { McpToolBrowser } from '@/components/tools/mcp-tool-browser'
 import { ToolShareDialog } from './_components/tool-share-dialog'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { useCanPerform } from '@/components/permission-guard'
@@ -80,15 +80,16 @@ export default function CapabilitiesPage() {
   // Config dialog (for builtin tools)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [configuringTool, setConfiguringTool] = useState<Tool | null>(null)
-  const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false)
+  // Builtin name -> whether usable connection state currently exists. Only
+  // tools with a successful lookup appear here; absence means "no evidence".
+  const [configuredBuiltins, setConfiguredBuiltins] = useState<Record<string, boolean>>({})
 
   // HTTP tool dialog
   const [httpDialogOpen, setHttpDialogOpen] = useState(false)
   const [editingHttpTool, setEditingHttpTool] = useState<ToolDetail | null>(null)
-  const [databaseDialogOpen, setDatabaseDialogOpen] = useState(false)
-  const [editingDatabaseTool, setEditingDatabaseTool] = useState<ToolDetail | null>(null)
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
   const [editingMcpTool, setEditingMcpTool] = useState<ToolDetail | null>(null)
+  const [browsingMcpTool, setBrowsingMcpTool] = useState<Tool | null>(null)
 
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -151,6 +152,39 @@ export default function CapabilitiesPage() {
       // 合并所有类型的工具
       const allTools = [...response.builtin, ...response.custom, ...response.mcp]
       setTools(allTools)
+
+      const connectionAware = allTools.filter(
+        (tool) =>
+          tool.type === 'builtin' &&
+          (tool.requires_config ||
+            (tool.identity_policy && tool.identity_policy !== 'none'))
+      )
+
+      // A builtin only shows "configured" when connection state proves it.
+      // One team-scoped list covers both binding forms a materialized builtin
+      // can have (stable definition id or builtin key); failed lookups leave
+      // no evidence so the card never claims unverified state.
+      try {
+        const connections = await toolConnectionsApi.list(currentTeam.id)
+        const activeConnections = connections.filter(
+          (connection) => connection.status === 'active'
+        )
+        setConfiguredBuiltins(
+          Object.fromEntries(
+            connectionAware.map((tool): [string, boolean] => [
+              tool.name,
+              activeConnections.some(
+                (connection) =>
+                  (tool.id !== undefined && connection.tool_id === tool.id) ||
+                  connection.builtin_tool_key === tool.name
+              ),
+            ])
+          )
+        )
+      } catch (error) {
+        console.error('Failed to load tool connection state:', error)
+        setConfiguredBuiltins({})
+      }
     } catch (error) {
       console.error('Failed to load tools:', error)
     } finally {
@@ -177,8 +211,8 @@ export default function CapabilitiesPage() {
   // 编辑工具
   const handleEditTool = async (tool: Tool) => {
     if (!tool.id) {
-      // 内置工具 - 打开配置弹窗
-      if (tool.requires_config) {
+      // 内置工具 - 打开连接管理弹窗
+      if (tool.requires_config || (tool.identity_policy && tool.identity_policy !== 'none')) {
         handleConfigureTool(tool)
       }
       return
@@ -196,22 +230,20 @@ export default function CapabilitiesPage() {
       if (detail.type === 'mcp') {
         setEditingMcpTool(detail)
         setMcpDialogOpen(true)
+      } else if (detail.type === 'builtin') {
+        if (detail.requires_config || (detail.identity_policy && detail.identity_policy !== 'none')) {
+          handleConfigureTool(detail)
+        }
       } else if (detail.type === 'custom') {
         if (detail.custom_type === 'http') {
           setEditingHttpTool(detail)
           setHttpDialogOpen(true)
-        } else if (detail.custom_type === 'database') {
-          setEditingDatabaseTool(detail)
-          setDatabaseDialogOpen(true)
         } else if (detail.custom_type === 'code') {
           // 代码工具跳转到独立页面
           router.push(`/app/capabilities/code?id=${tool.id}`)
         } else {
           // 未知的自定义工具类型，尝试根据配置判断
-          if (detail.database_config && Object.keys(detail.database_config).length > 0) {
-            setEditingDatabaseTool(detail)
-            setDatabaseDialogOpen(true)
-          } else if (detail.http_config && Object.keys(detail.http_config).length > 0) {
+          if (detail.http_config && Object.keys(detail.http_config).length > 0) {
             setEditingHttpTool(detail)
             setHttpDialogOpen(true)
           } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
@@ -223,6 +255,7 @@ export default function CapabilitiesPage() {
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
+      toast.error(t('tools.error.loadToolDetailFailed'))
     }
   }
 
@@ -241,32 +274,6 @@ export default function CapabilitiesPage() {
   const handleCreateMcpTool = () => {
     setEditingMcpTool(null)
     setMcpDialogOpen(true)
-  }
-  // 创建 Database 工具
-  const handleCreateDatabaseTool = () => {
-    setEditingDatabaseTool(null)
-    setDatabaseDialogOpen(true)
-  }
-
-  // 保存 Database 工具
-  const handleSaveDatabaseTool = async (data: ToolCreateInput | ToolUpdateInput) => {
-    if (!currentTeam?.id) return
-
-    try {
-      if (editingDatabaseTool?.id) {
-        await toolsApi.update(editingDatabaseTool.id, data as ToolUpdateInput)
-        toast.success(t('tools.toolUpdated'))
-      } else {
-        await toolsApi.create(currentTeam.id, data as ToolCreateInput)
-        toast.success(t('tools.toolCreated'))
-      }
-      setDatabaseDialogOpen(false)
-      setEditingDatabaseTool(null)
-      loadTools()
-    } catch (error) {
-      console.error('Failed to save database tool:', error)
-      throw error
-    }
   }
 
   // 保存 HTTP 工具
@@ -307,39 +314,6 @@ export default function CapabilitiesPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      throw error
-    }
-  }
-
-  // 保存内置工具配置
-  const handleSaveConfig = async (config: Record<string, string>) => {
-    if (!currentTeam?.id || !configuringTool) return
-
-    try {
-      // 先尝试获取现有配置
-      let configExists = false
-      try {
-        await toolsApi.getConfig(configuringTool.name, currentTeam.id)
-        configExists = true
-      } catch (error: unknown) {
-        // 404 表示配置不存在，需要创建
-        const apiError = error as { response?: { status?: number } }
-        if (apiError?.response?.status !== 404) {
-          throw error
-        }
-      }
-
-      // 根据配置是否存在选择创建或更新
-      if (configExists) {
-        await toolsApi.updateConfig(configuringTool.name, config, currentTeam.id)
-      } else {
-        await toolsApi.createConfig(configuringTool.name, config, currentTeam.id)
-      }
-
-      toast.success(t('tools.configSaved'))
-      setConfigDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to save config:', error)
       throw error
     }
   }
@@ -387,9 +361,11 @@ export default function CapabilitiesPage() {
 
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
-        <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">
@@ -458,15 +434,6 @@ export default function CapabilitiesPage() {
                         </span>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleCreateDatabaseTool}>
-                      <Database className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span>{t('tools.createMenu.database')}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {t('tools.createMenu.databaseDesc')}
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleCreateMcpTool}>
                       <Plug className="mr-2 h-4 w-4" />
                       <div className="flex flex-col">
@@ -482,28 +449,6 @@ export default function CapabilitiesPage() {
             </div>
           </div>
 
-          {tools.some((tool) => tool.type === 'builtin' && tool.name === 'web_search') && (
-            <div
-              className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground"
-              data-testid="web-search-managed-notice"
-            >
-              <div className="flex items-start gap-2">
-                <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>{t('tools.webSearchManaged')}</p>
-              </div>
-              {canPerform('admin:capability:read') && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => setWebSearchDialogOpen(true)}
-                >
-                  <Settings className="mr-1.5 h-3.5 w-3.5" />
-                  {t('tools.webSearchConfigure')}
-                </Button>
-              )}
-            </div>
-          )}
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -536,10 +481,6 @@ export default function CapabilitiesPage() {
                         <Code className="mr-2 h-4 w-4" />
                         {t('tools.createMenu.code')}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleCreateDatabaseTool}>
-                        <Database className="mr-2 h-4 w-4" />
-                        {t('tools.createMenu.database')}
-                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleCreateMcpTool}>
                         <Plug className="mr-2 h-4 w-4" />
                         {t('tools.createMenu.mcp')}
@@ -557,11 +498,15 @@ export default function CapabilitiesPage() {
               onEdit={handleEditTool}
               onDelete={handleDeleteClick}
               onConfigure={handleConfigureTool}
+              onBrowseMcp={canPerform('tool:execute') ? setBrowsingMcpTool : undefined}
               onShare={handleShareTool}
               canConfigure={canConfigureTool}
               canEdit={canEditTool}
               canShare={canShareTool}
               canDelete={canDeleteTool}
+              configuredFor={(tool) =>
+                tool.type === 'builtin' ? configuredBuiltins[tool.name] : undefined
+              }
             />
           )}
         </TabsContent>
@@ -582,13 +527,6 @@ export default function CapabilitiesPage() {
         onImported={() => loadTools()}
       />
 
-      {webSearchDialogOpen && (
-        <WebSearchConfigDialog
-          open={webSearchDialogOpen}
-          onOpenChange={setWebSearchDialogOpen}
-          onSaved={loadTools}
-        />
-      )}
 
       {/* 工具测试面板 */}
       <ToolTestPanel
@@ -598,12 +536,13 @@ export default function CapabilitiesPage() {
         teamId={currentTeam?.id}
       />
 
-      {/* 内置工具配置弹窗 */}
-      <ToolConfigDialog
+      {/* 内置工具连接管理弹窗 */}
+      <ToolConnectionDialog
         tool={configuringTool}
+        teamId={currentTeam?.id}
         open={configDialogOpen}
         onOpenChange={setConfigDialogOpen}
-        onSave={handleSaveConfig}
+        onChanged={loadTools}
       />
 
       {/* HTTP 工具弹窗 */}
@@ -614,18 +553,17 @@ export default function CapabilitiesPage() {
         onSave={handleSaveHttpTool}
       />
 
-      {/* Database 工具弹窗 */}
-      <DatabaseToolDialog
-        tool={editingDatabaseTool}
-        open={databaseDialogOpen}
-        onOpenChange={setDatabaseDialogOpen}
-        onSave={handleSaveDatabaseTool}
-      />
       <McpToolDialog
         tool={editingMcpTool}
         open={mcpDialogOpen}
         onOpenChange={setMcpDialogOpen}
         onSave={handleSaveMcpTool}
+      />
+      <McpToolBrowser
+        tool={browsingMcpTool}
+        teamId={currentTeam?.id}
+        open={!!browsingMcpTool}
+        onOpenChange={(open) => { if (!open) setBrowsingMcpTool(null) }}
       />
 
       {/* 工具共享对话框 */}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Loader2, Plus, Trash2, ChevronDown } from 'lucide-react'
 import {
@@ -15,7 +15,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import {
   Collapsible,
@@ -29,8 +28,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory } from '@/lib/api/tools'
+import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolApprovalPolicy, ToolConnectionField, ToolIdentityPolicy } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { cn } from '@/lib/utils'
+import { VariableInput } from '@/components/tools/variable-input'
 import { FieldError } from '@/components/ui/field'
 import { ToolCategoryInput } from '@/app/(platform)/app/capabilities/_components/tool-category-input'
 import {
@@ -84,6 +92,11 @@ export function HttpToolDialog({
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('api')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // HTTP 配置
@@ -93,6 +106,15 @@ export function HttpToolDialog({
   const [queryParams, setQueryParams] = useState<KeyValuePair[]>([{ key: '', value: '' }])
   const [bodyTemplate, setBodyTemplate] = useState('')
   const [timeout, setTimeout] = useState<number | ''>(30)
+
+  // {{ 补全候选：已有工具参数 + 已声明的连接字段名称（不涉及字段值）
+  const completionVariables = useMemo(
+    () => [
+      ...(tool?.parameters ?? []).map((parameter) => parameter.name),
+      ...connectionFields.map((field) => field.name),
+    ],
+    [tool, connectionFields]
+  )
 
   // UI 状态
   const [isLoading, setIsLoading] = useState(false)
@@ -110,6 +132,9 @@ export function HttpToolDialog({
         setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
+        setIdentityPolicy(getToolIdentityPolicy(tool))
+        setConnectionFields(getToolConnectionFields(tool))
+        setApprovalPolicy(getToolApprovalPolicy(tool))
 
         if (tool.http_config) {
           setMethod(tool.http_config.method as typeof HTTP_METHODS[number])
@@ -135,6 +160,9 @@ export function HttpToolDialog({
         setIcon('')
         setCategory('api')
         setIsEnabled(true)
+        setIdentityPolicy('none')
+        setConnectionFields([])
+        setApprovalPolicy(getToolApprovalPolicy(null))
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -182,6 +210,9 @@ export function HttpToolDialog({
         type: 'custom',
         custom_type: 'http',
         http_config: httpConfig,
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(data)
@@ -320,6 +351,15 @@ export function HttpToolDialog({
             </div>
           </div>
 
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+          />
+
           {/* HTTP 配置 */}
           <div className="space-y-4 border rounded-lg p-4">
             <h4 className="font-medium">{t('httpDialog.httpConfig')}</h4>
@@ -337,14 +377,17 @@ export function HttpToolDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <Input
+              <VariableInput
                 placeholder={t('httpDialog.urlPlaceholder')}
                 value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value)
+                onChange={(value) => {
+                  setUrl(value)
                   setFieldErrors((prev) => clearValidationError(prev, 'url'))
                 }}
+                variables={completionVariables}
                 className="flex-1"
+                suggestionTitle={t('httpDialog.variableCompletion')}
+                ariaInvalid={!!fieldErrors.url}
               />
             </div>
             <FieldError>{fieldErrors.url}</FieldError>
@@ -369,11 +412,13 @@ export function HttpToolDialog({
                       onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, headers, setHeaders, 'headers')}
                       className="flex-1"
                     />
-                    <Input
+                    <VariableInput
                       placeholder="Value"
                       value={header.value}
-                      onChange={(e) => updateKeyValuePair(index, 'value', e.target.value, headers, setHeaders, 'headers')}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, headers, setHeaders, 'headers')}
+                      variables={completionVariables}
                       className="flex-1"
+                      suggestionTitle={t('httpDialog.variableCompletion')}
                     />
                     <Button
                       variant="ghost"
@@ -413,11 +458,13 @@ export function HttpToolDialog({
                       onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, queryParams, setQueryParams, 'queryParams')}
                       className="flex-1"
                     />
-                    <Input
+                    <VariableInput
                       placeholder="Value"
                       value={param.value}
-                      onChange={(e) => updateKeyValuePair(index, 'value', e.target.value, queryParams, setQueryParams, 'queryParams')}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, queryParams, setQueryParams, 'queryParams')}
+                      variables={completionVariables}
                       className="flex-1"
+                      suggestionTitle={t('httpDialog.variableCompletion')}
                     />
                     <Button
                       variant="ghost"
@@ -450,15 +497,19 @@ export function HttpToolDialog({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-2">
-                  <Textarea
+                  <VariableInput
                     placeholder='{"key": "{{value}}"}'
                     value={bodyTemplate}
-                    onChange={(e) => {
-                      setBodyTemplate(e.target.value)
+                    onChange={(value) => {
+                      setBodyTemplate(value)
                       setFieldErrors((prev) => clearValidationError(prev, 'bodyTemplate'))
                     }}
+                    variables={completionVariables}
+                    multiline
                     rows={4}
                     className="font-mono text-sm"
+                    suggestionTitle={t('httpDialog.variableCompletion')}
+                    ariaInvalid={!!fieldErrors.bodyTemplate}
                   />
                   <FieldError>{fieldErrors.bodyTemplate}</FieldError>
                   <p className="text-xs text-muted-foreground mt-1">

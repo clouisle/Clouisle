@@ -8,7 +8,9 @@ import asyncio
 import json
 import logging
 import math
+import time
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from app.core.network_security import (
     get_ssrf_allowed_targets,
@@ -27,6 +29,59 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 logger = logging.getLogger(__name__)
+
+
+def _first_configured(config: dict[str, Any], *names: str) -> Any:
+    """First non-empty value among the accepted field spellings."""
+    for name in names:
+        value = config.get(name)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _optional_uuid(value: Any) -> tuple[UUID | None, bool]:
+    """Parse an optional UUID; the flag is False when a value is malformed."""
+    if value is None or value == "":
+        return None, True
+    try:
+        return UUID(str(value)), True
+    except (TypeError, ValueError, AttributeError):
+        return None, False
+
+
+def _error_result(error: str, output_var: str, start_time: float) -> ExecutionResult:
+    """Node failure with the same output shape as the generic error path."""
+    from app.core.i18n import t
+
+    duration_ms = int((time.time() - start_time) * 1000)
+    public_error = t(error)
+    outputs: dict[str, Any] = {
+        "result": None,
+        "status": "error",
+        "error": public_error,
+        "executionTime": duration_ms,
+    }
+    if output_var and output_var != "result":
+        outputs[output_var] = None
+    return ExecutionResult(outputs=outputs, error=error)
+
+
+async def _cancel_unexecuted(execution_id: UUID) -> None:
+    """Cancel a pending approval request that no run will ever resume."""
+    from app.schemas.tool_approval import ToolExecutionCancelReason
+    from app.services import tool_approvals
+
+    try:
+        await tool_approvals.cancel_execution(
+            execution_id, reason=ToolExecutionCancelReason.CANCELLED
+        )
+    except Exception:
+        logger.warning(
+            "Failed to cancel unexecuted tool execution %s",
+            execution_id,
+            exc_info=True,
+        )
 
 
 def _convert_tool_input(value: WorkflowValue, parameter_type: str) -> WorkflowValue:
@@ -92,12 +147,23 @@ class ToolNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute tool node."""
         from app.models.tool import Tool
+        from app.models.user import User
         from app.models.workflow import Workflow
+        from app.schemas.tool_approval import ExecutionRunKind
         from app.services.tool import ToolExecutor
+        from app.services.tool_execution import PendingToolApproval, ToolCallContext
+
+        from ..execution_origin import read_run_origin
+        from ..tool_approval_resume import (
+            approval_deadline_passed,
+            find_execution_for_token,
+            terminal_execution_error,
+            token_for_attempt,
+        )
 
         tool_executor = ToolExecutor()
-        import time
 
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         # Try toolConfig first (frontend structure), then fall back to config.
         config = node_data.get("toolConfig") or node_data.get("config", {})
@@ -120,6 +186,24 @@ class ToolNodeExecutor(NodeExecutor):
         if not tool_id and not (tool_type == "builtin" and tool_name):
             return ExecutionResult(error="tool_not_found")
 
+        # Stored connection references: canonical snake_case fields with the
+        # camelCase names the workflow node editor persists.
+        connection_mode = _first_configured(config, "connectionMode", "connection_mode")
+        connection_id, connection_id_valid = _optional_uuid(
+            _first_configured(config, "connectionId", "connection_id")
+        )
+        if not connection_id_valid:
+            return ExecutionResult(error="tool_connection_invalid")
+
+        # MCP operations are keyed by the original server-side tool name; a
+        # model-facing alias must never become the policy key.
+        raw_operation = _first_configured(config, "mcpToolName", "mcp_tool_name")
+        if raw_operation is not None and (
+            not isinstance(raw_operation, str) or not raw_operation.strip()
+        ):
+            return ExecutionResult(error="invalid_tool_arguments")
+        operation = raw_operation.strip() if isinstance(raw_operation, str) else None
+
         # Resolve inputs
         inputs = await self.resolve_inputs(context, input_mappings)
         workflow_team_id = None
@@ -137,16 +221,11 @@ class ToolNodeExecutor(NodeExecutor):
                         inputs[name], mapping.get("type", "")
                     )
 
-            # Execute tool
-            if tool_type == "builtin" and tool_name:
-                result = await tool_executor.execute_builtin_tool(
-                    tool_name=tool_name,
-                    arguments=inputs,
-                    team_id=workflow_team_id,
-                    workflow_run_id=run.id,
-                )
-            else:
-                # Load tool with team boundary verification
+            # Load the tool with the workflow team's boundary before any
+            # identity/approval work: an inaccessible tool is not distinguishable
+            # from a missing one and leaks no approval state.
+            tool = None
+            if not (tool_type == "builtin" and tool_name):
                 from app.models.tool import ToolShare, ToolVisibility
 
                 tool = await Tool.filter(id=tool_id).first()
@@ -172,12 +251,100 @@ class ToolNodeExecutor(NodeExecutor):
                     and str(run.triggered_by_id) != str(tool.created_by_id)
                 ):
                     return ExecutionResult(error="tool_not_found")
+
+                from app.models.tool import ToolType
+
+                tool_type_value = getattr(tool.type, "value", tool.type)
+                if tool_type_value == ToolType.MCP.value and operation is None:
+                    # An MCP node without its original internal tool name would
+                    # execute (and policy-key) the wrong operation.
+                    return ExecutionResult(error="invalid_tool_arguments")
+
+            # A workflow is non-interactive for approval gates; a manual run
+            # may still auto-select the triggering user's personal connection.
+            # The identity, team and stable entrypoint reference are built here
+            # and never taken from node inputs, so a renamed alias cannot
+            # redirect the execution.
+            actor = (
+                await User.get_or_none(id=run.triggered_by_id)
+                if run.triggered_by_id
+                else None
+            )
+            if actor is None or workflow_team_id is None or not run.workflow_id:
+                return _error_result("user_context_required", output_var, start_time)
+
+            # Provenance comes from the trusted creation route, never from the
+            # workflow's configured trigger: a manual run of a cron workflow is
+            # still the workflow surface, and an API-key/embed run must bind its
+            # grants to that key/surface rather than to the workflow.
+            origin = read_run_origin(run)
+            if origin is None:
+                return _error_result("user_context_required", output_var, start_time)
+            # Stable per-attempt call id: the deferred approval execution is
+            # found again (never recreated) on retry and on resume.
+            call_token = await token_for_attempt(run, node_id)
+            call_context = ToolCallContext(
+                actor=actor,
+                team_id=workflow_team_id,
+                entrypoint=origin.entrypoint,
+                entrypoint_id=origin.entrypoint_id,
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=run.id,
+                tool_call_id=call_token,
+                connection_mode=(
+                    str(connection_mode) if connection_mode is not None else None
+                ),
+                connection_id=connection_id,
+                interactive=False,
+                require_approval=False,
+            )
+
+            # A parked call only reaches this point again after an approval
+            # decision: a terminal decision fails the node exactly once and a
+            # miss (expiry sweep not yet run) is expired here, never re-parked.
+            previous = await find_execution_for_token(run, call_token)
+            if previous is not None:
+                terminal_error = terminal_execution_error(previous)
+                if terminal_error is not None:
+                    return _error_result(terminal_error, output_var, start_time)
+                from app.services import tool_approvals
+                from app.schemas.tool_approval import ToolExecutionStatus
+
+                if (
+                    previous.status == ToolExecutionStatus.AWAITING_APPROVAL
+                    and approval_deadline_passed(previous)
+                ):
+                    await tool_approvals.expire_execution(previous.id)
+                    return _error_result(
+                        "tool_approval_expired", output_var, start_time
+                    )
+
+            # Execute through the single tool execution boundary.
+            if tool is None:
+                result = await tool_executor.execute_builtin_tool(
+                    tool_name=tool_name,
+                    arguments=inputs,
+                    team_id=workflow_team_id,
+                    context=call_context,
+                    workflow_run_id=run.id,
+                    operation=tool_name,
+                )
+            else:
                 result = await tool_executor.execute(
                     tool=tool,
                     arguments=inputs,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
                     team_id=workflow_team_id,
+                    context=call_context,
+                    operation=operation or tool.name,
                 )
+            if isinstance(result, PendingToolApproval):
+                # Workflows never wait for tool approval. This defensive branch
+                # covers a boundary/configuration regression: drop the
+                # unexecuted request and fail the node instead of turning the
+                # workflow into an approval surface.
+                await _cancel_unexecuted(result.execution_id)
+                return _error_result("tool_approval_cancelled", output_var, start_time)
 
             duration_ms = int((time.time() - start_time) * 1000)
 
@@ -318,6 +485,31 @@ class AgentNodeExecutor(NodeExecutor):
         try:
             agent_service = AgentService()
             from app.core.i18n import resolve_language
+            from app.services.tool_context import (
+                RuntimeToolIdentity,
+                tool_identity_scope,
+            )
+            from app.schemas.tool_approval import ExecutionRunKind
+
+            from ..execution_origin import read_run_origin
+
+            # Delegated tool calls are attributed to the workflow run and its
+            # real entrypoint. A pending approval cannot park this blocking
+            # AgentService call, so the agent layer fails it closed instead of
+            # returning an interaction object to a loop with no pause. The node
+            # has no surface for choosing a connection, hence non-interactive
+            # even for a manual workflow run.
+            origin = read_run_origin(run)
+            if origin is None:
+                return ExecutionResult(error="user_context_required")
+            tool_identity = RuntimeToolIdentity(
+                run_id=run.id,
+                run_kind=ExecutionRunKind.WORKFLOW.value,
+                entrypoint=origin.entrypoint.value,
+                entrypoint_id=origin.entrypoint_id,
+                interactive=False,
+                tool_call_prefix=f"workflow-agent:{run.id}:{node_id}",
+            )
 
             triggered_user_locale = None
             if run.triggered_by_id:
@@ -347,37 +539,40 @@ class AgentNodeExecutor(NodeExecutor):
                 dialogue: list[dict[str, Any]] = []
                 artifacts: list[Any] = []
                 stream_manager = StreamManager(context.run_id)
-                async for chunk in agent_service.chat_stream(
-                    agent=agent,
-                    message=message,
-                    context=agent_context,
-                    images=images or None,
-                    files=files or None,
-                    user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
-                    workflow_run_id=run.id,
-                    max_turns=max_turns,
-                    user_locale=user_locale,
-                ):
-                    if isinstance(chunk, str):
-                        response_text += chunk
-                        await stream_manager.publish_token(node_id, chunk)
-                    elif "tool_call" in chunk:
-                        call_data = chunk["tool_call"]
-                        tool_calls.append(call_data)
-                        dialogue.append(
-                            {"role": "assistant", "tool_calls": [call_data]}
-                        )
-                    elif "tool_result" in chunk:
-                        tool_result = chunk["tool_result"]
-                        dialogue.append({"role": "tool", **tool_result})
-                        artifacts.extend(
-                            self._extract_artifacts(tool_result.get("result"))
-                        )
-                    elif "usage" in chunk:
-                        usage = chunk["usage"]
-                    elif "dialogue" in chunk:
-                        dialogue = chunk["dialogue"]
-                        artifacts = chunk.get("artifacts") or []
+                with tool_identity_scope(tool_identity):
+                    async for chunk in agent_service.chat_stream(
+                        agent=agent,
+                        message=message,
+                        context=agent_context,
+                        images=images or None,
+                        files=files or None,
+                        user_id=str(run.triggered_by_id)
+                        if run.triggered_by_id
+                        else None,
+                        workflow_run_id=run.id,
+                        max_turns=max_turns,
+                        user_locale=user_locale,
+                    ):
+                        if isinstance(chunk, str):
+                            response_text += chunk
+                            await stream_manager.publish_token(node_id, chunk)
+                        elif "tool_call" in chunk:
+                            call_data = chunk["tool_call"]
+                            tool_calls.append(call_data)
+                            dialogue.append(
+                                {"role": "assistant", "tool_calls": [call_data]}
+                            )
+                        elif "tool_result" in chunk:
+                            tool_result = chunk["tool_result"]
+                            dialogue.append({"role": "tool", **tool_result})
+                            artifacts.extend(
+                                self._extract_artifacts(tool_result.get("result"))
+                            )
+                        elif "usage" in chunk:
+                            usage = chunk["usage"]
+                        elif "dialogue" in chunk:
+                            dialogue = chunk["dialogue"]
+                            artifacts = chunk.get("artifacts") or []
                 outputs = {
                     "response": response_text,
                     "toolCalls": tool_calls,
@@ -386,17 +581,20 @@ class AgentNodeExecutor(NodeExecutor):
                     "artifacts": artifacts,
                 }
             else:
-                result = await agent_service.chat(
-                    agent=agent,
-                    message=message,
-                    context=agent_context,
-                    images=images or None,
-                    files=files or None,
-                    user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
-                    workflow_run_id=run.id,
-                    max_turns=max_turns,
-                    user_locale=user_locale,
-                )
+                with tool_identity_scope(tool_identity):
+                    result = await agent_service.chat(
+                        agent=agent,
+                        message=message,
+                        context=agent_context,
+                        images=images or None,
+                        files=files or None,
+                        user_id=str(run.triggered_by_id)
+                        if run.triggered_by_id
+                        else None,
+                        workflow_run_id=run.id,
+                        max_turns=max_turns,
+                        user_locale=user_locale,
+                    )
                 outputs = {
                     "response": result.get("response", ""),
                     "toolCalls": result.get("tool_calls", []),

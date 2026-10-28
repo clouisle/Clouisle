@@ -27,7 +27,7 @@ from app.models.asset import (
     AssetSource,
     AssetStatus,
 )
-from app.models.user import Team, User
+from app.models.user import Permission, Role, Team, TeamMember, User
 from app.models.workflow import TriggerType, Workflow, WorkflowRun
 from app.services.agent import AgentService
 from app.services.upload_storage import LocalUploadStorage
@@ -62,6 +62,11 @@ async def workflow_asset(database, tmp_path, monkeypatch):
         approval_status="approved",
     )
     team = await Team.create(id=uuid4(), name="Workflow team")
+    permission = await Permission.create(id=uuid4(), scope="team", code="team:read")
+    role = await Role.create(id=uuid4(), name=f"Workflow user {uuid4().hex[:8]}")
+    await role.permissions.add(permission)
+    await owner.roles.add(role)
+    await TeamMember.create(team=team, user=owner, role="owner")
     workflow = await Workflow.create(
         id=uuid4(), team=team, name="Reader", created_by=owner
     )
@@ -172,13 +177,25 @@ async def test_chat_streams_document_ref_and_reads_it_through_real_tool(
     monkeypatch.setattr("app.services.agent.model_manager.team_chat", model_chat)
     monkeypatch.setattr("app.services.agent.model_manager.chat", model_chat)
 
-    result = await AgentService().chat(
-        _agent(workflow_asset.team.id),
-        "summarize the report",
-        user_id=str(workflow_asset.owner.id),
-        workflow_run_id=str(workflow_asset.run.id),
-        files=["/api/v1/upload/files/agent-attachments/2026/10/report.txt"],
-    )
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+
+    with tool_identity_scope(
+        RuntimeToolIdentity(
+            run_id=workflow_asset.run.id,
+            run_kind="workflow",
+            entrypoint="workflow",
+            entrypoint_id=str(workflow_asset.workflow.id),
+            interactive=True,
+            tool_call_prefix=(f"workflow-agent:{workflow_asset.run.id}:node-1"),
+        )
+    ):
+        result = await AgentService().chat(
+            _agent(workflow_asset.team.id),
+            "summarize the report",
+            user_id=str(workflow_asset.owner.id),
+            workflow_run_id=str(workflow_asset.run.id),
+            files=["/api/v1/upload/files/agent-attachments/2026/10/report.txt"],
+        )
 
     assert result["response"] == "summary done"
 

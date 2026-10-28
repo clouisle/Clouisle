@@ -600,6 +600,21 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         fallback_label="Update Tool Config",
     ),
     AuditLogActionOption(
+        value="update_tool_approval_policy",
+        translation_key="auditLogs.actionupdate_tool_approval_policy",
+        fallback_label="Update Tool Approval Policy",
+    ),
+    AuditLogActionOption(
+        value="approve_tool_execution",
+        translation_key="auditLogs.actionapprove_tool_execution",
+        fallback_label="Approve Tool Execution",
+    ),
+    AuditLogActionOption(
+        value="reject_tool_execution",
+        translation_key="auditLogs.actionreject_tool_execution",
+        fallback_label="Reject Tool Execution",
+    ),
+    AuditLogActionOption(
         value="delete_tool_config",
         translation_key="auditLogs.actiondelete_tool_config",
         fallback_label="Delete Tool Config",

@@ -49,6 +49,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "agent_not_found": {"en": "Agent not found", "zh": "智能体未找到"},
     "agent_not_published": {"en": "Agent is not published", "zh": "智能体未发布"},
     "agent_published": {"en": "Agent published successfully", "zh": "智能体发布成功"},
+    "agent_tool_access_denied": {
+        "en": "You cannot access the Agent's tool ‘{tool_name}’. Ask its owner or team administrator for access.",
+        "zh": "你无权使用 Agent 的工具“{tool_name}”。请联系工具所有者或团队管理员开通权限。",
+    },
+    "agent_tool_connection_access_denied": {
+        "en": "You cannot use the connection configured for tool ‘{tool_name}’. Ask the Agent owner to review its connection settings.",
+        "zh": "你无权使用工具“{tool_name}”配置的连接。请联系 Agent 所有者检查连接设置。",
+    },
+    "agent_tool_connection_default_required": {
+        "en": "Tool ‘{tool_name}’ has multiple personal connections. Set a default in its connection settings and try again.",
+        "zh": "工具“{tool_name}”有多个个人连接。请在该工具的连接设置中设定默认连接后重试。",
+    },
+    "agent_tool_connection_inactive": {
+        "en": "Tool ‘{tool_name}’ needs its connection reauthorized. Open its connection settings and sign in again.",
+        "zh": "工具“{tool_name}”的连接需要重新授权。请在该工具的连接设置中重新登录。",
+    },
+    "agent_tool_connection_required": {
+        "en": "Tool ‘{tool_name}’ needs a connection. Open its connection settings, add your account or sign in, then try again.",
+        "zh": "工具“{tool_name}”需要连接。请在该工具的连接设置中添加账号或登录后重试。",
+    },
     "agent_unpublished": {
         "en": "Agent unpublished successfully",
         "zh": "智能体已取消发布",
@@ -117,6 +137,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "Webhook 调用需要 API 密钥",
     },
     "api_key_updated": {"en": "API key updated successfully", "zh": "API 密钥更新成功"},
+    "approval_policy_invalid": {
+        "en": "The approval policy is invalid",
+        "zh": "审批策略无效",
+    },
     "archive_failed": {"en": "Archive failed", "zh": "归档失败"},
     "archive_task_completed": {
         "en": "Archive completed successfully",
@@ -402,10 +426,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Bocha API key is not configured",
         "zh": "博查搜索 API Key 未配置",
     },
-    "deepseek_api_key_not_configured": {
-        "en": "DeepSeek API key is not configured",
-        "zh": "DeepSeek API Key 未配置",
-    },
     "builtin_tool_artifact": {"en": "Create Download Link", "zh": "生成下载链接"},
     "builtin_tool_artifact_description": {
         "en": "Collect existing files or directories from /workspace and return fresh Markdown download links plus preview metadata. Call this only after verifying final user-facing files. If write, edit, or bash changes a collected file, call artifact again because earlier URLs are stale snapshots. Include the newest returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",
@@ -599,6 +619,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "List of file URLs. Each URL points to a file to parse.",
         "zh": "文件 URL 列表。每个 URL 指向一个需要解析的文件。",
     },
+    "builtin_tool_mongodb_query": {"en": "MongoDB Query", "zh": "MongoDB 查询"},
+    "builtin_tool_mongodb_query_description": {
+        "en": "Inspect a MongoDB database read-only: list collections, infer document fields, find/count documents, or run a safe aggregation pipeline. The database is chosen by the connection.",
+        "zh": "以只读方式查看 MongoDB：列出集合、推断文档字段、find/count 文档或执行安全的聚合管道。数据库由连接决定。",
+    },
+    "builtin_tool_mysql_query": {"en": "MySQL Query", "zh": "MySQL 查询"},
+    "builtin_tool_mysql_query_description": {
+        "en": "Inspect a MySQL or MariaDB database read-only: describe tables and run single SELECT statements. The database is chosen by the connection.",
+        "zh": "以只读方式查看 MySQL/MariaDB：查看表结构并执行单条 SELECT 语句。数据库由连接决定。",
+    },
+    "builtin_tool_postgresql_query": {
+        "en": "PostgreSQL Query",
+        "zh": "PostgreSQL 查询",
+    },
+    "builtin_tool_postgresql_query_description": {
+        "en": "Inspect a PostgreSQL database read-only: describe tables and run single SELECT statements. The database is chosen by the connection.",
+        "zh": "以只读方式查看 PostgreSQL：查看表结构并执行单条 SELECT 语句。数据库由连接决定。",
+    },
     "builtin_tool_read": {"en": "Read File", "zh": "读取文件"},
     "builtin_tool_read_description": {
         "en": "Read a UTF-8 text file with LINE#ID anchors bound to a full-file snapshot. Ranges and literal search preserve original line numbers for safe edit recovery.",
@@ -623,6 +661,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_read_param_start_line_description": {
         "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
         "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
+    },
+    "builtin_tool_redis_query": {"en": "Redis Query", "zh": "Redis 查询"},
+    "builtin_tool_redis_query_description": {
+        "en": "Inspect a Redis database read-only: scan key names, read one key, or run an allowlisted read command. The database is chosen by the connection.",
+        "zh": "以只读方式查看 Redis：扫描键名、读取单个键或执行白名单内的只读命令。数据库由连接决定。",
     },
     "builtin_tool_rss_feed_reader": {"en": "RSS Feed Reader", "zh": "RSS 订阅解析"},
     "builtin_tool_rss_feed_reader_description": {
@@ -756,6 +799,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Human verification is required",
         "zh": "请完成人机验证",
     },
+    "channel_approval_approved": {
+        "en": "Approved. The original run will continue.",
+        "zh": "已批准，原运行将继续。",
+    },
+    "channel_approval_invalid": {
+        "en": "This confirmation is invalid, expired, or no longer pending.",
+        "zh": "该确认无效、已过期或已处理。",
+    },
+    "channel_approval_prompt": {
+        "en": "Tool confirmation required\nOperation: {operation}\nDescription: {description}\nAccount: {account}\nParameters (redacted): {parameters}\nReply with the full command /approve {code} to allow or /reject {code} to decline. Ordinary text, including 'agree' or 'reject', cannot decide this call.",
+        "zh": "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n请回复完整命令 /approve {code} 允许，或 /reject {code} 拒绝。直接回复“同意”或“拒绝”等普通文字不能作出决定。",
+    },
+    "channel_approval_rejected": {
+        "en": "Declined. The tool will not run; the original run will continue.",
+        "zh": "已拒绝，该工具不会执行；原运行将继续。",
+    },
+    "channel_approval_unsupported": {
+        "en": "This waiting interaction is not supported in this channel. Use /stop to stop the run.",
+        "zh": "此渠道暂不支持当前等待交互，可使用 /stop 停止运行。",
+    },
+    "channel_approval_waiting": {
+        "en": "A tool confirmation is pending. Reply with the full /approve or /reject command and execution UUID shown above; ordinary text cannot decide it.",
+        "zh": "工具正在等待确认，请回复上方包含完整执行 UUID 的 /approve 或 /reject 命令；普通文字不能作出决定。",
+    },
     "chat_context_summary_applied": {
         "en": "Applied a context summary before the next model call",
         "zh": "已在下一次模型调用前应用上下文摘要",
@@ -792,6 +859,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "chunks_still_failed_after_retry": {
         "en": "{failed_count}/{total_chunks} chunks still failed: {error}",
         "zh": "重试后仍有 {failed_count}/{total_chunks} 个分块失败：{error}",
+    },
+    "clouisle_builtin_tool_duplicate": {
+        "en": "The package attaches the same builtin tool more than once",
+        "zh": "该包重复引用了同一个内置工具",
     },
     "clouisle_checksum_mismatch": {
         "en": "Package checksum verification failed",
@@ -934,6 +1005,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Database connection failed",
         "zh": "数据库连接失败",
     },
+    "database_engine_unsupported": {
+        "en": "This database engine is not supported by the builtin database tools",
+        "zh": "内置数据库工具不支持该数据库引擎",
+    },
     "database_host_cannot_be_resolved": {
         "en": "Database host cannot be resolved",
         "zh": "无法解析数据库主机",
@@ -945,6 +1020,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "database_host_not_allowed": {
         "en": "Database host is not allowed",
         "zh": "不允许访问该数据库主机",
+    },
+    "deepseek_api_key_not_configured": {
+        "en": "DeepSeek API key is not configured",
+        "zh": "DeepSeek API Key 未配置",
     },
     "document_created": {"en": "Document created successfully", "zh": "文档创建成功"},
     "document_deleted": {"en": "Document deleted successfully", "zh": "文档删除成功"},
@@ -1433,9 +1512,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "不允许访问该 HTTP URL 主机",
     },
     "http_tool_url_invalid": {"en": "Invalid HTTP URL", "zh": "HTTP URL 无效"},
-    "http_tool_url_templates_not_supported": {
-        "en": "HTTP tool URL templates are not supported",
-        "zh": "HTTP 工具不支持 URL 模板",
+    "http_tool_url_template_values_missing": {
+        "en": "HTTP URL is missing values for template fields: {fields}",
+        "zh": "HTTP URL 缺少模板字段的值：{fields}",
     },
     "image_generation_exceeds_agent_limit": {
         "en": "Image generation request exceeds the agent limit ({max_images})",
@@ -1697,13 +1776,42 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "Luma 触发速率限制",
     },
     "luma_request_timeout": {"en": "Luma request timeout", "zh": "Luma 请求超时"},
+    "mcp_capability_unavailable": {
+        "en": "MCP server does not support this capability: {capability}",
+        "zh": "MCP 服务器不支持该能力：{capability}",
+    },
     "mcp_connection_failed": {
         "en": "Failed to connect to MCP server",
         "zh": "连接 MCP 服务器失败",
     },
+    "mcp_content_too_large": {
+        "en": "MCP response exceeds the content size limit",
+        "zh": "MCP 响应内容超过大小限制",
+    },
+    "mcp_input_required": {
+        "en": "MCP server requires additional input; this request cannot continue",
+        "zh": "MCP 服务器需要额外输入，当前请求无法继续",
+    },
+    "mcp_invalid_request": {
+        "en": "The MCP request is invalid or incomplete",
+        "zh": "MCP 请求无效或不完整",
+    },
+    "mcp_invalid_resource_uri": {
+        "en": "The MCP resource URI is invalid or still contains an unexpanded template variable",
+        "zh": "MCP 资源 URI 无效或仍包含未替换的模板变量",
+    },
+    "mcp_request_timeout": {"en": "MCP request timed out", "zh": "MCP 请求超时"},
+    "mcp_server_error": {
+        "en": "MCP server rejected the request",
+        "zh": "MCP 服务器拒绝了请求",
+    },
     "mcp_tool_execution_failed": {
         "en": "MCP tool execution failed",
         "zh": "MCP 工具执行失败",
+    },
+    "mcp_tool_invalid_type": {
+        "en": "The tool is not an MCP server definition",
+        "zh": "该工具不是 MCP 服务器定义",
     },
     "mcp_tool_missing_configuration": {
         "en": "MCP tool has no configuration: {tool_name}",
@@ -2329,6 +2437,70 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Workflow run completed",
         "zh": "工作流运行完成",
     },
+    "oauth_callback_failed": {
+        "en": "OAuth authorization failed",
+        "zh": "OAuth 授权失败",
+    },
+    "oauth_client_registration_failed": {
+        "en": "OAuth client registration failed",
+        "zh": "OAuth 客户端自动注册失败",
+    },
+    "oauth_client_registration_required": {
+        "en": "No OAuth client is registered and automatic registration is unavailable",
+        "zh": "未注册 OAuth 客户端，且无法自动注册",
+    },
+    "oauth_client_secret_required": {
+        "en": "An OAuth client secret is required; contact a tool administrator",
+        "zh": "需要 OAuth 客户端密钥，请联系工具管理员配置",
+    },
+    "oauth_configuration_invalid": {
+        "en": "OAuth provider configuration is invalid",
+        "zh": "OAuth 提供方配置无效",
+    },
+    "oauth_discovery_failed": {
+        "en": "OAuth provider discovery failed",
+        "zh": "OAuth 提供方发现失败",
+    },
+    "oauth_exchange_failed": {
+        "en": "OAuth authorization could not be completed",
+        "zh": "OAuth 授权未能完成",
+    },
+    "oauth_expired": {
+        "en": "OAuth request expired; start a new authorization",
+        "zh": "OAuth 请求已过期，请重新发起",
+    },
+    "oauth_not_supported": {
+        "en": "This tool does not support OAuth",
+        "zh": "该工具不支持 OAuth",
+    },
+    "oauth_pkce_unsupported": {
+        "en": "OAuth provider does not support PKCE S256",
+        "zh": "OAuth 提供方不支持 PKCE S256",
+    },
+    "oauth_provider_error": {
+        "en": "OAuth provider returned an error",
+        "zh": "OAuth 提供方返回错误",
+    },
+    "oauth_reauth_required": {
+        "en": "This connection must be authorized again",
+        "zh": "该连接需要重新授权",
+    },
+    "oauth_refresh_failed": {
+        "en": "OAuth token refresh failed",
+        "zh": "OAuth 令牌刷新失败",
+    },
+    "oauth_scope_escalation": {
+        "en": "OAuth provider returned scopes beyond the authorized set",
+        "zh": "OAuth 提供方返回的权限范围超出已授权范围",
+    },
+    "oauth_state_invalid": {
+        "en": "OAuth request is invalid or was already used",
+        "zh": "OAuth 请求无效或已被使用",
+    },
+    "oauth_version_conflict": {
+        "en": "The connection changed after authorization started; try again",
+        "zh": "连接在授权开始后已变更，请重试",
+    },
     "operation_not_permitted": {
         "en": "Operation not permitted. Required: {permission}",
         "zh": "操作不允许。需要权限：{permission}",
@@ -2503,6 +2675,58 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "rss_feed_parse_error": {
         "en": "Failed to parse the specified RSS or Atom feed",
         "zh": "无法解析指定的 RSS 或 Atom 订阅源",
+    },
+    "run_interaction_access_denied": {
+        "en": "You cannot respond to this interaction request",
+        "zh": "你无权响应该交互请求",
+    },
+    "run_interaction_connection_lost": {
+        "en": "The MCP connection was lost; the request cannot be resumed",
+        "zh": "MCP 连接已断开，该请求无法恢复",
+    },
+    "run_interaction_content_too_large": {
+        "en": "The interaction response is too large",
+        "zh": "交互响应内容过大",
+    },
+    "run_interaction_expired": {
+        "en": "This interaction request has expired",
+        "zh": "该交互请求已过期",
+    },
+    "run_interaction_idempotency_conflict": {
+        "en": "This interaction response conflicts with a previous submission",
+        "zh": "该交互响应与之前的提交冲突",
+    },
+    "run_interaction_invalid_response": {
+        "en": "The interaction response is invalid",
+        "zh": "交互响应无效",
+    },
+    "run_interaction_model_quota_exceeded": {
+        "en": "The model quota for this sampling request is exhausted",
+        "zh": "该采样请求的模型额度已用尽",
+    },
+    "run_interaction_not_found": {
+        "en": "Interaction request not found",
+        "zh": "交互请求不存在",
+    },
+    "run_interaction_not_pending": {
+        "en": "This interaction request is no longer pending",
+        "zh": "该交互请求已不处于待处理状态",
+    },
+    "run_interaction_sampling_failed": {
+        "en": "The model could not complete the sampling request",
+        "zh": "模型无法完成采样请求",
+    },
+    "run_interaction_schema_invalid": {
+        "en": "The interaction response does not match the requested schema",
+        "zh": "交互响应与请求的 schema 不匹配",
+    },
+    "run_interaction_secret_field_rejected": {
+        "en": "Sensitive fields cannot be collected through an interaction form",
+        "zh": "不能通过交互表单收集敏感字段",
+    },
+    "run_interaction_url_not_allowed": {
+        "en": "The interaction URL is not allowed",
+        "zh": "该交互 URL 不被允许",
     },
     "run_not_found": {"en": "Run not found", "zh": "运行记录未找到"},
     "run_not_waiting_for_answers": {
@@ -2976,6 +3200,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "team_created": {"en": "Team created successfully", "zh": "团队创建成功"},
     "team_deleted": {"en": "Team deleted successfully", "zh": "团队删除成功"},
+    "team_id_required": {
+        "en": "Select a team before running this operation",
+        "zh": "请先选择团队后再执行该操作",
+    },
     "team_left": {"en": "You have left the team", "zh": "您已离开团队"},
     "team_member_added": {
         "en": "Team member added successfully",
@@ -3061,9 +3289,73 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "token_expired": {"en": "Token expired", "zh": "令牌已过期"},
     "token_revoked": {"en": "Token has been revoked", "zh": "令牌已被撤销"},
     "too_many_files": {"en": "Too many files uploaded", "zh": "上传文件数量过多"},
+    "tool_access_denied": {
+        "en": "You do not have access to this tool. Ask its owner or team administrator for access.",
+        "zh": "你无权使用此工具。请联系工具所有者或团队管理员开通权限。",
+    },
     "tool_already_shared": {
         "en": "Tool is already shared with this team",
         "zh": "工具已经共享给该团队",
+    },
+    "tool_approval_already_decided": {
+        "en": "This approval request has already been decided",
+        "zh": "此审批请求已处理",
+    },
+    "tool_approval_binding_changed": {
+        "en": "This approval is no longer valid because the tool, parameters or connection changed",
+        "zh": "工具、参数或连接已变更，此审批不再有效",
+    },
+    "tool_approval_cancelled": {
+        "en": "The tool approval was cancelled or is no longer valid",
+        "zh": "工具执行审批已取消或已失效",
+    },
+    "tool_approval_conflict": {
+        "en": "The approval changed while it was being decided; refresh and try again",
+        "zh": "提交审批时状态已发生变化，请刷新后重试",
+    },
+    "tool_approval_expired": {
+        "en": "The approval request has expired",
+        "zh": "审批请求已过期",
+    },
+    "tool_approval_idempotency_conflict": {
+        "en": "This request ID was already used for a different decision",
+        "zh": "该请求 ID 已用于其他审批决定",
+    },
+    "tool_approval_input_invalid": {
+        "en": "Invalid approval input",
+        "zh": "审批输入无效",
+    },
+    "tool_approval_inside_container": {
+        "en": "Tool approval is not supported inside an iteration or loop; the call was not executed",
+        "zh": "迭代或循环内部不支持工具审批，未执行该调用",
+    },
+    "tool_approval_not_authorized": {
+        "en": "You are not an approver for this request",
+        "zh": "您不是此请求的审批人",
+    },
+    "tool_approval_policy_configuration_required": {
+        "en": "This tool needs an approval policy with a valid approver before it can run",
+        "zh": "该工具需要配置有效的审批人才能执行",
+    },
+    "tool_approval_policy_external_audience_unsupported": {
+        "en": "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run.",
+        "zh": "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。",
+    },
+    "tool_approval_rejected": {
+        "en": "The tool approval was rejected, so the call was not executed",
+        "zh": "工具执行审批已被拒绝，未执行该调用",
+    },
+    "tool_approval_request_not_found": {
+        "en": "Approval request not found",
+        "zh": "未找到审批请求",
+    },
+    "tool_approval_unavailable": {
+        "en": "This tool requires approval, which is not available in this execution context, so the call was not executed",
+        "zh": "该工具需要审批，但当前执行上下文不支持审批，未执行该调用",
+    },
+    "tool_builtin_not_creatable": {
+        "en": "Builtin tools are provided by the platform and cannot be created through this endpoint",
+        "zh": "内置工具由平台提供，不能通过此接口创建",
     },
     "tool_code_not_defined": {
         "en": "No code defined for this tool",
@@ -3089,6 +3381,39 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Tool configuration updated successfully",
         "zh": "工具配置更新成功",
     },
+    "tool_connection_access_denied": {
+        "en": "You do not have permission to use this connection",
+        "zh": "你没有使用该连接的权限",
+    },
+    "tool_connection_default_conflict": {
+        "en": "Another default connection was selected concurrently; refresh and try again",
+        "zh": "另一个默认连接被同时选中，请刷新后重试",
+    },
+    "tool_connection_default_required": {
+        "en": "Multiple personal connections are available for this tool; set a default in Connection settings or select a connection explicitly",
+        "zh": "该工具存在多个个人连接，请在连接设置中设定默认连接或显式选择连接",
+    },
+    "tool_connection_inactive": {
+        "en": "This connection is revoked or requires re-authentication; reconnect it in Connection settings",
+        "zh": "该连接已撤销或需要重新认证，请在连接设置中重新连接",
+    },
+    "tool_connection_invalid": {
+        "en": "Invalid connection configuration",
+        "zh": "连接配置无效",
+    },
+    "tool_connection_not_found": {"en": "Connection not found", "zh": "未找到连接"},
+    "tool_connection_required": {
+        "en": "A connection is required: open Connection settings to add an account or sign in, then try again",
+        "zh": "需要连接：请在连接设置中添加账号或重新登录，然后重试",
+    },
+    "tool_connection_secret_unreadable": {
+        "en": "Stored connection credentials cannot be read; re-authenticate the connection",
+        "zh": "无法读取已保存的连接凭据，请重新认证该连接",
+    },
+    "tool_connection_version_conflict": {
+        "en": "The connection changed since it was selected; refresh and try again",
+        "zh": "连接在选中后已变更，请刷新后重试",
+    },
     "tool_create_memory_entity": {"en": "Create Memory Entity", "zh": "创建记忆实体"},
     "tool_create_memory_relation": {
         "en": "Create Memory Relation",
@@ -3102,7 +3427,35 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "工具执行失败：{error}",
     },
     "tool_execute_success": {"en": "Tool executed successfully", "zh": "工具执行成功"},
+    "tool_execution_access_denied": {
+        "en": "You do not have permission to access this tool execution",
+        "zh": "您没有权限访问此工具执行记录",
+    },
+    "tool_execution_claim_conflict": {
+        "en": "This tool execution is already being processed",
+        "zh": "此工具执行正在被处理",
+    },
     "tool_execution_failed": {"en": "Tool execution failed", "zh": "工具执行失败"},
+    "tool_execution_invalid_state": {
+        "en": "This tool execution is not in a valid state for that action",
+        "zh": "此工具执行记录当前状态不允许该操作",
+    },
+    "tool_execution_not_found": {
+        "en": "Tool execution not found",
+        "zh": "未找到工具执行记录",
+    },
+    "tool_execution_not_ready": {
+        "en": "This tool execution cannot run from its current state",
+        "zh": "此工具执行当前状态无法运行",
+    },
+    "tool_execution_outcome_unknown": {
+        "en": "The tool call's outcome is unknown; it was not retried automatically",
+        "zh": "工具调用结果未知，未自动重试",
+    },
+    "tool_execution_parameters_unreadable": {
+        "en": "The approved tool parameters could not be read",
+        "zh": "无法读取已批准的工具参数",
+    },
     "tool_get_memory_subgraph": {"en": "Get Memory Subgraph", "zh": "获取记忆关系图"},
     "tool_knowledge_search": {"en": "Knowledge Search", "zh": "知识库搜索"},
     "tool_name_exists": {
@@ -3115,7 +3468,75 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "tool_name_required": {"en": "Tool name is required", "zh": "工具名称不能为空"},
     "tool_not_found": {"en": "Tool not found", "zh": "工具未找到"},
+    "tool_oauth_callback_failed": {
+        "en": "OAuth authorization failed",
+        "zh": "OAuth 授权失败",
+    },
+    "tool_oauth_client_registration_failed": {
+        "en": "Automatic OAuth client registration failed",
+        "zh": "OAuth 客户端自动注册失败",
+    },
+    "tool_oauth_client_registration_required": {
+        "en": "No OAuth client is registered and automatic registration is unavailable",
+        "zh": "未注册 OAuth 客户端，且无法自动注册",
+    },
+    "tool_oauth_client_secret_required": {
+        "en": "An OAuth client secret is required; ask a tool administrator to configure it",
+        "zh": "需要 OAuth 客户端密钥，请联系工具管理员配置",
+    },
+    "tool_oauth_config_invalid": {
+        "en": "The tool OAuth configuration is invalid",
+        "zh": "工具 OAuth 配置无效",
+    },
+    "tool_oauth_discovery_failed": {
+        "en": "OAuth discovery failed for this server",
+        "zh": "此服务器的 OAuth 发现失败",
+    },
+    "tool_oauth_exchange_failed": {
+        "en": "Failed to exchange the OAuth authorization code",
+        "zh": "OAuth 授权码交换失败",
+    },
+    "tool_oauth_expired": {
+        "en": "The OAuth authorization request has expired; start again",
+        "zh": "OAuth 授权请求已过期，请重新发起",
+    },
+    "tool_oauth_not_supported": {
+        "en": "This server does not support OAuth",
+        "zh": "此服务器不支持 OAuth",
+    },
+    "tool_oauth_pkce_unsupported": {
+        "en": "The OAuth provider does not support PKCE S256",
+        "zh": "OAuth 提供方不支持 PKCE S256",
+    },
+    "tool_oauth_provider_error": {
+        "en": "The OAuth provider reported an error",
+        "zh": "OAuth 提供方返回错误",
+    },
+    "tool_oauth_reauth_required": {
+        "en": "The external account must be reauthorized",
+        "zh": "外部账号需要重新授权",
+    },
+    "tool_oauth_refresh_failed": {
+        "en": "OAuth token refresh failed",
+        "zh": "OAuth 令牌刷新失败",
+    },
+    "tool_oauth_scope_escalation": {
+        "en": "The OAuth provider requested broader permissions than approved",
+        "zh": "OAuth 提供方请求的权限范围超出了已批准范围",
+    },
+    "tool_oauth_state_invalid": {
+        "en": "The OAuth authorization request is invalid or has expired",
+        "zh": "OAuth 授权请求无效或已过期",
+    },
+    "tool_oauth_version_conflict": {
+        "en": "The connection changed since authorization started; try again",
+        "zh": "连接在授权开始后已变更，请重试",
+    },
     "tool_search_memory": {"en": "Search Memory", "zh": "搜索记忆"},
+    "tool_secret_inline_not_allowed": {
+        "en": "Secret values are not accepted in tool definitions: {fields}. Declare a connection field and store the secret in a connection, then reference it as {{{{field}}}}.",
+        "zh": "工具定义不接受明文密钥：{fields}。请声明连接字段并将密钥保存到连接中，然后以 {{{{field}}}} 占位符引用。",
+    },
     "tool_share_not_found": {"en": "Tool share not found", "zh": "工具共享记录不存在"},
     "tool_shared_successfully": {
         "en": "Tool shared successfully",
@@ -3326,53 +3747,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
     },
-    "web_search_searxng_base_url_invalid": {
-        "en": "Enter the SearXNG instance root URL without /search, credentials, query parameters or a fragment",
-        "zh": "请填写 SearXNG 实例根地址，不包含 /search、账号密码、查询参数或片段",
-    },
-    "web_search_searxng_base_url_required": {
-        "en": "Configure a SearXNG instance Base URL before enabling it",
-        "zh": "请先配置 SearXNG 实例 Base URL，再启用服务",
-    },
-    "web_search_searxng_https_required": {
-        "en": "SearXNG bearer authentication requires an HTTPS Base URL",
-        "zh": "SearXNG 使用 Bearer 认证时，Base URL 必须为 HTTPS",
-    },
-    "web_search_searxng_token_confirmation_required": {
-        "en": "Changing the SearXNG instance requires replacing or clearing its saved bearer token",
-        "zh": "修改 SearXNG 实例地址时，必须明确替换或清除已保存的 Bearer Token",
-    },
-    "web_search_searxng_timeout": {
-        "en": "The configured SearXNG instance timed out",
-        "zh": "已配置的 SearXNG 实例请求超时",
-    },
-    "web_search_searxng_redirect": {
-        "en": "The SearXNG instance returned a redirect; configure its final Base URL",
-        "zh": "SearXNG 实例返回了重定向，请配置最终 Base URL",
-    },
-    "web_search_searxng_forbidden": {
-        "en": "SearXNG denied access; check gateway authentication and enable JSON output in the instance",
-        "zh": "SearXNG 拒绝访问，请检查网关认证并在实例中启用 JSON 输出",
-    },
-    "web_search_searxng_invalid_response": {
-        "en": "The SearXNG instance did not return a valid JSON search response",
-        "zh": "SearXNG 实例未返回有效的 JSON 搜索响应",
-    },
-    "web_search_searxng_empty_results": {
-        "en": "The SearXNG instance returned no usable search results",
-        "zh": "SearXNG 实例未返回可用搜索结果",
-    },
-    "web_search_not_configured": {
-        "en": "Site web search is not configured; contact the site administrator",
-        "zh": "站点尚未配置网页搜索，请联系站点管理员",
-    },
-    "web_search_engine_disabled": {
-        "en": "The site search provider {engine} is disabled",
-        "zh": "站点搜索服务 {engine} 已停用",
-    },
-    "web_search_engine_not_configured": {
-        "en": "The site search provider {engine} is missing required configuration",
-        "zh": "站点搜索服务 {engine} 缺少必要配置",
+    "web_search_credentials_unreadable": {
+        "en": "The saved search credential cannot be decrypted; replace it in site configuration",
+        "zh": "无法解密已保存的搜索凭证，请在站点配置中替换",
     },
     "web_search_default_engine_disabled": {
         "en": "The default search provider must be enabled",
@@ -3382,9 +3759,53 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Select a valid site default search provider",
         "zh": "请选择有效的站点默认搜索服务",
     },
-    "web_search_credentials_unreadable": {
-        "en": "The saved search credential cannot be decrypted; replace it in site configuration",
-        "zh": "无法解密已保存的搜索凭证，请在站点配置中替换",
+    "web_search_engine_disabled": {
+        "en": "The site search provider {engine} is disabled",
+        "zh": "站点搜索服务 {engine} 已停用",
+    },
+    "web_search_engine_not_configured": {
+        "en": "The site search provider {engine} is missing required configuration",
+        "zh": "站点搜索服务 {engine} 缺少必要配置",
+    },
+    "web_search_not_configured": {
+        "en": "Site web search is not configured; contact the site administrator",
+        "zh": "站点尚未配置网页搜索，请联系站点管理员",
+    },
+    "web_search_searxng_base_url_invalid": {
+        "en": "Enter the SearXNG instance root URL without /search, credentials, query parameters or a fragment",
+        "zh": "请填写 SearXNG 实例根地址，不包含 /search、账号密码、查询参数或片段",
+    },
+    "web_search_searxng_base_url_required": {
+        "en": "Configure a SearXNG instance Base URL before enabling it",
+        "zh": "请先配置 SearXNG 实例 Base URL，再启用服务",
+    },
+    "web_search_searxng_empty_results": {
+        "en": "The SearXNG instance returned no usable search results",
+        "zh": "SearXNG 实例未返回可用搜索结果",
+    },
+    "web_search_searxng_forbidden": {
+        "en": "SearXNG denied access; check gateway authentication and enable JSON output in the instance",
+        "zh": "SearXNG 拒绝访问，请检查网关认证并在实例中启用 JSON 输出",
+    },
+    "web_search_searxng_https_required": {
+        "en": "SearXNG bearer authentication requires an HTTPS Base URL",
+        "zh": "SearXNG 使用 Bearer 认证时，Base URL 必须为 HTTPS",
+    },
+    "web_search_searxng_invalid_response": {
+        "en": "The SearXNG instance did not return a valid JSON search response",
+        "zh": "SearXNG 实例未返回有效的 JSON 搜索响应",
+    },
+    "web_search_searxng_redirect": {
+        "en": "The SearXNG instance returned a redirect; configure its final Base URL",
+        "zh": "SearXNG 实例返回了重定向，请配置最终 Base URL",
+    },
+    "web_search_searxng_timeout": {
+        "en": "The configured SearXNG instance timed out",
+        "zh": "已配置的 SearXNG 实例请求超时",
+    },
+    "web_search_searxng_token_confirmation_required": {
+        "en": "Changing the SearXNG instance requires replacing or clearing its saved bearer token",
+        "zh": "修改 SearXNG 实例地址时，必须明确替换或清除已保存的 Bearer Token",
     },
     "web_search_site_managed": {
         "en": "Web search is managed through the dedicated site administrator configuration",

@@ -97,6 +97,7 @@
 - [模型管理](admin-guide/models/model-management.md)
 - [工具管理](admin-guide/tools/tool-management.md)
 - [工具系统](admin-guide/tools/TOOLS_zh-CN.md)
+- [MCP 连接与审批](admin-guide/tools/mcp-connections-and-approvals_zh-CN.md)
 - [权限](admin-guide/permissions/PERMISSIONS_zh-CN.md)
 - [权限管理](admin-guide/permissions/permission-management.md)
 - [系统设置](admin-guide/settings/system-settings.md)

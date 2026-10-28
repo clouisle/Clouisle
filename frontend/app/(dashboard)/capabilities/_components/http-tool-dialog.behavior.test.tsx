@@ -219,4 +219,29 @@ describe('HttpToolDialog', () => {
     }))
   })
 
+  test('suggests tool parameters and connection fields in HTTP fields', () => {
+    const { renderer } = render({
+      tool: {
+        id: 'tool-completion', name: 'lookup', display_name: 'Lookup', description: '', icon: '', category: 'api', is_enabled: true,
+        type: 'custom', custom_type: 'http', parameters: [{ name: 'city', type: 'string', required: true, description: '' }],
+        connection_fields: [{ name: 'api_base', label: 'API base URL', required: true, secret: false }],
+        requires_config: true, config_fields: [],
+        http_config: { method: 'GET', url: '{{api_base}}/weather', headers: { 'X-City': '{{city}}' }, query_params: { city: '{{city}}' } },
+      } as React.ComponentProps<typeof HttpToolDialog>['tool'],
+    })
+
+    const urlInput = input(renderer, { placeholder: 'tools.httpDialog.urlPlaceholder' })
+    act(() => urlInput.props.onChange({ target: { value: '{{', selectionStart: 2 } }))
+
+    const suggestions = renderer.root
+      .findAllByType('button')
+      .map((button) => ({ button, label: text(button.props.children) }))
+      .filter((item) => item.label.startsWith('{{'))
+    expect(suggestions.map((item) => item.label)).toEqual(['{{city}}', '{{api_base}}'])
+
+    act(() => suggestions[0]!.button.props.onMouseDown({ preventDefault: () => {} }))
+
+    expect(input(renderer, { placeholder: 'tools.httpDialog.urlPlaceholder' }).props.value).toBe('{{city}}')
+  })
+
  })

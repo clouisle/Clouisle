@@ -30,6 +30,13 @@ from app.services.auto_notification import AutoNotificationService
 
 from .context import ExecutionContext
 from .pause_approvers import remove_pause_pending_notifications
+from .execution_origin import (
+    ORIGIN_SNAPSHOT_KEY,
+    WorkflowExecutionOrigin,
+    origin_snapshot,
+    workflow_origin,
+)
+from .tool_approval_resume import ensure_resume_after_park
 from .errors import (
     WorkflowNotFoundError,
     WorkflowNotPublishedError,
@@ -197,6 +204,7 @@ class WorkflowOrchestrator:
         team_id: UUID | None = None,
         stream: bool = True,
         public_base_url: str | None = None,
+        origin: WorkflowExecutionOrigin | None = None,
     ) -> str:
         """
         Run a workflow.
@@ -209,6 +217,9 @@ class WorkflowOrchestrator:
             stream: Whether to enable streaming
             public_base_url: Public base URL of the triggering request, used as a
                 fallback for absolutizing upload URLs when PUBLIC_API_URL is unset
+            origin: Trusted entrypoint that started this run. Background callers
+                (cron, nested workflow) must pass it; omitted means the workflow
+                surface.
 
         Returns:
             Run ID (UUID string)
@@ -234,6 +245,9 @@ class WorkflowOrchestrator:
         )
         run.context_snapshot = {
             "workflow_definition": workflow_def,
+            ORIGIN_SNAPSHOT_KEY: origin_snapshot(
+                origin or workflow_origin(workflow_id)
+            ),
             **({"public_base_url": public_base_url} if public_base_url else {}),
         }
         await run.save(update_fields=["context_snapshot"])
@@ -334,6 +348,9 @@ class WorkflowOrchestrator:
             run.total_duration_ms = duration_ms
             await run.save()
             await _persist_observability_progress(run, expected_status)
+            # An approval may have been decided while this node was returning:
+            # the decision-time hook only resumes an already-waiting run.
+            await ensure_resume_after_park(run, e.node_id)
             if stream_manager:
                 await stream_manager.publish_workflow_waiting(e.node_id)
             await context.set_ttl()
@@ -441,6 +458,13 @@ class WorkflowOrchestrator:
             context_snapshot["workflow_definition"] = workflow_def
             if public_base_url:
                 context_snapshot["public_base_url"] = public_base_url
+            # Trusted creation routes stamp the real entrypoint. A row without
+            # one (legacy or direct task creation) is executed as the workflow
+            # surface, never as the workflow's configured trigger.
+            if ORIGIN_SNAPSHOT_KEY not in context_snapshot:
+                context_snapshot[ORIGIN_SNAPSHOT_KEY] = origin_snapshot(
+                    workflow_origin(workflow_id)
+                )
             run.context_snapshot = context_snapshot
 
         # Update run status to running
@@ -564,6 +588,9 @@ class WorkflowOrchestrator:
             run.total_duration_ms = duration_ms
             await run.save()
             await _persist_observability_progress(run, expected_status)
+            # Closing the decision-vs-park race applies to every pass: a
+            # multi-pause run can park again on a later tool approval.
+            await ensure_resume_after_park(run, e.node_id)
             if stream_manager:
                 await stream_manager.publish_workflow_waiting(e.node_id)
             await context.set_ttl()
@@ -1569,6 +1596,26 @@ class WorkflowOrchestrator:
             await cancelled_requests.update(status=PauseRequestStatus.CANCELLED)
             for request in await cancelled_requests.all():
                 await remove_pause_pending_notifications(request.id)
+
+        # A parked tool approval must not outlive the stopped run: every
+        # unexecuted execution is cancelled, so a late decision can neither
+        # resume the run nor execute the side effect.
+        try:
+            from app.models.tool_approval import ExecutionRunKind
+            from app.schemas.tool_approval import ToolExecutionCancelReason
+            from app.services import tool_approvals
+
+            await tool_approvals.cancel_pending_for_run(
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=run.id,
+                reason=ToolExecutionCancelReason.RUN_STOPPED,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to cancel pending tool executions for stopped run %s",
+                run.id,
+                exc_info=True,
+            )
 
         # Set cancelled status in context (may not exist yet for PENDING runs)
         redis_client = await get_redis()

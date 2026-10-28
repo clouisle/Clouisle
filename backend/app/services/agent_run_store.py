@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from tortoise.transactions import in_transaction
@@ -36,6 +36,9 @@ from app.models.agent_run import (
     AgentRunStatus,
 )
 from app.models.agent import Message, MessageRole, MessageRoundRole
+
+if TYPE_CHECKING:
+    from app.models.tool_approval import ToolExecution
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +127,7 @@ async def create_run(
     team_id: str | None = None,
     source_message_id: UUID | None = None,
     celery_task_id: str | None = None,
+    api_key_id: UUID | None = None,
 ) -> AgentRun:
     run_id = uuid4()
     run = await AgentRun.create(
@@ -134,6 +138,7 @@ async def create_run(
         mode=mode,
         source_message_id=source_message_id,
         celery_task_id=celery_task_id,
+        api_key_id=api_key_id,
         status=AgentRunStatus.QUEUED,
         started_at=None,
         submitted_at=now_utc(),
@@ -555,6 +560,314 @@ async def submit_user_answers(
     return run
 
 
+_APPROVAL_TOOL_ERRORS: dict[str, str] = {
+    "rejected": "Tool execution was rejected by an approver.",
+    "expired": "Tool execution approval expired before it could run.",
+    "binding_changed": (
+        "Tool execution approval is no longer valid because its binding changed."
+    ),
+    "revoked": "Tool execution was revoked before it could run.",
+    "cancelled": "Tool execution was cancelled before it could run.",
+    "policy_denied": "Tool execution was denied by policy.",
+}
+
+
+def _enum_text(value: Any) -> str | None:
+    raw = getattr(value, "value", value)
+    return str(raw) if raw is not None else None
+
+
+def _approval_resume_error(execution: "ToolExecution") -> str | None:
+    status = _enum_text(execution.status)
+    if status == "ready":
+        return None
+    if status != "cancelled":
+        return None
+    return _APPROVAL_TOOL_ERRORS.get(_enum_text(execution.cancel_reason) or "")
+
+
+async def _append_approval_tool_result_locked(
+    run: AgentRun,
+    conn: Any,
+    payload: dict[str, Any],
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    tool_display_name: str,
+    display_result: str,
+    llm_result: str,
+    is_error: bool,
+    round_id: UUID | None,
+    round_index: int | None,
+    iteration_index: int | None,
+) -> dict[str, Any]:
+    """Persist one tool result for a resumed approval and update the payload."""
+    resolved_round_id = round_id or run.active_round_id
+    resolved_round_index = round_index or 0
+    await Message.create(
+        conversation_id=run.conversation_id,
+        role=MessageRole.TOOL,
+        content=display_result,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        round_id=resolved_round_id,
+        round_index=resolved_round_index,
+        round_role=MessageRoundRole.TOOL_RESULT,
+        is_round_canonical=False,
+        iteration_index=iteration_index,
+        using_db=conn,
+    )
+
+    exclude_ids = list(payload.get("exclude_message_ids") or [])
+    if run.canonical_message_id:
+        canonical_id = str(run.canonical_message_id)
+        if canonical_id not in exclude_ids:
+            exclude_ids.append(canonical_id)
+    payload["exclude_message_ids"] = exclude_ids
+
+    history_override = list(payload.get("history_override") or [])
+    history_override.append(
+        {
+            "role": "tool",
+            "content": llm_result,
+            "round_id": str(resolved_round_id) if resolved_round_id else "",
+            "round_index": resolved_round_index,
+            "round_role": "tool_result",
+            "is_round_canonical": False,
+            "iteration_index": iteration_index,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+        }
+    )
+    payload["history_override"] = history_override
+    payload["resume_tool_result"] = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_display_name": tool_display_name,
+        "result": display_result,
+        "is_error": is_error,
+    }
+    payload["first_round_index"] = resolved_round_index + 1
+    payload["created_message_count"] = int(payload.get("created_message_count", 2)) + 1
+    payload.pop("resume_tool_approval", None)
+    return payload
+
+
+async def queue_agent_run_approval_resume(
+    execution: "ToolExecution",
+) -> AgentRun | None:
+    """Queue the waiting AgentRun that owns this tool execution.
+
+    ``ready`` queues a marker so the worker executes the original pending call
+    before resuming the model. A cancelled execution queues a tool error so the
+    model continues without the side effect. ``run_stopped`` never resumes.
+    """
+    if _enum_text(execution.run_kind) != "agent" or execution.run_id is None:
+        return None
+    if execution.tool_call_id is None:
+        return None
+    error_message = _approval_resume_error(execution)
+    status = _enum_text(execution.status)
+    if status not in {"ready", "cancelled"}:
+        return None
+    if status == "cancelled" and error_message is None:
+        return None
+
+    async with in_transaction() as conn:
+        run = (
+            await AgentRun.filter(id=execution.run_id)
+            .using_db(conn)
+            .select_for_update()
+            .first()
+        )
+        if (
+            run is None
+            or run.status != AgentRunStatus.WAITING
+            or not run.pending_tool_call_id
+            or run.pending_tool_call_id != execution.tool_call_id
+            or not run.pending_tool_name
+        ):
+            return None
+
+        payload = dict(run.worker_payload or {})
+        tool_name = run.pending_tool_name
+        tool_display_name = str(payload.get("pending_tool_display_name") or tool_name)
+        round_id = run.pending_tool_round_id or run.active_round_id
+        round_index = run.pending_tool_round_index
+        iteration_index = run.pending_tool_iteration_index
+
+        if status == "ready":
+            payload["resume_tool_approval"] = {
+                "execution_id": str(execution.id),
+                "tool_call_id": execution.tool_call_id,
+                "tool_name": tool_name,
+                "tool_display_name": tool_display_name,
+                "round_id": str(round_id) if round_id else None,
+                "round_index": round_index,
+                "iteration_index": iteration_index,
+            }
+        else:
+            assert error_message is not None
+            payload = await _append_approval_tool_result_locked(
+                run,
+                conn,
+                payload,
+                tool_call_id=execution.tool_call_id,
+                tool_name=tool_name,
+                tool_display_name=tool_display_name,
+                display_result=json.dumps({"error": error_message}, ensure_ascii=False),
+                llm_result=json.dumps({"error": error_message}, ensure_ascii=False),
+                is_error=True,
+                round_id=round_id,
+                round_index=round_index,
+                iteration_index=iteration_index,
+            )
+
+        run.status = AgentRunStatus.QUEUED
+        run.worker_payload = payload
+        run.pending_tool_call_id = None
+        run.pending_tool_name = None
+        run.pending_tool_input = None
+        run.pending_tool_round_id = None
+        run.pending_tool_round_index = None
+        run.pending_tool_iteration_index = None
+        run.updated_at = now_utc()
+        await run.save(
+            using_db=conn,
+            update_fields=[
+                "status",
+                "worker_payload",
+                "pending_tool_call_id",
+                "pending_tool_name",
+                "pending_tool_input",
+                "pending_tool_round_id",
+                "pending_tool_round_index",
+                "pending_tool_iteration_index",
+                "updated_at",
+            ],
+        )
+
+    await _write_state_cache(run.id, AgentRunStatus.QUEUED)
+    record_observability_progress(
+        run.id,
+        status=AgentRunStatus.QUEUED.value,
+        expected_status=AgentRunStatus.WAITING.value,
+        started_at=run.started_at,
+        message_started_at=run.message_started_at,
+        first_token_ms=run.first_token_ms,
+    )
+    return run
+
+
+async def queue_agent_run_resume_if_approval_terminal(
+    run_id: UUID,
+) -> AgentRun | None:
+    """Close the park/decision race: queue a WAITING run whose approval is done.
+
+    An approval can be decided while the worker is still running, before the
+    run row becomes WAITING. The decision scheduler then correctly finds no
+    waiting run. This post-park recheck finds the execution for the persisted
+    pending call and queues the matching resume (marker or tool error) if the
+    execution already reached a terminal approval state.
+    """
+    run = await get_run(run_id)
+    if (
+        run is None
+        or run.status != AgentRunStatus.WAITING
+        or not run.pending_tool_call_id
+    ):
+        return None
+    pending_input = run.pending_tool_input
+    if (
+        not isinstance(pending_input, dict)
+        or pending_input.get("interaction_kind") != "tool_approval"
+    ):
+        # ask_user / other durable interactions are not tool approvals.
+        return None
+    from app.models.tool_approval import ToolExecution
+
+    execution = (
+        await ToolExecution.filter(
+            run_kind="agent",
+            run_id=run.id,
+            tool_call_id=run.pending_tool_call_id,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if execution is None:
+        return None
+    return await queue_agent_run_approval_resume(execution)
+
+
+async def record_resumed_tool_result(
+    run_id: UUID,
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    tool_display_name: str,
+    display_result: str,
+    llm_result: str,
+    is_error: bool,
+    round_id: UUID | None,
+    round_index: int | None,
+    iteration_index: int | None,
+) -> dict[str, Any] | None:
+    """Persist the original call's result and return the updated worker payload."""
+    async with in_transaction() as conn:
+        run = (
+            await AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
+        )
+        if run is None or run.status != AgentRunStatus.RUNNING:
+            return None
+        payload = await _append_approval_tool_result_locked(
+            run,
+            conn,
+            dict(run.worker_payload or {}),
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            tool_display_name=tool_display_name,
+            display_result=display_result,
+            llm_result=llm_result,
+            is_error=is_error,
+            round_id=round_id,
+            round_index=round_index,
+            iteration_index=iteration_index,
+        )
+        run.worker_payload = payload
+        run.updated_at = now_utc()
+        await run.save(using_db=conn, update_fields=["worker_payload", "updated_at"])
+    return payload
+
+
+async def schedule_agent_run_approval_resume(
+    execution: "ToolExecution",
+) -> AgentRun | None:
+    """Queue and dispatch the approval resume; failures mark the run failed."""
+    run = await queue_agent_run_approval_resume(execution)
+    if run is None:
+        return None
+    try:
+        payload = run.worker_payload
+        if not isinstance(payload, dict):  # pragma: no cover - defensive
+            raise RuntimeError("run resume payload is missing")
+        from app.services.agent_submission import dispatch_run
+
+        await dispatch_run(payload, run)
+    except Exception as exc:
+        logger.exception("Failed to dispatch approval resume for run %s", run.id)
+        await transition_run_if_status(
+            run,
+            AgentRunStatus.QUEUED,
+            AgentRunStatus.FAILED,
+            error_code="enqueue_failed",
+            error_message=str(exc),
+        )
+        current = await AgentRun.get_or_none(id=run.id)
+        return current
+    return run
+
+
 async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
     """Atomically stop a run that is waiting for user answers."""
     async with in_transaction() as conn:
@@ -589,7 +902,21 @@ async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
     await _record_terminal_observability(run)
+    await _cancel_pending_tool_executions(run_id)
     return run
+
+
+async def _cancel_pending_tool_executions(run_id: UUID) -> None:
+    """Stop is terminal: an outstanding approval must not stay actionable."""
+    from app.models.tool_approval import ExecutionRunKind
+    from app.schemas.tool_approval import ToolExecutionCancelReason
+    from app.services import tool_approvals
+
+    await tool_approvals.cancel_pending_for_run(
+        run_kind=ExecutionRunKind.AGENT,
+        run_id=run_id,
+        reason=ToolExecutionCancelReason.RUN_STOPPED,
+    )
 
 
 async def stop_queued_run(run_id: UUID) -> AgentRun | None:
@@ -610,6 +937,7 @@ async def stop_queued_run(run_id: UUID) -> AgentRun | None:
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
     await _record_terminal_observability(run)
+    await _cancel_pending_tool_executions(run_id)
     return run
 
 

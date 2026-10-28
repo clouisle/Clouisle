@@ -3,7 +3,8 @@
 import * as React from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn, Database } from 'lucide-react'
+import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +17,11 @@ import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-sele
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { toolsApi, isPresetToolCategory, type Tool, type ToolCategory, type PresetToolCategory, type McpToolInfo } from '@/lib/api'
+import { toolMcpApi } from '@/lib/api/tool-mcp'
+import {
+  ToolConnectionPicker,
+  getToolConnectionBinding,
+} from '@/components/tools/connection-picker'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
@@ -39,6 +45,9 @@ export interface ToolNodeConfig {
   // MCP 特有：服务器中的具体工具
   mcpToolName?: string         // MCP 服务器中的工具名称
   mcpToolDescription?: string  // MCP 工具描述
+  // 外部账号连接绑定
+  connection_mode?: 'personal' | 'team' | null
+  connection_id?: string | null
   // 参数映射
   parameterMappings: ParameterMapping[]
   // 输出变量
@@ -103,6 +112,7 @@ interface ToolNodeConfigProps {
   onConfigChange: (config: ToolNodeConfig) => void
   onVariableSearchChange: (search: string) => void
   onOpenVariablePopoverChange: (id: string | null) => void
+  readOnly?: boolean
 }
 
 export function ToolNodeConfig({
@@ -113,6 +123,7 @@ export function ToolNodeConfig({
   onConfigChange,
   onVariableSearchChange,
   onOpenVariablePopoverChange,
+  readOnly = false,
 }: ToolNodeConfigProps) {
   const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
@@ -238,15 +249,25 @@ export function ToolNodeConfig({
   React.useEffect(() => {
     const loadMcpTools = async () => {
       // 只有选择了 MCP 类型且有 mcp_config 时才加载
-      if (safeConfig.toolType !== 'mcp' || !selectedTool?.mcp_config) {
+      if (safeConfig.toolType !== 'mcp' || !selectedTool?.id || !currentTeam?.id) {
         setMcpTools([])
         return
       }
       
       setIsLoadingMcpTools(true)
       try {
-        const response = await toolsApi.listMcpTools(selectedTool.mcp_config)
-        setMcpTools(response.tools)
+        const outcome = await toolMcpApi.listTools(selectedTool.id, {
+          teamId: currentTeam.id,
+          ...(safeConfig.connection_mode ? { connection_mode: safeConfig.connection_mode } : {}),
+          ...(safeConfig.connection_id ? { connection_id: safeConfig.connection_id } : {}),
+        })
+        setMcpTools(outcome.status === 'completed'
+          ? (outcome.result?.items ?? []).map((item) => ({
+              name: item.name,
+              description: item.description ?? undefined,
+              parameters: item.parameters,
+            }))
+          : [])
       } catch {
         setMcpTools([])
       } finally {
@@ -254,7 +275,14 @@ export function ToolNodeConfig({
       }
     }
     loadMcpTools()
-  }, [safeConfig.toolType, safeConfig.toolId, selectedTool?.mcp_config])
+  }, [
+    safeConfig.toolType,
+    safeConfig.toolId,
+    safeConfig.connection_mode,
+    safeConfig.connection_id,
+    selectedTool?.id,
+    currentTeam?.id,
+  ])
 
   // 过滤 MCP 工具
   const filteredMcpTools = React.useMemo(() => {
@@ -283,6 +311,9 @@ export function ToolNodeConfig({
         mcpToolName: undefined,
         mcpToolDescription: undefined,
         parameterMappings: [],
+        // 连接绑定属于上一个工具，切换工具后必须清空，避免串用账号。
+        connection_mode: null,
+        connection_id: null,
       })
       setToolSelectorOpen(false)
       setToolSearch('')
@@ -311,6 +342,9 @@ export function ToolNodeConfig({
         mcpToolName: undefined,
         mcpToolDescription: undefined,
         parameterMappings: mappings,
+        // 连接绑定属于上一个工具，切换工具后必须清空，避免串用账号。
+        connection_mode: null,
+        connection_id: null,
       })
       
       setToolSelectorOpen(false)
@@ -499,7 +533,7 @@ export function ToolNodeConfig({
           // 已选择工具
           <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-muted/30">
             <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-lg overflow-hidden relative">
-              {selectedTool.icon ? (
+              {selectedTool.icon && selectedTool.type !== 'builtin' ? (
                 selectedTool.icon.startsWith('http') || selectedTool.icon.startsWith('/') || selectedTool.icon.startsWith('data:') ? (
                   <Image
                     src={selectedTool.icon}
@@ -511,10 +545,15 @@ export function ToolNodeConfig({
                 ) : (
                   <span>{selectedTool.icon}</span>
                 )
-              ) : selectedTool.custom_type === 'database' ? (
-                <Database className="h-4 w-4" />
               ) : (
-                getCategoryConfig(selectedTool.category).icon || '⚙️'
+                renderToolIcon({
+                  icon: selectedTool.icon,
+                  name: selectedTool.name,
+                  type: selectedTool.type,
+                  custom_type: selectedTool.custom_type,
+                  category: selectedTool.category,
+                  size: 18,
+                })
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -608,7 +647,7 @@ export function ToolNodeConfig({
                                 onClick={() => handleSelectTool(tool)}
                               >
                                 <div className="shrink-0 w-7 h-7 rounded-md bg-muted flex items-center justify-center text-sm overflow-hidden relative">
-                                  {tool.icon ? (
+                                  {tool.icon && tool.type !== 'builtin' ? (
                                     tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
                                       <Image
                                         src={tool.icon}
@@ -620,10 +659,15 @@ export function ToolNodeConfig({
                                     ) : (
                                       <span>{tool.icon}</span>
                                     )
-                                  ) : tool.custom_type === 'database' ? (
-                                    <Database className="h-4 w-4" />
                                   ) : (
-                                    getCategoryConfig(tool.category).icon
+                                    renderToolIcon({
+                                      icon: tool.icon,
+                                      name: tool.name,
+                                      type: tool.type,
+                                      custom_type: tool.custom_type,
+                                      category: tool.category,
+                                      size: 16,
+                                    })
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -757,6 +801,26 @@ export function ToolNodeConfig({
             </Popover>
           )}
         </div>
+      )}
+
+      {selectedTool && (selectedTool.identity_policy ?? 'none') !== 'none' && (
+        <ToolConnectionPicker
+          tool={selectedTool}
+          builtinToolKey={selectedTool.type === 'builtin' ? selectedTool.name : undefined}
+          teamId={currentTeam?.id}
+          value={getToolConnectionBinding({
+            connection_mode: safeConfig.connection_mode ?? null,
+            connection_id: safeConfig.connection_id ?? null,
+          })}
+          onChange={(binding) =>
+            onConfigChange({
+              ...safeConfig,
+              connection_mode: binding.connection_mode,
+              connection_id: binding.connection_id,
+            })
+          }
+          disabled={readOnly}
+        />
       )}
 
       {/* 参数配置 - MCP 类型需要选择具体工具后才显示 */}

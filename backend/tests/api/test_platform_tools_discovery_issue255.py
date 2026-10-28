@@ -62,6 +62,10 @@ def db_tool(**overrides):
         "mcp_config": {},
         "credentials": {},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": SimpleNamespace(username="creator"),
     }
@@ -176,6 +180,14 @@ async def test_file_parsers_include_builtin_and_http_parameters(monkeypatch):
         category="file",
         http_config={},
     )
+    private_parser = db_tool(
+        team_id=team_id,
+        name="private_parser",
+        display_name="Private parser",
+        category="file",
+        visibility=DBToolVisibility.PRIVATE,
+        http_config={},
+    )
     monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(tools.tool_registry, "get_all_tools", lambda: [builtin])
     monkeypatch.setattr(
@@ -184,7 +196,9 @@ async def test_file_parsers_include_builtin_and_http_parameters(monkeypatch):
         {"parser": {"is_file_parser": True, "category": "file"}},
     )
     monkeypatch.setattr(
-        tools.Tool, "filter", lambda **_kwargs: Query(items=[custom, no_http_config])
+        tools.Tool,
+        "filter",
+        lambda **_kwargs: Query(items=[custom, no_http_config, private_parser]),
     )
 
     result = data(await tools.list_file_parsers(team_id, current))
@@ -277,3 +291,100 @@ async def test_get_tool_by_name_falls_back_to_custom_tool_after_initial_miss(
 
     assert result.id == existing.id
     team_access.assert_awaited_once_with(team_id, current)
+
+
+@pytest.mark.anyio
+async def test_legacy_list_never_exposes_shared_private_tools(monkeypatch):
+    """A stale share row cannot leak a creator-only tool into the team page."""
+    current, team_id = user(), uuid4()
+    shared_public = db_tool(name="shared-public")
+    shared_private = db_tool(
+        name="shared-private",
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    shared_private_mcp = db_tool(
+        name="shared-private-mcp",
+        type=DBToolType.MCP,
+        custom_type=None,
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    queries = iter([Query(items=[]), Query(items=[])])
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(tools, "get_builtin_tools", lambda _locale: [])
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
+    monkeypatch.setattr(
+        tools.ToolShare,
+        "filter",
+        lambda **_kwargs: Query(
+            items=[
+                SimpleNamespace(tool=shared_public, permission="read_execute"),
+                SimpleNamespace(tool=shared_private, permission="read_execute"),
+                SimpleNamespace(tool=shared_private_mcp, permission="read_execute"),
+            ]
+        ),
+    )
+
+    result = data(await tools.list_tools_legacy(team_id, True, current))
+
+    assert [item.name for item in result.custom] == ["shared-public"]
+    assert result.mcp == []
+
+
+@pytest.mark.anyio
+async def test_accessible_tools_never_expose_shared_private_tools(monkeypatch):
+    """The paginated capabilities list applies the same creator-only rule."""
+    current = user()
+    team = SimpleNamespace(id=uuid4(), name="Owners")
+    shared_public = db_tool(name="shared-public")
+    shared_private = db_tool(
+        name="shared-private",
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    queries = iter([Query(items=[]), Query(items=[])])
+    monkeypatch.setattr(tools, "get_builtin_tools", lambda _locale: [])
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
+    monkeypatch.setattr(
+        tools.ToolShare,
+        "filter",
+        lambda **kwargs: Query(
+            items=[
+                SimpleNamespace(tool=shared_public, permission="read_execute"),
+                SimpleNamespace(tool=shared_private, permission="read_execute"),
+            ]
+            if "shared_with_team_id" in kwargs
+            else (),
+            count=0,
+        ),
+    )
+
+    result = await tools._build_accessible_tools(current, [team])
+
+    assert {item.name for item in result} == {"shared-public"}
+
+
+@pytest.mark.anyio
+async def test_shared_with_me_hides_private_tools(monkeypatch):
+    current, team_id = user(), uuid4()
+    shared_public = db_tool(name="shared-public")
+    shared_private = db_tool(
+        name="shared-private",
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(
+        tools.ToolShare,
+        "filter",
+        lambda **_kwargs: Query(
+            items=[
+                SimpleNamespace(tool=shared_public, permission="read_execute"),
+                SimpleNamespace(tool=shared_private, permission="read_execute"),
+            ]
+        ),
+    )
+
+    result = data(await tools.list_shared_tools(team_id, current))
+
+    # This handler returns ``ToolListOut.model_dump()`` (a dict), unlike the
+    # legacy handler above which returns the model instance directly.
+    assert [item["name"] for item in result["custom"]] == ["shared-public"]
+    assert result["mcp"] == []

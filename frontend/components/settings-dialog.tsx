@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy, Mail } from 'lucide-react'
+import { User, Shield, Loader2, Link as LinkIcon, Link2, Unlink, KeyRound, Download, Copy, Mail } from 'lucide-react'
 import { formatDateTime, isValidEmail } from '@/lib/utils'
 import {
   Dialog,
@@ -50,6 +50,7 @@ import {
 import { ApiError } from '@/lib/api/client'
 import { WeChatKnowledge } from './wechat-knowledge'
 import { FeishuAgentSettings } from './feishu-agent-settings'
+import { UserToolConnections } from './user-tool-connections'
 
 interface SettingsDialogProps {
   open: boolean
@@ -67,6 +68,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const [loading, setLoading] = React.useState(true)
   const [user, setUser] = React.useState<UserType | null>(null)
+  // Connection management lists tool definitions, which requires `tool:read`.
+  // Hide the entry instead of exposing an action that always returns 403.
+  const canManageConnections = Boolean(
+    user?.is_superuser
+    || user?.roles?.some((role) =>
+      role.permissions?.some((permission) => permission.code === 'tool:read')
+    )
+  )
   const [passwordStatus, setPasswordStatus] = React.useState<PasswordStatus | null>(null)
   const [totpStatus, setTotpStatus] = React.useState<TOTPStatusResponse | null>(null)
 
@@ -575,6 +584,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <Shield className="mr-1.5 h-4 w-4" />
                 {t('account')}
               </TabsTrigger>
+              {canManageConnections && (
+                <TabsTrigger value="connections" data-testid="settings-tab-connections">
+                  <Link2 className="mr-1.5 h-4 w-4" />
+                  {t('connections.tabTitle')}
+                </TabsTrigger>
+              )}
               <TabsTrigger value="wechat">
                 <LinkIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('wechat.title')}
@@ -1104,6 +1119,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </Card>
               )}
             </TabsContent>
+            {/* Tool Connections Tab */}
+            {canManageConnections && (
+              <TabsContent value="connections" className="space-y-6">
+                <UserToolConnections />
+              </TabsContent>
+            )}
             <TabsContent value="wechat" className="space-y-6">
               <WeChatKnowledge active={open} />
             </TabsContent>

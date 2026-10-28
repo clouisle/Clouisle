@@ -351,6 +351,76 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         ResponseCode.SSO_INVALID_CONFIGURATION: "sso_invalid_configuration",
         ResponseCode.SSO_PROVIDER_NAME_EXISTS: "sso_provider_name_exists",
         ResponseCode.PASSWORD_LOGIN_DISABLED: "password_login_disabled",
+        # Tool connection / delegation errors (6400-6499)
+        ResponseCode.TOOL_CONNECTION_NOT_FOUND: "tool_connection_not_found",
+        ResponseCode.TOOL_CONNECTION_ACCESS_DENIED: "tool_connection_access_denied",
+        ResponseCode.TOOL_CONNECTION_SECRET_UNREADABLE: (
+            "tool_connection_secret_unreadable"
+        ),
+        ResponseCode.TOOL_CONNECTION_DEFAULT_REQUIRED: (
+            "tool_connection_default_required"
+        ),
+        ResponseCode.TOOL_CONNECTION_REQUIRED: "tool_connection_required",
+        ResponseCode.TOOL_CONNECTION_INACTIVE: "tool_connection_inactive",
+        ResponseCode.TOOL_CONNECTION_INVALID: "tool_connection_invalid",
+        # Tool OAuth errors (6430-6499)
+        ResponseCode.TOOL_OAUTH_NOT_SUPPORTED: "tool_oauth_not_supported",
+        ResponseCode.TOOL_OAUTH_CONFIG_INVALID: "tool_oauth_config_invalid",
+        ResponseCode.TOOL_OAUTH_STATE_INVALID: "tool_oauth_state_invalid",
+        ResponseCode.TOOL_OAUTH_EXCHANGE_FAILED: "tool_oauth_exchange_failed",
+        ResponseCode.TOOL_OAUTH_REAUTH_REQUIRED: "tool_oauth_reauth_required",
+        ResponseCode.TOOL_OAUTH_DISCOVERY_FAILED: "tool_oauth_discovery_failed",
+        ResponseCode.TOOL_OAUTH_SCOPE_ESCALATION: "tool_oauth_scope_escalation",
+        # Tool execution approval errors (6500-6599)
+        ResponseCode.TOOL_EXECUTION_NOT_FOUND: "tool_execution_not_found",
+        ResponseCode.TOOL_EXECUTION_ACCESS_DENIED: "tool_execution_access_denied",
+        ResponseCode.TOOL_EXECUTION_INVALID_STATE: "tool_execution_invalid_state",
+        ResponseCode.TOOL_APPROVAL_REQUEST_NOT_FOUND: "tool_approval_request_not_found",
+        ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED: "tool_approval_not_authorized",
+        ResponseCode.TOOL_APPROVAL_EXPIRED: "tool_approval_expired",
+        ResponseCode.TOOL_APPROVAL_ALREADY_DECIDED: "tool_approval_already_decided",
+        ResponseCode.TOOL_APPROVAL_BINDING_CHANGED: "tool_approval_binding_changed",
+        ResponseCode.TOOL_APPROVAL_CONFLICT: "tool_approval_conflict",
+        ResponseCode.TOOL_EXECUTION_CLAIM_CONFLICT: "tool_execution_claim_conflict",
+        ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED: (
+            "tool_approval_policy_configuration_required"
+        ),
+        ResponseCode.TOOL_APPROVAL_IDEMPOTENCY_CONFLICT: (
+            "tool_approval_idempotency_conflict"
+        ),
+        ResponseCode.TOOL_APPROVAL_INPUT_INVALID: "tool_approval_input_invalid",
+        ResponseCode.TOOL_EXECUTION_PARAMETERS_UNREADABLE: (
+            "tool_execution_parameters_unreadable"
+        ),
+        # Server-initiated MCP interaction errors (6600-6619)
+        ResponseCode.TOOL_INTERACTION_NOT_FOUND: "run_interaction_not_found",
+        ResponseCode.TOOL_INTERACTION_ACCESS_DENIED: ("run_interaction_access_denied"),
+        ResponseCode.TOOL_INTERACTION_NOT_PENDING: "run_interaction_not_pending",
+        ResponseCode.TOOL_INTERACTION_EXPIRED: "run_interaction_expired",
+        ResponseCode.TOOL_INTERACTION_CONNECTION_LOST: (
+            "run_interaction_connection_lost"
+        ),
+        ResponseCode.TOOL_INTERACTION_INVALID_RESPONSE: (
+            "run_interaction_invalid_response"
+        ),
+        ResponseCode.TOOL_INTERACTION_SCHEMA_INVALID: (
+            "run_interaction_schema_invalid"
+        ),
+        ResponseCode.TOOL_INTERACTION_SECRET_FIELD_REJECTED: (
+            "run_interaction_secret_field_rejected"
+        ),
+        ResponseCode.TOOL_INTERACTION_URL_NOT_ALLOWED: (
+            "run_interaction_url_not_allowed"
+        ),
+        ResponseCode.TOOL_INTERACTION_CONTENT_TOO_LARGE: (
+            "run_interaction_content_too_large"
+        ),
+        ResponseCode.TOOL_INTERACTION_SAMPLING_FAILED: (
+            "run_interaction_sampling_failed"
+        ),
+        ResponseCode.TOOL_INTERACTION_IDEMPOTENCY_CONFLICT: (
+            "run_interaction_idempotency_conflict"
+        ),
     }
 
     try:

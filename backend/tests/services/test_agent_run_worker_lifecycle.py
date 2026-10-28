@@ -297,16 +297,40 @@ def test_agent_task_crash_does_not_overwrite_stopped_run(monkeypatch):
 
 def test_sweep_lost_agent_runs_task_reports_marked_count(monkeypatch):
     """The scheduled sweep is the only producer of INTERRUPTED."""
-    from app.services import agent_run_store
+    from app.services import agent_run_store, tool_interactions
     from app.tasks import agent as agent_task
 
     sweep = AsyncMock(return_value=3)
     monkeypatch.setattr(agent_run_store, "mark_expired_runs_interrupted", sweep)
+    expire = AsyncMock(return_value=1)
+    monkeypatch.setattr(tool_interactions, "expire_stale_interactions", expire)
 
     result = agent_task.sweep_lost_agent_runs_task.run(max_age_seconds=90)
 
-    assert result == {"marked": 3}
+    assert result == {"marked": 3, "expired_interactions": 1}
     sweep.assert_awaited_once_with(max_age_seconds=90)
+    expire.assert_awaited_once_with()
+
+
+def test_sweep_lost_agent_runs_task_survives_interaction_expiry_failure(monkeypatch):
+    """A broken interaction sweep must not lose the AgentRun crash repair."""
+    from app.services import agent_run_store, tool_interactions
+    from app.tasks import agent as agent_task
+
+    monkeypatch.setattr(
+        agent_run_store,
+        "mark_expired_runs_interrupted",
+        AsyncMock(return_value=2),
+    )
+    monkeypatch.setattr(
+        tool_interactions,
+        "expire_stale_interactions",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    result = agent_task.sweep_lost_agent_runs_task.run()
+
+    assert result == {"marked": 2, "expired_interactions": 0}
 
 
 def test_sweep_lost_agent_runs_task_reraises_so_beat_retries(monkeypatch):
@@ -1771,6 +1795,47 @@ async def test_run_agent_round_failure_publishes_when_failed_transition_wins(
         (call.args[0], call.args[1])
         for call in stream.publish.await_args_list
         if len(call.args) >= 2
+    ]
+
+
+@pytest.mark.parametrize(
+    ("key", "fragment"),
+    [
+        ("agent_tool_access_denied", "无权"),
+        ("agent_tool_connection_required", "登录"),
+        ("agent_tool_connection_inactive", "重新登录"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_discovery_publishes_localized_guidance(
+    monkeypatch,
+    key,
+    fragment,
+):
+    from app.core.i18n import t
+    from app.schemas.response import BusinessError
+
+    async def transition(run, _expected, status, **kwargs):
+        if status == AgentRunStatus.FAILED:
+            run.status = status
+            run.error_message = kwargs["error_message"]
+            return run
+        return None
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=transition,
+        rebuild=BusinessError(msg_key=key, status_code=409, tool_name="GitHub"),
+    )
+    payload = {**_round_payload(run), "locale": "zh"}
+    output = await run_agent_round(payload)
+    expected = t(key, lang="zh", tool_name="GitHub")
+    assert "GitHub" in expected and fragment in expected
+    assert output == {"status": AgentRunStatus.FAILED.value, "error": expected}
+    assert run.error_message == expected
+    assert ("error", {"code": "run_failed", "msg": expected}) in [
+        (call.args[0], call.args[1]) for call in stream.publish.await_args_list
     ]
 
 

@@ -10,6 +10,9 @@ mock.module('@xyflow/react', () => ({ Handle: element, Position: { Left: 'left',
 mock.module('lucide-react', () => ({ Wrench: element, AlertCircle: element, Clock3: element, Calculator: element, Search: element, Globe: element, FolderOpen: element, Code2: element, Link: element, ChartColumn: element }))
 mock.module('@/lib/api', () => ({ isPresetToolCategory: (category: string) => ['time', 'math', 'search', 'web', 'file', 'code', 'sandbox', 'api', 'data', 'other'].includes(category) }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/tools/tool-icons', () => ({
+  renderToolIcon: ({ icon, name }: { icon?: string; name?: string }) => jsx('svg', { 'data-icon-key': icon || name }),
+}))
 
 const { ToolNode, defaultToolNodeConfig } = await import('./tool-node')
 
@@ -98,4 +101,16 @@ test('shows custom type, MCP selection warning, and the default empty state', ()
   expect(findAll(pending, (node) => node.type === element && node.props.className === 'h-4 w-4 text-amber-500')).toHaveLength(1)
   expect(defaultToolNodeConfig).toEqual({ toolType: 'builtin', parameterMappings: [], outputVariable: 'result' })
   expect(findAll(empty, (node) => node.props.children === 'nodesTool.clickToConfigure')).toHaveLength(1)
+})
+
+test('renders the builtin database mark on workflow nodes', () => {
+  const tree = ToolNode({
+    id: 'database-node',
+    data: { type: 'tool', label: 'Query database', config: {}, toolConfig: {
+      toolName: 'postgresql_query', toolType: 'builtin', toolIcon: 'postgresql',
+      toolDisplayName: 'PostgreSQL Query', toolCategory: 'data', parameterMappings: [], outputVariable: 'result',
+    } },
+  }) as TreeNode
+  expect(findAll(tree, (node) => node.props.children === 'postgresql')).toHaveLength(0)
+  expect(findAll(tree, (node) => node.props['data-icon-key'] === 'postgresql')).toHaveLength(1)
 })

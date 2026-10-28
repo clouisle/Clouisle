@@ -12,7 +12,21 @@ mock.module('next/image', () => ({
   default: ({ alt, src }: { alt: string; src: string }) => <img alt={alt} src={src} />,
 }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
-mock.module('@/lib/api', () => ({ toolsApi: { listMcpTools: mock(), test: mock(), getWebSearchEngines: mock(async () => ['tavily']) } }))
+const listTools = mock(async () => ({ status: 'completed', operation: 'list:tools', execution_id: null, result: { items: [] }, pending_approval: null }))
+mock.module('@/lib/api', () => ({ toolsApi: { test: mock(), getWebSearchEngines: mock(async () => ['tavily']) } }))
+mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools } }))
+mock.module('@/components/tools/connection-picker', () => ({
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null },
+  ToolConnectionPicker: ({ onChange }: { onChange?: (binding: { connection_mode: string; connection_id: string }) => void }) => (
+    <button
+      type="button"
+      data-connection-picker
+      onClick={() => onChange?.({ connection_mode: 'team', connection_id: 'conn-1' })}
+    >
+      select-connection
+    </button>
+  ),
+}))
 mock.module('@/components/tools/web-search-engine-select', () => ({
   WebSearchEngineSelect: ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => (
     <select aria-label="search-engine" value={value} onChange={(event) => onValueChange(event.target.value)}>
@@ -90,18 +104,25 @@ const baseTool = {
 } as const
 
 const renderers: ReactTestRenderer[] = []
+const consoleError = mock(() => {})
+const originalConsoleError = console.error
 
 beforeEach(() => {
+  console.error = consoleError as never
+  consoleError.mockClear()
   toastSuccess.mockClear()
   toastError.mockClear()
+  listTools.mockClear()
+  listTools.mockImplementation(async () => ({ status: 'completed', operation: 'list:tools', execution_id: null, result: { items: [] }, pending_approval: null }))
 })
 
 afterEach(() => {
+  console.error = originalConsoleError
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
 })
 
-function render(tool: unknown, api: { listMcpTools: ReturnType<typeof mock>; test: ReturnType<typeof mock> }) {
+function render(tool: unknown, api: { test: ReturnType<typeof mock> }) {
   let renderer: ReactTestRenderer
   act(() => {
     renderer = create(
@@ -130,12 +151,12 @@ function runButton(renderer: ReactTestRenderer) {
 
 describe('tool test panel', () => {
   test('renders nothing at the null-tool boundary', () => {
-    const api = { listMcpTools: mock(), test: mock() }
+    const api = { test: mock() }
     expect(render(null, api).toJSON()).toBeNull()
   })
 
   test('passes the chosen enabled engine when testing web search', async () => {
-    const api = { listMcpTools: mock(), test: mock(async () => ({ success: true, result: {} })) }
+    const api = { test: mock(async () => ({ success: true, result: {} })) }
     const renderer = render({
       ...baseTool,
       type: 'builtin',
@@ -158,7 +179,7 @@ describe('tool test panel', () => {
   test('converts regular and code-tool inputs before execution and shows loading and rich success output', async () => {
     let resolve!: (value: unknown) => void
     const pending = new Promise((next) => { resolve = next })
-    const api = { listMcpTools: mock(), test: mock(() => pending) }
+    const api = { test: mock(() => pending) }
     const renderer = render({ ...baseTool, type: 'code', icon: 'https://example.test/tool.png' }, api)
 
     expect(renderer.root.findByType('img').props.src).toBe('https://example.test/tool.png')
@@ -201,7 +222,6 @@ describe('tool test panel', () => {
 
   test('renders execution failures and validation errors, then clears an edited field error', async () => {
     const api = {
-      listMcpTools: mock(),
       test: mock()
         .mockResolvedValueOnce({ name: 'transform', success: false, error: 'runtime exploded' })
         .mockRejectedValueOnce({ fields: { query: 'Query is required', __all__: 'Request rejected' } }),
@@ -223,10 +243,15 @@ describe('tool test panel', () => {
     ])
   })
 
-  test('loads an MCP schema, parses its values, and enforces selection boundaries', async () => {
+  test('loads an MCP schema through the saved connection, parses values, and enforces selection boundaries', async () => {
     const api = {
-      listMcpTools: mock(async () => ({ tools: [{
+      test: mock(async () => ({ name: 'mcp', success: true, result: 0, duration_ms: 0 })),
+    }
+    listTools.mockImplementation(async () => ({
+      status: 'completed', operation: 'list:tools', execution_id: null, pending_approval: null,
+      result: { items: [{
         name: 'lookup',
+        title: null,
         description: 'Lookup records',
         parameters: {
           type: 'object',
@@ -239,20 +264,21 @@ describe('tool test panel', () => {
             region: { type: 'string', enum: ['us', 'eu'] },
           },
         },
-      }] })),
-      test: mock(async () => ({ name: 'mcp', success: true, result: 0, duration_ms: 0 })),
-    }
+        output_schema: null,
+        annotations: null,
+        meta: null,
+      }], pages_fetched: 1, truncated: false, truncation_reason: null, next_cursor: null, total_items: 1 },
+    }))
     const renderer = render({
       ...baseTool,
       name: 'mcp',
       type: 'mcp',
       parameters: [],
-      mcp_config: { transport: 'http', url: 'https://mcp.test' },
     }, api)
 
     expect(runButton(renderer).props.disabled).toBe(true)
     await act(async () => {})
-    expect(api.listMcpTools).toHaveBeenCalledTimes(1)
+    expect(listTools).toHaveBeenCalledWith('tool-1', { teamId: 'team-1' })
     expect(runButton(renderer).props.disabled).toBe(false)
     expect(JSON.stringify(renderer.toJSON())).toContain('Lookup term')
 
@@ -278,23 +304,30 @@ describe('tool test panel', () => {
     expect(JSON.stringify(renderer.toJSON())).toContain('0')
   })
 
-  test('handles empty and failed MCP discovery without executing', async () => {
-    const emptyApi = { listMcpTools: mock(async () => ({ tools: [] })), test: mock() }
+  test('handles empty and failed saved MCP discovery without executing', async () => {
+    listTools.mockImplementation(async () => ({
+      status: 'completed', operation: 'list:tools', execution_id: null,
+      result: { items: [], pages_fetched: 1, truncated: false, truncation_reason: null, next_cursor: null, total_items: 0 },
+      pending_approval: null,
+    }))
+    const emptyApi = { test: mock() }
     const tool = {
       ...baseTool, name: 'mcp', type: 'mcp', parameters: [],
-      mcp_config: { transport: 'http', url: 'https://mcp.test' },
     }
     const empty = render(tool, emptyApi)
     await act(async () => {})
     expect(JSON.stringify(empty.toJSON())).toContain('mcpDialog.noToolsAvailable')
     expect(runButton(empty).props.disabled).toBe(true)
 
-    const failedApi = { listMcpTools: mock(async () => { throw new Error('offline') }), test: mock() }
+    listTools.mockImplementation(async () => { throw new Error('offline') })
+    const failedApi = { test: mock() }
     const failed = render(tool, failedApi)
     await act(async () => {})
     expect(runButton(failed).props.disabled).toBe(true)
     expect(failedApi.test).not.toHaveBeenCalled()
+    expect(toastError).toHaveBeenCalledWith('testPanel.loadFailed')
   })
+
   test('handles parameter input enum and boolean select changes and empty selection', async () => {
     const tool = {
       ...baseTool,
@@ -303,7 +336,7 @@ describe('tool test panel', () => {
         { name: 'debug', type: 'boolean', required: false },
       ],
     }
-    const api = { listMcpTools: mock(async () => ({ tools: [] })), test: mock(async () => ({ success: true })) }
+    const api = { test: mock(async () => ({ success: true })) }
     const panel = render(tool as never, api)
     await act(async () => {})
 
@@ -318,5 +351,78 @@ describe('tool test panel', () => {
     })
     await act(async () => runButton(panel).props.onClick())
     expect(api.test).toHaveBeenCalled()
+  })
+
+  test('freezes a pending test request and resumes with the identical payload', async () => {
+    const api = {
+      test: mock()
+        .mockResolvedValueOnce({
+          name: 'transform', success: false, pending_approval: true, execution_id: 'exec-1',
+        })
+        .mockResolvedValueOnce({ name: 'transform', success: true, result: { ok: true } }),
+    }
+    const panel = render(baseTool, api)
+    change(panel, 'query', 'hello')
+    await act(async () => runButton(panel).props.onClick())
+
+    expect(JSON.stringify(panel.toJSON())).toContain('testPanel.pendingApproval')
+    expect(runButton(panel).props.disabled).toBe(true)
+
+    const resume = panel.root.findAllByType('button').find((button) =>
+      button.children.some((child) => child === 'testPanel.resume'),
+    )!
+    await act(async () => resume.props.onClick())
+
+    expect(api.test).toHaveBeenLastCalledWith(
+      { name: 'transform', arguments: { query: 'hello' }, execution_id: 'exec-1' },
+      'team-1',
+    )
+    expect(api.test).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(panel.toJSON())).toContain('ok')
+  })
+
+  test('freezes pending saved MCP discovery and resumes the same page scope', async () => {
+    listTools
+      .mockResolvedValueOnce({
+        status: 'pending_approval', operation: 'list:tools', execution_id: 'exec-2',
+        result: null,
+        pending_approval: { execution_id: 'exec-2', tool_name: 'mcp', status: 'awaiting_approval' },
+      })
+      .mockResolvedValueOnce({
+        status: 'completed', operation: 'list:tools', execution_id: null, pending_approval: null,
+        result: { items: [], pages_fetched: 1, truncated: false, truncation_reason: null, next_cursor: null, total_items: 0 },
+      })
+    const panel = render({ ...baseTool, name: 'mcp', type: 'mcp', parameters: [] }, { test: mock() })
+    await act(async () => {})
+
+    expect(JSON.stringify(panel.toJSON())).toContain('testPanel.pendingApproval')
+    const resume = panel.root.findAllByType('button').find((button) =>
+      button.children.some((child) => child === 'testPanel.resume'),
+    )!
+    await act(async () => resume.props.onClick())
+
+    expect(listTools).toHaveBeenLastCalledWith('tool-1', {
+      teamId: 'team-1', maxItems: 200, execution_id: 'exec-2',
+    })
+  })
+
+  test('allows testing with the current user automatic connection and preserves fixed selection', async () => {
+    const api = { test: mock(async () => ({ name: 'connected', success: true, result: { connected: true } })) }
+    const panel = render({
+      ...baseTool,
+      name: 'connected',
+      identity_policy: 'selectable',
+      parameters: [],
+    }, api)
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenLastCalledWith({ name: 'connected', arguments: {} }, 'team-1')
+    expect(JSON.stringify(panel.toJSON())).toContain('connected')
+
+    const pickerBtn = panel.root.findByProps({ 'data-connection-picker': true })
+    await act(async () => pickerBtn.props.onClick())
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenLastCalledWith({
+      name: 'connected', arguments: {}, connection_mode: 'team', connection_id: 'conn-1',
+    }, 'team-1')
   })
 })

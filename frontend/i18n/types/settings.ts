@@ -1,8 +1,40 @@
-// GENERATED — 2026-10-24T18:18:06.007Z
+// GENERATED — 2026-10-27T07:52:13.631Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {
     title: string
+    connections: {
+      title: string
+      tabTitle: string
+      description: string
+      refresh: string
+      add: string
+      createTitle: string
+      selectTool: string
+      selectToolPlaceholder: string
+      emptyTitle: string
+      emptyDescription: string
+      toolTypeBuiltin: string
+      toolTypeMcp: string
+      toolTypeCustom: string
+      scopePersonal: string
+      scopeTeam: string
+      createdSuccess: string
+      revokeSuccess: string
+      revokeConfirmTitle: string
+      revokeConfirmDescription: string
+      revokeConfirmAction: string
+      oauthDisconnectConfirmTitle: string
+      oauthDisconnectConfirmDescription: string
+      oauthDisconnectConfirmAction: string
+      setDefaultSuccess: string
+      reauthRequired: string
+      reconnect: string
+      connect: string
+      setDefault: string
+      defaultBadge: string
+      noTeam: string
+    }
     feishu: {
       title: string
       description: string

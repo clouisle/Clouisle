@@ -50,6 +50,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Model management](admin-guide/models/model-management.md)
 - [Tool management](admin-guide/tools/tool-management.md)
 - [Tools reference](admin-guide/tools/TOOLS.md)
+- [MCP connections and approvals](admin-guide/tools/mcp-connections-and-approvals.md)
 - [Permissions](admin-guide/permissions/PERMISSIONS.md)
 - [Permission management](admin-guide/permissions/permission-management.md)
 - [System settings](admin-guide/settings/system-settings.md)

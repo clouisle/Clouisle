@@ -202,6 +202,12 @@ Output Variable: result
 
 **Built-in tools available:** `web_search`, `fetch_webpage`, `calculate`, `unit_convert`, `get_weather`, `get_current_time`, `format_datetime`, `markitdown`, plus sandbox tools (`bash`, `read`, `edit`, `write`, `artifact`).
 
+Tool nodes never pause for tool approval and do not apply a tool's approval
+policy, even when that tool or its Agent binding requires confirmation. This
+also holds for runs started with a workflow API key and for nested or
+sub-workflow calls; use an explicit `pause` node when the workflow itself needs
+a human decision. Connection and tool authorization checks still apply.
+
 ### agent
 
 Invoke an AI agent with a message and optional context.

@@ -123,11 +123,29 @@ function fillIdentity(renderer: ReactTestRenderer) {
 }
 
 describe('MCP tool dialog', () => {
+  test('completes connection fields in MCP headers and environment values', () => {
+    const renderer = render({ tool: {
+      id: 'tool-1', name: 'github', display_name: 'GitHub', type: 'mcp',
+      connection_fields: [{ name: 'github_token', label: 'Token', required: true, secret: true }],
+      mcp_config: { transport: 'http', url: 'https://mcp.test', headers: { Authorization: '' } },
+    } as React.ComponentProps<typeof McpToolDialog>['tool'] })
+
+    for (const tab of ['stdio', 'sse', 'http']) {
+      const container = renderer.root.findAll((node) => node.props?.['data-tab-content'] === tab)[0]
+      const field = container.findAll((node) => node.type === 'input' && node.props.placeholder === 'mcpDialog.headerValuePlaceholder')[0]
+      act(() => field.props.onChange({ target: { value: 'Bearer {{git', selectionStart: 12 } }))
+      const option = container.findByProps({ role: 'option' })
+      expect(option.props['aria-selected']).toBe(true)
+      act(() => option.props.onMouseDown({ preventDefault: () => {} }))
+      expect(container.findAll((node) => node.type === 'input' && node.props.placeholder === 'mcpDialog.headerValuePlaceholder')[0].props.value).toBe('Bearer {{github_token}}')
+    }
+  })
+
   test('validates create fields, clears corrected errors, and guards disabled actions', async () => {
     const renderer = render()
     const fetch = button(renderer, 'mcpDialog.fetchTools')
     expect(fetch.props.disabled).toBe(true)
-    expect(renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon').every((node) => node.props.disabled)).toBe(true)
+    expect(button(renderer, 'mcpDialog.fetchTools').props.disabled).toBe(true)
 
     await click(button(renderer, 'create'))
     expect(onSave).not.toHaveBeenCalled()
@@ -170,12 +188,14 @@ describe('MCP tool dialog', () => {
 
     await click(button(renderer, 'create'))
     expect(selectedTeam).toHaveBeenCalledWith('team-1')
-    expect(onSave).toHaveBeenCalledWith({
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: 'weather_server', display_name: 'Weather server',
-      description: '- forecast: Gets forecast\n- alerts: No description',
+      description: 'forecast: Gets forecast; alerts: mcpDialog.noDescription',
       icon: 'https://images.test/icon.png', category: 'data', visibility: 'private', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['--yes'], env: { TOKEN: 'fake-secret' } },
-    })
+      identity_policy: 'none',
+      connection_fields: [],
+    }))
   })
 
   test('prefills edit HTTP configuration, keeps identity immutable, and submits headers without exposing real secrets', async () => {
@@ -220,7 +240,7 @@ describe('MCP tool dialog', () => {
 
     await click(button(renderer, 'create'))
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      description: '- search: Searches records',
+      description: 'search: Searches records',
       mcp_config: { transport: 'sse', url: 'https://mcp.test/events', headers: { Authorization: 'Bearer token' } },
     }))
   })

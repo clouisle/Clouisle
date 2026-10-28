@@ -14,6 +14,10 @@ const platformTeamsApi = {
 const teamModelsApi = {
   getTeamModels: mock(),
 }
+const toolsApi = {
+  list: mock(),
+  update: mock(),
+}
 const toast = { success: mock() }
 const router = { push: mock() }
 
@@ -43,6 +47,7 @@ mock.module('sonner', () => ({ toast }))
 mock.module('@/lib/api', () => ({
   teamsApi: platformTeamsApi,
   teamModelsApi,
+  toolsApi,
 }))
 mock.module('@/contexts/team-context', () => ({
   useTeam: () => teamContextState,
@@ -183,6 +188,12 @@ mock.module('lucide-react', () =>
       'MoreHorizontal',
       'LogOut',
       'AlertTriangle',
+      'ShieldCheck',
+      'Loader2',
+      'Lock',
+      'Pencil',
+      'RefreshCw',
+      'Plus',
     ].map((name) => [name, (props: Record<string, unknown>) => <i data-icon={name} {...props} />])
   )
 )
@@ -227,6 +238,8 @@ describe('PlatformTeamPage', () => {
     platformTeamsApi.updateMember.mockReset().mockResolvedValue({})
     platformTeamsApi.transferOwnership.mockReset().mockResolvedValue(teamPayload)
     platformTeamsApi.leaveTeam.mockReset().mockResolvedValue({})
+    toolsApi.list.mockReset().mockResolvedValue({ builtin: [], custom: [], mcp: [] })
+    toolsApi.update.mockReset()
     teamModelsApi.getTeamModels.mockReset().mockResolvedValue([
       {
         id: 'tm-1',
@@ -273,6 +286,16 @@ describe('PlatformTeamPage', () => {
     })
 
     expect(router.push).toHaveBeenCalledWith('?tab=models', { scroll: false })
+  })
+
+  test('opens the tool approvals tab and loads team tools for the current team', async () => {
+    permissions = new Set(['team:manage', 'team:update', 'tool:read', 'tool:update'])
+    searchParams = new URLSearchParams('tab=approvals')
+    const renderer = await render()
+
+    expect(renderer.root.findAllByProps({ 'data-tab-trigger': 'approvals' })).toHaveLength(1)
+    expect(toolsApi.list).toHaveBeenCalledWith('team-1')
+    expect(renderer.root.findByProps({ placeholder: 'searchPlaceholder' })).toBeDefined()
   })
 
   test('allows owner/admin to manage team settings and updates successfully', async () => {

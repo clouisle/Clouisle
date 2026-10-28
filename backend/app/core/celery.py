@@ -3,6 +3,8 @@ Celery application configuration for Clouisle backend.
 """
 
 import logging
+import os
+import sys
 
 from celery import Celery
 from celery.schedules import crontab
@@ -60,6 +62,8 @@ celery_app = Celery(
         "app.tasks.sandbox",
         "app.tasks.agent",
         "app.tasks.memory",
+        "app.tasks.tool_approval",
+        "app.tasks.tool_oauth",
     ],
 )
 
@@ -110,8 +114,11 @@ celery_app.conf.task_routes = {
     "app.tasks.sandbox.*": {"queue": "sandbox"},
     "app.tasks.agent.*": {"queue": "agent"},
     "app.tasks.memory.*": {"queue": "default"},
+    "app.tasks.tool_approval.*": {"queue": "default"},
+    "app.tasks.tool_oauth.*": {"queue": "default"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
     "tasks.sweep_lost_agent_runs": {"queue": "default"},
+    "tasks.expire_tool_approvals": {"queue": "default"},
     "tasks.archive_old_audit_logs": {"queue": "default"},
     "tasks.check_api_key_expiration": {"queue": "default"},
     "tasks.check_password_expiration": {"queue": "default"},
@@ -156,6 +163,19 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/2"),
         "options": {"queue": "default"},
     },
+    # Expire overdue tool approval requests and resume their parked run with
+    # a tool-error result (or leave stopped runs stopped).
+    "expire-tool-approvals": {
+        "task": "tasks.expire_tool_approvals",
+        "schedule": crontab(minute="*/5"),
+        "options": {"queue": "default"},
+    },
+    # Delete expired/consumed OAuth authorization flows after retention.
+    "cleanup-expired-tool-oauth-flows": {
+        "task": "tasks.cleanup_expired_tool_oauth_flows",
+        "schedule": crontab(minute="*/30"),
+        "options": {"queue": "default"},
+    },
 }
 
 
@@ -163,6 +183,16 @@ celery_app.conf.beat_schedule = {
 @worker_process_init.connect
 def init_tortoise(**kwargs):
     """Initialize Tortoise ORM for each worker process."""
+    # httpx2's macOS system trust verification invokes Objective-C after
+    # fork, which can abort the worker. Match httpx's verified certifi default
+    # unless an operator has explicitly selected a CA file or directory.
+    if sys.platform == "darwin" and not (
+        os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR")
+    ):
+        import certifi
+
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+
     import asyncio
     from tortoise import Tortoise
     from app.llm.tools.builtin import register_all_builtin_tools

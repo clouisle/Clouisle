@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Loader2, Plus, Trash2, ChevronDown } from 'lucide-react'
 import {
@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import {
   Collapsible,
@@ -28,7 +27,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField, ToolVisibility } from '@/lib/api/tools'
+import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField, ToolVisibility, ToolApprovalPolicy, ToolConnectionField, ToolIdentityPolicy } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { FieldError } from '@/components/ui/field'
 import {
@@ -41,176 +48,7 @@ import {
 } from '@/lib/validation'
 import { cn } from '@/lib/utils'
 import { ToolCategoryInput } from './tool-category-input'
-
-// 带变量补全的输入框组件
-interface VariableInputProps {
-  value: string
-  onChange: (value: string) => void
-  variables: string[]
-  placeholder?: string
-  className?: string
-  multiline?: boolean
-  rows?: number
-  suggestionTitle?: string
-}
-
-function VariableInput({ value, onChange, variables, placeholder, className, multiline, rows = 4, suggestionTitle = '参数补全' }: VariableInputProps) {
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [filteredVars, setFilteredVars] = useState<string[]>([])
-  const [cursorPosition, setCursorPosition] = useState(0)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
-
-  // 检测是否正在输入变量
-  const checkForVariableInput = useCallback((text: string, pos: number) => {
-    // 从光标位置向前查找 {{
-    const beforeCursor = text.slice(0, pos)
-    const lastOpenBrace = beforeCursor.lastIndexOf('{{')
-    
-    if (lastOpenBrace === -1) {
-      setShowSuggestions(false)
-      return
-    }
-    
-    // 检查 {{ 后面是否已经有 }}
-    const afterOpenBrace = text.slice(lastOpenBrace + 2, pos)
-    if (afterOpenBrace.includes('}}')) {
-      setShowSuggestions(false)
-      return
-    }
-    
-    // 获取已输入的变量名部分
-    const partialVar = afterOpenBrace.toLowerCase()
-    
-    // 过滤匹配的变量
-    const filtered = variables.filter(v => 
-      v.toLowerCase().includes(partialVar)
-    )
-    
-    if (filtered.length > 0) {
-      setFilteredVars(filtered)
-      setSelectedIndex(0)
-      setShowSuggestions(true)
-    } else {
-      setShowSuggestions(false)
-    }
-  }, [variables])
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const newValue = e.target.value
-    const pos = e.target.selectionStart || 0
-    onChange(newValue)
-    setCursorPosition(pos)
-    checkForVariableInput(newValue, pos)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions) return
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setSelectedIndex(prev => Math.min(prev + 1, filteredVars.length - 1))
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setSelectedIndex(prev => Math.max(prev - 1, 0))
-        break
-      case 'Enter':
-      case 'Tab':
-        if (filteredVars.length > 0) {
-          e.preventDefault()
-          insertVariable(filteredVars[selectedIndex])
-        }
-        break
-      case 'Escape':
-        setShowSuggestions(false)
-        break
-    }
-  }
-
-  const insertVariable = (varName: string) => {
-    const beforeCursor = value.slice(0, cursorPosition)
-    const afterCursor = value.slice(cursorPosition)
-    
-    // 找到最后一个 {{ 的位置
-    const lastOpenBrace = beforeCursor.lastIndexOf('{{')
-    
-    if (lastOpenBrace !== -1) {
-      // 替换 {{ 后面已输入的内容
-      const newValue = beforeCursor.slice(0, lastOpenBrace) + `{{${varName}}}` + afterCursor
-      onChange(newValue)
-      
-      // 设置光标位置到 }} 后面
-      const newPos = lastOpenBrace + varName.length + 4
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.setSelectionRange(newPos, newPos)
-          inputRef.current.focus()
-        }
-      }, 0)
-    }
-    
-    setShowSuggestions(false)
-  }
-
-  const handleBlur = () => {
-    // 延迟关闭，以便能点击建议项
-    setTimeout(() => setShowSuggestions(false), 150)
-  }
-
-  const commonProps = {
-    value,
-    onChange: handleChange,
-    onKeyDown: handleKeyDown,
-    onBlur: handleBlur,
-    placeholder,
-  }
-
-  const showDropdown = showSuggestions && filteredVars.length > 0
-
-  return (
-    <div className={cn('relative', className)}>
-      {multiline ? (
-        <Textarea
-          ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-          rows={rows}
-          className="w-full"
-          {...commonProps}
-        />
-      ) : (
-        <Input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          className="w-full"
-          {...commonProps}
-        />
-      )}
-      {showDropdown && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-md border bg-popover p-1 shadow-md">
-          <div className="text-xs text-muted-foreground px-2 py-1 border-b mb-1">
-            {suggestionTitle}
-          </div>
-          {filteredVars.map((varName, index) => (
-            <button
-              key={varName}
-              className={cn(
-                'w-full text-left px-2 py-1.5 text-sm rounded-sm',
-                index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-              )}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                insertVariable(varName)
-              }}
-              onMouseEnter={() => setSelectedIndex(index)}
-            >
-              <span className="font-mono text-primary">{`{{${varName}}}`}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+import { VariableInput } from '@/components/tools/variable-input'
 
 interface TeamOption {
   id: string
@@ -287,6 +125,11 @@ export function HttpToolDialog({
   const [category, setCategory] = useState<ToolCategory>('api')
   const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // HTTP 配置
@@ -301,6 +144,15 @@ export function HttpToolDialog({
 
   // 参数定义
   const [parameters, setParameters] = useState<ToolParameter[]>([])
+
+  // {{ 补全候选：工具参数 + 已声明的连接字段名称（不涉及字段值）
+  const completionVariables = useMemo(
+    () => [
+      ...parameters.map((parameter) => parameter.name),
+      ...connectionFields.map((field) => field.name),
+    ],
+    [parameters, connectionFields]
+  )
 
   // UI 状态
   const [isLoading, setIsLoading] = useState(false)
@@ -320,6 +172,9 @@ export function HttpToolDialog({
         setCategory(tool.category || 'api')
         setVisibility(tool.visibility || 'private')
         setIsEnabled(tool.is_enabled)
+        setIdentityPolicy(getToolIdentityPolicy(tool))
+        setConnectionFields(getToolConnectionFields(tool))
+        setApprovalPolicy(getToolApprovalPolicy(tool))
         setFieldErrors({})
         setParameters(tool.parameters || [])
 
@@ -350,6 +205,9 @@ export function HttpToolDialog({
         setCategory('api')
         setVisibility('private')
         setIsEnabled(true)
+        setIdentityPolicy('none')
+        setConnectionFields([])
+        setApprovalPolicy(getToolApprovalPolicy(null))
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -409,6 +267,9 @@ export function HttpToolDialog({
         custom_type: 'http',
         http_config: httpConfig,
         parameters: parameters.filter(p => p.name.trim()),
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(data)
@@ -602,6 +463,15 @@ export function HttpToolDialog({
             </div>
           </div>
 
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+          />
+
           {/* HTTP 配置 */}
           <div className="space-y-4 border rounded-lg p-4">
             <h4 className="font-medium">{t('httpDialog.httpConfig')}</h4>
@@ -626,9 +496,10 @@ export function HttpToolDialog({
                   setUrl(value)
                   setFieldErrors((prev) => clearValidationError(prev, 'url'))
                 }}
-                variables={parameters.map(p => p.name)}
+                variables={completionVariables}
                 className="flex-1"
                 suggestionTitle={t('httpDialog.variableCompletion')}
+                ariaInvalid={!!fieldErrors.url}
               />
             </div>
             <FieldError>{fieldErrors.url}</FieldError>
@@ -658,7 +529,7 @@ export function HttpToolDialog({
                       placeholder={t('httpDialog.headerValuePlaceholder')}
                       value={header.value}
                       onChange={(val) => updateKeyValuePair(index, 'value', val, headers, setHeaders, 'headers')}
-                      variables={parameters.map(p => p.name)}
+                      variables={completionVariables}
                       className="flex-1"
                       suggestionTitle={t('httpDialog.variableCompletion')}
                     />
@@ -704,7 +575,7 @@ export function HttpToolDialog({
                       placeholder={t('httpDialog.queryValuePlaceholder')}
                       value={param.value}
                       onChange={(val) => updateKeyValuePair(index, 'value', val, queryParams, setQueryParams, 'queryParams')}
-                      variables={parameters.map(p => p.name)}
+                      variables={completionVariables}
                       className="flex-1"
                       suggestionTitle={t('httpDialog.variableCompletion')}
                     />
@@ -767,11 +638,12 @@ export function HttpToolDialog({
                           setBodyTemplate(value)
                           setFieldErrors((prev) => clearValidationError(prev, 'bodyTemplate'))
                         }}
-                        variables={parameters.map(p => p.name)}
+                        variables={completionVariables}
                         multiline
                         rows={4}
                         className="font-mono text-sm"
                         suggestionTitle={t('httpDialog.variableCompletion')}
+                        ariaInvalid={!!fieldErrors.bodyTemplate}
                       />
                       <FieldError>{fieldErrors.bodyTemplate}</FieldError>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -831,7 +703,7 @@ export function HttpToolDialog({
                                 setFormFields(newFields)
                                 setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
                               }}
-                              variables={parameters.map(p => p.name)}
+                              variables={completionVariables}
                               className="flex-1"
                               suggestionTitle={t('httpDialog.variableCompletion')}
                             />

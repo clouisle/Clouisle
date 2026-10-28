@@ -5,7 +5,7 @@ import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { format } from 'date-fns'
 import { enUS, zhCN } from 'date-fns/locale'
 import type { DateRange } from 'react-day-picker'
-import type { DependenciesResponse, InfrastructureResponse } from '@/lib/api/admin/observability'
+import type { DependenciesResponse, InfrastructureResponse, SummaryResponse } from '@/lib/api/admin/observability'
 import enDashboard from '@/i18n/en/dashboard.json'
 import zhDashboard from '@/i18n/zh/dashboard.json'
 const agentRunStatuses = ['queued', 'running', 'stopping', 'completing', 'completed', 'stopped', 'failed', 'interrupted', 'waiting'] as const
@@ -770,3 +770,348 @@ for (const locale of ['en', 'zh'] as const) {
     act(() => renderer.unmount())
   })
 }
+
+const emptySummary = (overrides: Partial<SummaryResponse> = {}): SummaryResponse => ({
+  meta,
+  agents: { submitted: 0, completed: 0, failed: 0, success_rate: null, p50_ms: null, p95_ms: null, first_token_p95_ms: null, tokens: 0 },
+  workflows: { submitted: 0, completed: 0, failed: 0, success_rate: null, p50_ms: null, p95_ms: null, tokens: 0 },
+  trend: [],
+  issues: [],
+  ...overrides,
+})
+
+function buttonWithLabel(renderer: ReactTestRenderer, label: string) {
+  return renderer.root.findAllByType('button').find((node) => node.children.includes(label))!
+}
+
+function nodesWithText(renderer: ReactTestRenderer, text: string) {
+  return renderer.root.findAll((node) => typeof node.type === 'string' && node.children.includes(text))
+}
+
+// happy-dom exposes visibilityState as a read-only accessor, so tests override it with a configurable getter.
+function setDocumentVisibility(state: 'visible' | 'hidden') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+}
+
+test('polls only while the tab is visible and stops polling on unmount', async () => {
+  const intervals = new Map<number, () => void>()
+  const cleared: number[] = []
+  const listeners = new Map<string, () => void>()
+  const removed: string[] = []
+  const browserWindow = window as unknown as { setInterval: (callback: () => void) => number; clearInterval: (id: number) => void }
+  const browserDocument = document as unknown as {
+    addEventListener: (type: string, listener: () => void) => void
+    removeEventListener: (type: string, listener: () => void) => void
+  }
+  const originalSetInterval = browserWindow.setInterval
+  const originalClearInterval = browserWindow.clearInterval
+  const originalAdd = browserDocument.addEventListener
+  const originalRemove = browserDocument.removeEventListener
+  let nextId = 1
+  try {
+    browserWindow.setInterval = (callback) => { const id = nextId++; intervals.set(id, callback); return id }
+    browserWindow.clearInterval = (id) => { cleared.push(id) }
+    browserDocument.addEventListener = (type, listener) => { listeners.set(type, listener) }
+    browserDocument.removeEventListener = (type) => { removed.push(type) }
+
+    setDocumentVisibility('visible')
+    const renderer = await render()
+    expect(intervals.size).toBeGreaterThan(0)
+    const pageIntervalId = Array.from(intervals.keys()).at(-1)!
+    const tick = intervals.get(pageIntervalId)!
+    expect(getSummary).toHaveBeenCalledTimes(1)
+
+    setDocumentVisibility('hidden')
+    await act(async () => { tick(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(1)
+
+    setDocumentVisibility('visible')
+    await act(async () => { tick(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(2)
+
+    setDocumentVisibility('hidden')
+    await act(async () => { listeners.get('visibilitychange')!(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(2)
+
+    setDocumentVisibility('visible')
+    await act(async () => { listeners.get('visibilitychange')!(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(3)
+
+    act(() => renderer.unmount())
+    expect(cleared).toContain(pageIntervalId)
+    expect(removed).toContain('visibilitychange')
+  } finally {
+    browserWindow.setInterval = originalSetInterval
+    browserWindow.clearInterval = originalClearInterval
+    browserDocument.addEventListener = originalAdd
+    browserDocument.removeEventListener = originalRemove
+    setDocumentVisibility('visible')
+  }
+})
+
+test('still performs an explicit refresh while the tab is hidden', async () => {
+  const renderer = await render()
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  setDocumentVisibility('hidden')
+  try {
+    const refresh = buttonWithLabel(renderer, 'actions.refresh')
+    expect(refresh.props.disabled).toBe(false)
+    await act(async () => { refresh.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(2)
+  } finally {
+    setDocumentVisibility('visible')
+    act(() => renderer.unmount())
+  }
+})
+
+test('coalesces a view change that lands mid-request into one follow-up load', async () => {
+  const renderer = await render()
+  const pending = Promise.withResolvers<SummaryResponse>()
+  getSummary.mockImplementationOnce(() => pending.promise)
+  const refresh = buttonWithLabel(renderer, 'actions.refresh')
+  act(() => refresh.props.onClick())
+  expect(getSummary).toHaveBeenCalledTimes(2)
+
+  const browserWindow = window as unknown as { setTimeout: (callback: () => void, delay?: number) => number }
+  const originalSetTimeout = browserWindow.setTimeout
+  let queued: (() => void) | undefined
+  browserWindow.setTimeout = (callback) => { queued = callback; return 1 }
+  try {
+    params = new URLSearchParams('tab=overview&period=24h')
+    await act(async () => { renderer.update(<ObservabilityPage />); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(2)
+
+    await act(async () => { pending.resolve(emptySummary()); await Promise.resolve(); await Promise.resolve() })
+    expect(queued).toBeDefined()
+    await act(async () => { queued!(); await Promise.resolve(); await Promise.resolve() })
+    expect(getSummary).toHaveBeenCalledTimes(3)
+    expect(getSummary).toHaveBeenLastCalledWith({ period: '24h', team_id: undefined })
+  } finally {
+    browserWindow.setTimeout = originalSetTimeout
+  }
+  act(() => renderer.unmount())
+})
+
+test('renders triaged issues with severity accents, a single issue link, and empty chart placeholders', async () => {
+  getSummary.mockResolvedValueOnce(emptySummary({
+    issues: [
+      { kind: 'agent_failures', severity: 'critical', title: 'Agent failures escalated', detail: 'Three runs failed.', affected_count: 3, href: '/dashboard/observability?tab=alerts' },
+      { kind: 'latency', severity: 'warning', title: 'Latency above baseline', detail: 'P95 doubled.', affected_count: 0, href: '' },
+      { kind: 'sampling', severity: 'info', title: 'Sampling is active', detail: 'One percent sample.', affected_count: 0, href: '' },
+    ],
+  }))
+  const renderer = await render()
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('severity.critical')
+  expect(text).toContain('severity.warning')
+  expect(text).toContain('severity.info')
+  expect(text).toContain('Agent failures escalated')
+  expect(text).toContain('issues.affected')
+
+  const accents = renderer.root.findAll((node) => typeof node.type === 'string' && Boolean(node.props.style && typeof node.props.style === 'object' && 'borderLeftColor' in (node.props.style as Record<string, unknown>)))
+  expect(accents.map((node) => (node.props.style as Record<string, string>).borderLeftColor)).toEqual([
+    'hsl(var(--destructive))',
+    'hsl(var(--chart-2))',
+    'hsl(var(--primary))',
+  ])
+  const links = renderer.root.findAllByType('a')
+  expect(links).toHaveLength(1)
+  expect(links[0].props.href).toBe('/dashboard/observability?tab=alerts')
+  expect(links[0].props['aria-label']).toBe('actions.openIssue')
+
+  expect(nodesWithText(renderer, 'states.noSamples')).toHaveLength(3)
+  expect(renderer.root.findAllByType('p').filter((node) => node.children.includes('metrics.workflowSubmitted'))).toHaveLength(1)
+  expect(renderer.root.findAllByType('p').filter((node) => node.children.includes('metrics.workflowTokens'))).toHaveLength(1)
+  act(() => renderer.unmount())
+})
+
+test('reports non-fresh telemetry states and falls back to a neutral notice for partial coverage', async () => {
+  getSummary.mockResolvedValueOnce(emptySummary({ meta: { ...meta, state: 'stale', sample_count: 1 } }))
+  const stale = await render()
+  const staleStatus = stale.root.findByProps({ role: 'status' })
+  expect(staleStatus.props.className).toContain('border-amber-500/30')
+  expect(staleStatus.findAllByType('strong')[0].children).toContain('quality.stale')
+  expect(JSON.stringify(stale.toJSON())).toContain('quality.window')
+  expect(nodesWithText(stale, 'states.lastUpdated')).toHaveLength(1)
+  act(() => stale.unmount())
+
+  getSummary.mockResolvedValueOnce(emptySummary({ meta: { ...meta, state: 'partial', sample_count: 2 } }))
+  const partial = await render()
+  const partialStatus = partial.root.findByProps({ role: 'status' })
+  expect(partialStatus.props.className).toContain('border-border bg-muted/30')
+  expect(partialStatus.findAllByType('strong')[0].children).toContain('quality.partial')
+  act(() => partial.unmount())
+
+  const fresh = await render()
+  expect(fresh.root.findAllByProps({ role: 'status' })).toHaveLength(0)
+  expect(JSON.stringify(fresh.toJSON())).toContain('quality.fresh')
+  act(() => fresh.unmount())
+})
+
+test('renders infrastructure dependency health alongside sampled slow queries', async () => {
+  params = new URLSearchParams('tab=infrastructure')
+  getInfrastructure.mockResolvedValueOnce({
+    meta,
+    instances: [],
+    dependencies: [
+      { name: 'postgres', status: 'unhealthy', observed_at: '2026-10-08T11:00:00Z', latency_ms: 1500, detail: 'Connection refused' },
+      { name: 'redis', status: 'healthy', observed_at: null, latency_ms: 3, detail: null },
+    ],
+    slow_queries: {
+      available: true,
+      reset_at: '2026-10-08T10:00:00Z',
+      items: [{ query_id: 'q1', query: 'SELECT * FROM agent_runs WHERE status = $1', calls: 12, mean_ms: 40, max_ms: 500, total_ms: 2400 }],
+    },
+  })
+  const renderer = await render()
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('postgres')
+  expect(text).toContain('status.unhealthy')
+  expect(text).toContain('1.50 s')
+  expect(text).toContain('Connection refused')
+  expect(text).toContain('redis')
+  expect(text).toContain('3 ms')
+  expect(text).toContain('infrastructure.queryReset')
+  expect(text).toContain('SELECT * FROM agent_runs WHERE status = $1')
+  expect(text).toContain('infrastructure.calls')
+  expect(text).toContain('2.40 s')
+  expect(nodesWithText(renderer, 'states.unavailableDetail')).toHaveLength(1)
+  act(() => renderer.unmount())
+})
+
+test('distinguishes unavailable slow-query sampling from an empty sample window', async () => {
+  params = new URLSearchParams('tab=infrastructure')
+  getInfrastructure.mockResolvedValueOnce({ meta, instances: [], dependencies: [], slow_queries: { available: false, reset_at: null, items: [] } })
+  const unavailable = await render()
+  expect(nodesWithText(unavailable, 'states.unavailableDetail')).toHaveLength(3)
+  expect(JSON.stringify(unavailable.toJSON())).toContain('infrastructure.safeQueryNotice')
+  act(() => unavailable.unmount())
+
+  getInfrastructure.mockResolvedValueOnce({ meta, instances: [], dependencies: [], slow_queries: { available: true, reset_at: null, items: [] } })
+  const sampled = await render()
+  expect(nodesWithText(sampled, 'states.noSamples')).toHaveLength(1)
+  expect(nodesWithText(sampled, 'states.unavailableDetail')).toHaveLength(2)
+  act(() => sampled.unmount())
+})
+
+test('opens runs from keyboard activation, percent-encodes ids, and marks incomplete traces', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRuns.mockResolvedValueOnce({
+    items: [
+      { ...run, run_id: 'a/b c', trace_available: true, trace_complete: true },
+      { ...run, run_id: 'partial-run', trace_available: true, trace_complete: false },
+      { ...run, run_id: 'unrecorded-run', trace_available: false, trace_complete: false },
+    ],
+    next_cursor: null,
+    meta,
+  })
+  const renderer = await render()
+  const rows = renderer.root.findAllByType('tr')
+  expect(rows).toHaveLength(4)
+
+  const completeTrace = rows[1].findAllByType('td').at(-1)!
+  expect(completeTrace.findAll((node) => node.props.className === 'h-4 w-4 text-emerald-600')).toHaveLength(1)
+  const partialTrace = rows[2].findAllByType('td').at(-1)!
+  expect(partialTrace.findAll((node) => node.props.className === 'h-4 w-4 text-amber-600')).toHaveLength(1)
+  const missingTrace = rows[3].findAllByType('td').at(-1)!
+  expect(missingTrace.children).toEqual(['—'])
+
+  const row = rows[1]
+  expect(row.props.role).toBe('link')
+  expect(row.props.tabIndex).toBe(0)
+  const preventDefault = mock(() => {})
+  act(() => row.props.onKeyDown({ key: 'Escape', preventDefault }))
+  expect(preventDefault).not.toHaveBeenCalled()
+  expect(push).not.toHaveBeenCalled()
+  act(() => row.props.onKeyDown({ key: 'Enter', preventDefault }))
+  expect(preventDefault).toHaveBeenCalledTimes(1)
+  expect(push).toHaveBeenLastCalledWith('/dashboard/observability/runs/agent/a%2Fb%20c?tab=runs&period=24h')
+  act(() => row.props.onKeyDown({ key: ' ', preventDefault }))
+  expect(preventDefault).toHaveBeenCalledTimes(2)
+  expect(push).toHaveBeenCalledTimes(2)
+  act(() => renderer.unmount())
+})
+
+test('shows an empty run table and blocks pagination when no runs match', async () => {
+  params = new URLSearchParams('tab=runs')
+  getRuns.mockResolvedValueOnce({ items: [], next_cursor: null, meta })
+  const renderer = await render()
+  expect(nodesWithText(renderer, 'states.noSamples')).toHaveLength(1)
+  const loadMore = buttonWithLabel(renderer, 'actions.loadMore')
+  expect(loadMore.props.disabled).toBe(true)
+  await act(async () => { loadMore.props.onClick(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenCalledTimes(1)
+  act(() => renderer.unmount())
+})
+
+test('silences alerts with the selected duration and surfaces silence failures', async () => {
+  params = new URLSearchParams('tab=alerts')
+  const renderer = await render()
+  const durationSelect = () => renderer.root.findAllByProps({ 'data-select-root': true }).find((node) => node.findAllByProps({ 'aria-label': 'alerts.silenceDuration' }).length > 0)!
+  expect(durationSelect().props['data-selected-value']).toBe('3600')
+  act(() => durationSelect().props.onValueChange(''))
+  act(() => durationSelect().props.onValueChange(null))
+  expect(durationSelect().props['data-selected-value']).toBe('3600')
+  expect(getAlerts).toHaveBeenCalledTimes(1)
+  act(() => durationSelect().props.onValueChange('900'))
+  expect(durationSelect().props['data-selected-value']).toBe('900')
+  expect(durationSelect().findAllByProps({ 'data-slot': 'select-value' })[0].children).toEqual(['alerts.seconds'])
+
+  await act(async () => { buttonWithLabel(renderer, 'alerts.silence').props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(silenceAlert).toHaveBeenCalledWith('alert-1', 900)
+  expect(getAlerts).toHaveBeenCalledTimes(2)
+  expect(buttonWithLabel(renderer, 'actions.loadMore').props.disabled).toBe(true)
+
+  silenceAlert.mockRejectedValueOnce(new Error('silence failed'))
+  await act(async () => { buttonWithLabel(renderer, 'alerts.silence').props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(renderer.root.findByProps({ role: 'alert' }).findAllByType('span').some((node) => node.children.includes('states.errorDescription'))).toBe(true)
+  act(() => renderer.unmount())
+})
+
+test('blocks rule saves for blank or out-of-bounds windows and submits the accepted bounds', async () => {
+  params = new URLSearchParams('tab=alerts')
+  const renderer = await render()
+  const save = () => buttonWithLabel(renderer, 'actions.save')
+  const threshold = () => renderer.root.findAllByType('input').find((input) => input.props.type === 'number' && input.props.min === '0')!
+  const recovery = () => renderer.root.findByProps({ 'aria-label': 'alerts.recoveryWindow' })
+  expect(save().props.disabled).toBe(true)
+
+  act(() => threshold().props.onChange({ target: { value: '' } }))
+  expect(save().props.disabled).toBe(true)
+  act(() => threshold().props.onChange({ target: { value: '0.5' } }))
+  expect(save().props.disabled).toBe(true)
+
+  act(() => recovery().props.onChange({ target: { value: '59' } }))
+  expect(save().props.disabled).toBe(true)
+  act(() => renderer.root.findByProps({ 'aria-label': 'alerts.evaluationWindow' }).props.onChange({ target: { value: '604801' } }))
+  expect(save().props.disabled).toBe(true)
+
+  act(() => recovery().props.onChange({ target: { value: '604800' } }))
+  act(() => renderer.root.findByProps({ 'aria-label': 'alerts.evaluationWindow' }).props.onChange({ target: { value: '60' } }))
+  expect(save().props.disabled).toBe(false)
+  await act(async () => { save().props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(updateAlertRule).toHaveBeenCalledWith('rule-1', { threshold: 0.5, enabled: true, evaluation_window_seconds: 60, recovery_window_seconds: 604800 })
+  act(() => renderer.unmount())
+})
+
+test('enables the team filter only once the trimmed draft differs from the applied identifier', async () => {
+  params = new URLSearchParams('tab=overview&team_id=team-1')
+  const renderer = await render()
+  expect(getSummary).toHaveBeenLastCalledWith({ period: '1h', team_id: 'team-1' })
+  const form = renderer.root.findByType('form')
+  const submit = form.findAllByType('button')[0]
+  const teamInput = renderer.root.findByProps({ id: 'obs-team' })
+  expect(teamInput.props.value).toBe('team-1')
+  expect(submit.props.disabled).toBe(true)
+
+  act(() => teamInput.props.onChange({ target: { value: ' team-1 ' } }))
+  expect(submit.props.disabled).toBe(true)
+  act(() => teamInput.props.onChange({ target: { value: '   ' } }))
+  expect(submit.props.disabled).toBe(false)
+  act(() => teamInput.props.onChange({ target: { value: ' team-2 ' } }))
+  expect(submit.props.disabled).toBe(false)
+
+  await act(async () => { form.props.onSubmit({ preventDefault: () => {} }); await Promise.resolve() })
+  expect(replace).toHaveBeenCalledWith('/dashboard/observability?tab=overview&team_id=team-2', { scroll: false })
+  act(() => renderer.unmount())
+})

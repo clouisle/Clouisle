@@ -53,7 +53,8 @@ class FakeSubmission:
         from app.models.agent import Conversation
 
         conversation_id = (
-            chat_in.conversation_id
+            kwargs.get("conversation_id")
+            or chat_in.conversation_id
             or (await Conversation.create(agent_id=agent_id, user_id=user.id)).id
         )
         run = await AgentRun.create(
@@ -1285,9 +1286,12 @@ async def test_mp4_artifact_uses_native_video_and_other_files_use_file(
 
     transport.uploads.clear()
     transport.media.clear()
-    receipt2, run2 = await _terminal_run(world, display=_image_display("abcd"))
+    receipt2, run2 = await _terminal_run(world, display=_image_display("abce"))
     await _generated_asset(
-        world, conversation_id=run2.conversation_id, content_type="application/pdf"
+        world,
+        conversation_id=run2.conversation_id,
+        ref="abce",
+        content_type="application/pdf",
     )
     await runtime.process_pending()
 
@@ -1965,3 +1969,426 @@ async def test_agent_list_explains_when_no_agents_are_selectable(world):
 
     assert text
     assert world.agent.name not in text
+
+
+# --- tool approvals ----------------------------------------------------------
+
+APPROVAL_ID = uuid4()
+
+
+async def _approval_waiting_run(world, monkeypatch, *, preview_error=None):
+    """One submitted run parked on a tool approval with its preview announced."""
+    receipt = await receipt_for(world, message_id=f"om_approval_{uuid4().hex}")
+    await runtime.process_pending()
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-approval",
+        pending_tool_name="send_email",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(APPROVAL_ID),
+            "tool_description": "Send the report",
+        },
+    )
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    previews = []
+
+    async def preview(run_obj, user, origin, origin_id):
+        previews.append((origin, origin_id))
+        if preview_error is not None:
+            raise preview_error
+        return (
+            str(APPROVAL_ID),
+            f"send_email\n/approve {APPROVAL_ID}\n/reject {APPROVAL_ID}",
+        )
+
+    monkeypatch.setattr("app.services.channel_tool_approval.approval_preview", preview)
+    await runtime.process_pending()
+    return receipt, await AgentRun.get(id=run.id), previews
+
+
+@pytest.mark.asyncio
+async def test_session_binding_requires_the_exact_run_and_identity(world, monkeypatch):
+    _, run, _ = await _approval_waiting_run(world, monkeypatch)
+    session = await session_for(world)
+
+    assert runtime._session_bound_to_run(session, run, world.user)
+
+    for field, value in (
+        ("active_run_id", None),
+        ("conversation_id", uuid4()),
+        ("agent_id", uuid4()),
+    ):
+        bound = SimpleNamespace(
+            active_run_id=session.active_run_id,
+            conversation_id=session.conversation_id,
+            agent_id=session.agent_id,
+            user_id=session.user_id,
+        )
+        setattr(bound, field, value)
+        assert not runtime._session_bound_to_run(bound, run, world.user)
+
+    assert not runtime._session_bound_to_run(session, run, SimpleNamespace(id=uuid4()))
+    assert not runtime._session_bound_to_run(None, run, world.user)
+
+
+@pytest.mark.asyncio
+async def test_unbound_session_cannot_decide_an_approval(world, monkeypatch):
+    _, run, _ = await _approval_waiting_run(world, monkeypatch)
+    decisions = []
+
+    async def decide(*args, **kwargs):
+        decisions.append(args)
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(
+        world, text=f"/approve {APPROVAL_ID}", message_id="om_unbound"
+    )
+    session = await session_for(world)
+    await FeishuAgentSession.filter(id=session.id).update(conversation_id=None)
+    session = await FeishuAgentSession.get(id=session.id)
+
+    await runtime._handle_approval_command(
+        receipt,
+        session,
+        run,
+        "approve",
+        str(APPROVAL_ID),
+        world.integration,
+        world.user,
+    )
+
+    assert decisions == []
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_invalid"
+
+
+@pytest.mark.asyncio
+async def test_submission_uses_the_trusted_feishu_entrypoint(world):
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    await receipt_for(world, message_id="om_entrypoint")
+    await runtime.process_pending()
+
+    kwargs = world.submission.calls[0][2]
+    assert kwargs["tool_entrypoint"] == ExecutionEntrypoint.FEISHU_CHANNEL
+    assert kwargs["tool_entrypoint_id"] == str(world.integration.id)
+
+
+@pytest.mark.asyncio
+async def test_approval_preview_is_announced_once(world, monkeypatch):
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    receipt, _, previews = await _approval_waiting_run(world, monkeypatch)
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key=f"approval:{APPROVAL_ID}"
+    )
+    assert delivery.text
+    assert previews[0] == (
+        ExecutionEntrypoint.FEISHU_CHANNEL,
+        str(world.integration.id),
+    )
+    # The owner receipt is revisited on every sweep; the preview is not.
+    await runtime.process_pending()
+    deliveries = await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key=f"approval:{APPROVAL_ID}"
+    ).count()
+    assert deliveries == 1
+    assert len(previews) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [("approve", "approve"), ("reject", "reject")],
+)
+async def test_approval_command_decides_the_waiting_call(
+    world, monkeypatch, command, decision
+):
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    _, run, _ = await _approval_waiting_run(world, monkeypatch)
+    decisions = []
+
+    async def decide(run_obj, user, origin, origin_id, token, vote, receipt_id):
+        decisions.append(
+            (run_obj.id, user.id, origin, origin_id, token, vote, receipt_id)
+        )
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(
+        world, text=f"/{command} {APPROVAL_ID}", message_id=f"om_{command}"
+    )
+
+    await runtime.process_pending()
+
+    assert decisions == [
+        (
+            run.id,
+            world.user.id,
+            ExecutionEntrypoint.FEISHU_CHANNEL,
+            str(world.integration.id),
+            str(APPROVAL_ID),
+            decision,
+            receipt.id,
+        )
+    ]
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    reply = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="approval_result"
+    )
+    assert reply.text
+
+
+@pytest.mark.asyncio
+async def test_truncated_execution_id_is_forwarded_and_rejected(world, monkeypatch):
+    from app.schemas.response import BusinessError, ResponseCode
+    from uuid import UUID
+
+    await _approval_waiting_run(world, monkeypatch)
+    tokens = []
+
+    async def decide(run_obj, user, origin, origin_id, token, decision, receipt_id):
+        tokens.append(token)
+        try:
+            UUID(str(token))
+        except ValueError:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="channel_approval_invalid",
+                status_code=403,
+            ) from None
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(
+        world, text=f"/approve {str(APPROVAL_ID)[:8]}", message_id="om_short"
+    )
+
+    await runtime.process_pending()
+
+    assert tokens == [str(APPROVAL_ID)[:8]]
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_invalid"
+    assert await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="approval_result"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_resolved_or_expired_approval_fails_closed_without_recovery(
+    world, monkeypatch
+):
+    from app.schemas.response import BusinessError, ResponseCode
+
+    await _approval_waiting_run(world, monkeypatch)
+
+    async def already_resolved(*args, **kwargs):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="channel_approval_invalid",
+            status_code=403,
+        )
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval",
+        already_resolved,
+    )
+    receipt = await receipt_for(
+        world, text=f"/approve {APPROVAL_ID}", message_id="om_resolved"
+    )
+
+    await runtime.process_pending()
+
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_invalid"
+    replies = await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="approval_result"
+    ).count()
+    assert replies == 1
+    # The command is never replayed after a closed approval gate.
+    await runtime.process_pending()
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=receipt.id, event_key="approval_result"
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_command_accepted_before_the_preview_cannot_decide(world, monkeypatch):
+    await _approval_waiting_run(world, monkeypatch)
+    decisions = []
+
+    async def decide(*args, **kwargs):
+        decisions.append(args)
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(
+        world, text=f"/approve {APPROVAL_ID}", message_id="om_stale_command"
+    )
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        created_at=utcnow() - timedelta(minutes=5)
+    )
+
+    await runtime.process_pending()
+
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_invalid"
+    assert decisions == []
+
+
+@pytest.mark.asyncio
+async def test_plain_text_is_not_an_approval_decision(world, monkeypatch):
+    await _approval_waiting_run(world, monkeypatch)
+    decisions = []
+
+    async def decide(*args, **kwargs):
+        decisions.append(args)
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(world, text="yes", message_id="om_plain_accept")
+
+    await runtime.process_pending()
+
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_waiting"
+    assert decisions == []
+    assert await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="approval_waiting"
+    ).exists()
+    assert (await session_for(world)).pending_answers == {}
+
+
+@pytest.mark.asyncio
+async def test_approval_command_is_never_an_ask_user_answer(world, monkeypatch):
+    await _waiting_run(
+        world, [{"id": "q1", "question": "Which one?", "required": True}]
+    )
+    decisions = []
+
+    async def decide(*args, **kwargs):
+        decisions.append(args)
+
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.decide_channel_approval", decide
+    )
+    receipt = await receipt_for(
+        world, text=f"/approve {APPROVAL_ID}", message_id="om_approve_answer"
+    )
+
+    await runtime.process_pending()
+
+    assert decisions == []
+    stored = await FeishuAgentReceipt.get(id=receipt.id)
+    assert stored.status == "completed"
+    assert stored.error == "channel_approval_invalid"
+    assert (await session_for(world)).pending_answers == {}
+    assert (await AgentRun.get(id=world.submission.run.id)).status == (
+        AgentRunStatus.WAITING
+    )
+
+
+@pytest.mark.asyncio
+async def test_unknown_waiting_kind_gets_a_safe_notice(world):
+    receipt = await receipt_for(world, message_id="om_unknown_wait")
+    await runtime.process_pending()
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-other",
+        pending_tool_name="other_tool",
+        pending_tool_input={"unexpected": "payload"},
+    )
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+
+    await runtime.process_pending()
+
+    notice = await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="waiting_unsupported"
+    ).first()
+    assert notice is not None
+    assert notice.text
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key__startswith="approval:"
+    ).exists()
+    await runtime.process_pending()
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=receipt.id, event_key="waiting_unsupported"
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_approval_preview_failure_is_not_retried_as_output(world, monkeypatch):
+    from app.schemas.response import BusinessError, ResponseCode
+
+    error = BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key="channel_approval_invalid",
+        status_code=403,
+    )
+    receipt, _, _ = await _approval_waiting_run(world, monkeypatch, preview_error=error)
+
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key__startswith="approval:"
+    ).exists()
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_decided_before_park_completion_is_redispatched(world, monkeypatch):
+    receipt, run, _ = await _approval_waiting_run(world, monkeypatch)
+
+    async def queue_resume(run_id):
+        await AgentRun.filter(id=run_id).update(status=AgentRunStatus.QUEUED)
+        return await AgentRun.get(id=run_id)
+
+    async def unexpected_preview(*args, **kwargs):
+        raise AssertionError("a decided approval must not be announced")
+
+    dispatched = []
+
+    async def dispatch(payload, queued):
+        dispatched.append(queued.id)
+
+    import app.services.agent_run_store as store
+
+    monkeypatch.setattr(
+        store, "queue_agent_run_resume_if_approval_terminal", queue_resume
+    )
+    monkeypatch.setattr(
+        "app.services.channel_tool_approval.approval_preview", unexpected_preview
+    )
+    monkeypatch.setattr("app.services.agent_submission.dispatch_run", dispatch)
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+
+    await runtime.process_pending()
+
+    assert dispatched == [run.id]

@@ -60,6 +60,7 @@ def tool(**overrides):
         "code_config": {"nested": {"password": "secret", "safe": True}},
         "mcp_config": {"headers": [{"Authorization": "Bearer secret"}]},
         "is_enabled": True,
+        "approval_policy": {"default_decision": "allow"},
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -231,7 +232,14 @@ async def test_tool_install_update_saves_fields(monkeypatch):
 
     result = await ToolPackageAdapter().install(
         manifest=None,
-        resource_payload={"name": existing.name, "display_name": "New"},
+        resource_payload={
+            "name": existing.name,
+            "display_name": "New",
+            "approval_policy": {
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        },
         team=SimpleNamespace(id=existing.team_id),
         user=SimpleNamespace(is_superuser=True),
         install_in=ClouisleImportInstallRequest(action=ClouisleConflictAction.UPDATE),
@@ -239,6 +247,9 @@ async def test_tool_install_update_saves_fields(monkeypatch):
 
     assert result.updated == existing.id
     assert existing.display_name == "New"
+    # The definition changed, so pending approvals must be invalidated.
+    assert existing.definition_version == 2
+    assert existing.approval_policy["default_decision"] == "require_approval"
     existing.save.assert_awaited_once_with()
 
 
@@ -302,3 +313,37 @@ async def test_rename_advances_to_first_available_name(monkeypatch):
     )
 
     assert name == "weather_import_2"
+
+
+def test_packaged_definitions_drop_environment_specific_connection_bindings():
+    from app.services.clouisle_package_resources import _strip_connection_bindings
+
+    stripped = _strip_connection_bindings(
+        {
+            "tools_config": [
+                {
+                    "type": "mcp",
+                    "server_id": "tool-1",
+                    "connection_id": "connection-1",
+                    "connection_mode": "personal",
+                }
+            ],
+            "nodes": [
+                {
+                    "type": "tool",
+                    "data": {
+                        "config": {
+                            "connectionId": "connection-2",
+                            "connectionMode": "team",
+                            "toolId": "tool-2",
+                        }
+                    },
+                }
+            ],
+        }
+    )
+
+    assert stripped == {
+        "tools_config": [{"type": "mcp", "server_id": "tool-1"}],
+        "nodes": [{"type": "tool", "data": {"config": {"toolId": "tool-2"}}}],
+    }

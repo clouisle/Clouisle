@@ -51,6 +51,16 @@ uv run --project backend main.py beat
 uv run --project backend main.py sandbox-worker -c 1
 ```
 
+On macOS, prefork worker children use the `certifi` CA bundle by default to
+avoid Objective-C initialization failures in the MCP HTTP client's system-trust
+implementation. TLS certificate and hostname validation remain enabled. If a
+private service needs an organization CA, export `SSL_CERT_FILE` in the worker's
+environment, pointing to a PEM bundle containing the required public and private
+CAs, or export `SSL_CERT_DIR`; explicit values take precedence. These variables
+are consumed from the process environment, not automatically loaded from the
+project `.env` file. Linux workers retain their existing trust configuration.
+After changing the CA configuration, restart the worker.
+
 ## 5. Start Frontend
 
 ```bash

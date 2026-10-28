@@ -155,8 +155,6 @@ export {
   type HttpMethod,
   type ToolParameter,
   type HttpConfig,
-  type DatabaseConfig,
-  type DatabaseType,
   type SandboxArtifactConfig,
   type ToolListResponse,
   type ToolFilterOption,
@@ -179,6 +177,43 @@ export {
   type WebSearchResultItem,
   type WebSearchTestResponse,
 } from './tools'
+
+export {
+  toolApprovalsApi,
+  toolExecutionsApi,
+  type ToolApprovalVote,
+  type ToolApprovalRequestStatus,
+  type ToolExecutionStatus,
+  type ToolExecutionCancelReason,
+  type ToolExecutionRunKind,
+  type ToolExecutionEntrypoint,
+  type ToolApprovalGateKind,
+  type ToolApprovalDisplayConnection,
+  type ToolApprovalMaskedDisplay,
+  type ToolApprovalRequest,
+  type ToolExecution,
+  type ToolApprovalDecision,
+  type ToolApprovalDecisionResult,
+  type ToolApprovalDecisionInput,
+  type ToolApprovalListParams,
+  type ToolExecutionListParams,
+} from './tool-approvals'
+
+export {
+  runInteractionsApi,
+  getElicitationUrl,
+  type RunInteractionKind,
+  type RunInteractionStatus,
+  type RunInteractionOutcome,
+  type RunInteractionAudience,
+  type SamplingInteractionPayload,
+  type ElicitationFormPayload,
+  type ElicitationUrlPayload,
+  type RunInteractionPayload,
+  type RunInteraction,
+  type RunInteractionListParams,
+  type RunInteractionResponseInput,
+} from './run-interactions'
 
 export {
   packagesApi,

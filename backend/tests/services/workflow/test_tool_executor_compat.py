@@ -62,8 +62,34 @@ async def test_workflow_search_uses_integer_result_limit(source):
             },
         )
 
+    async def run_builtin(
+        *, tool_name, arguments, team_id, context, workflow_run_id=None, operation=None
+    ):
+        return await registry.execute(
+            name=tool_name, arguments=arguments, credentials={}
+        )
+
+    workflow = MagicMock(team_id="team-1")
+    run = MagicMock(id="run-1", workflow_id="workflow-1", triggered_by_id="user-1")
+
     with (
-        patch("app.services.tool.tool_registry", registry),
+        patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
+        patch(
+            "app.models.user.User.get_or_none",
+            new=AsyncMock(return_value=MagicMock(id="user-1")),
+        ),
+        patch(
+            "app.services.workflow.tool_approval_resume.token_for_attempt",
+            new=AsyncMock(return_value="call-1"),
+        ),
+        patch(
+            "app.services.workflow.tool_approval_resume.find_execution_for_token",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.tool.ToolExecutor.execute_builtin_tool",
+            new=AsyncMock(side_effect=run_builtin),
+        ),
         patch.object(
             search_module,
             "get_web_search_runtime",
@@ -77,9 +103,10 @@ async def test_workflow_search_uses_integer_result_limit(source):
             ),
         ),
     ):
-        result = await ToolNodeExecutor().execute(
-            node, context, MagicMock(id="run-1", workflow_id=None)
+        mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+            return_value=workflow
         )
+        result = await ToolNodeExecutor().execute(node, context, run)
 
     assert result.success is True
     assert result.outputs["result"]["success"] is True
@@ -210,6 +237,18 @@ class TestToolNodeExecutorCompatibility:
         with (
             patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
             patch(
+                "app.models.user.User.get_or_none",
+                new=AsyncMock(return_value=MagicMock(id="user-1")),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.token_for_attempt",
+                new=AsyncMock(return_value="call-1"),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.find_execution_for_token",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "app.services.tool.ToolExecutor.execute_builtin_tool",
                 new=AsyncMock(return_value={"now": "2026-04-01 12:00:00"}),
             ) as mock_execute_builtin,
@@ -223,12 +262,17 @@ class TestToolNodeExecutorCompatibility:
         assert result.success is True
         assert result.outputs["result"] == {"now": "2026-04-01 12:00:00"}
         assert result.outputs["currentTime"] == {"now": "2026-04-01 12:00:00"}
-        mock_execute_builtin.assert_awaited_once_with(
-            tool_name="get_current_time",
-            arguments={"timezone_name": "Asia/Shanghai"},
-            team_id="team-1",
-            workflow_run_id="run-1",
-        )
+        kwargs = mock_execute_builtin.await_args.kwargs
+        assert kwargs["tool_name"] == "get_current_time"
+        assert kwargs["arguments"] == {"timezone_name": "Asia/Shanghai"}
+        assert kwargs["team_id"] == "team-1"
+        call_context = kwargs["context"]
+        assert call_context.team_id == "team-1"
+        assert call_context.entrypoint.value == "workflow"
+        assert call_context.entrypoint_id == "workflow-1"
+        assert call_context.run_id == "run-1"
+        assert call_context.tool_call_id == "call-1"
+        assert call_context.interactive is False
 
     @pytest.mark.anyio
     async def test_execute_reads_frontend_tool_config(self):
@@ -271,6 +315,18 @@ class TestToolNodeExecutorCompatibility:
             patch("app.models.tool.Tool.filter") as mock_filter,
             patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
             patch(
+                "app.models.user.User.get_or_none",
+                new=AsyncMock(return_value=MagicMock(id="user-1")),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.token_for_attempt",
+                new=AsyncMock(return_value="call-1"),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.find_execution_for_token",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "app.services.tool.ToolExecutor.execute", new=AsyncMock()
             ) as mock_execute,
         ):
@@ -286,12 +342,14 @@ class TestToolNodeExecutorCompatibility:
         assert result.outputs["result"] == {"ok": True}
         assert result.outputs["searchResult"] == {"ok": True}
         assert result.outputs["status"] == "success"
-        mock_execute.assert_awaited_once_with(
-            tool=tool,
-            arguments={"query": "hello", "limit": "10"},
-            user_id="user-1",
-            team_id="team-1",
-        )
+        mock_execute.assert_awaited_once()
+        kwargs = mock_execute.await_args.kwargs
+        assert kwargs["tool"] is tool
+        assert kwargs["arguments"] == {"query": "hello", "limit": "10"}
+        assert kwargs["user_id"] == "user-1"
+        assert kwargs["team_id"] == "team-1"
+        assert kwargs["operation"] == tool.name
+        assert kwargs["context"].run_kind.value == "workflow"
 
     @pytest.mark.anyio
     async def test_execute_hides_unshared_cross_team_tool(self):
@@ -360,14 +418,11 @@ class TestToolNodeExecutorCompatibility:
 
             result = await executor.execute(node, context, run)
 
-        assert result.success is True
-        assert result.outputs["result"] == {"legacy": True}
-        mock_execute.assert_awaited_once_with(
-            tool=tool,
-            arguments={"query": "legacy-query"},
-            user_id=None,
-            team_id=None,
-        )
+        # Non-interactive entrypoints need a real triggering user and team; an
+        # anonymous legacy run must never execute a tool unapproved.
+        assert result.error == "user_context_required"
+        assert result.outputs["status"] == "error"
+        mock_execute.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_execute_rejects_config_without_tool_identifier(self):
@@ -401,13 +456,17 @@ class TestToolNodeExecutorCompatibility:
         mock_filter.assert_called_once_with(id="missing-tool")
 
     @pytest.mark.anyio
-    async def test_execute_uses_no_team_when_workflow_is_missing(self):
-        run = MagicMock(workflow_id="missing-workflow", triggered_by_id=123)
+    async def test_execute_requires_workflow_team_context(self):
+        run = MagicMock(workflow_id="missing-workflow", triggered_by_id=123, id="run-1")
         tool = MagicMock()
 
         with (
             patch("app.models.tool.Tool.filter") as mock_tool_filter,
             patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
+            patch(
+                "app.models.user.User.get_or_none",
+                new=AsyncMock(return_value=MagicMock(id=123)),
+            ),
             patch(
                 "app.services.tool.ToolExecutor.execute",
                 new=AsyncMock(return_value="done"),
@@ -423,23 +482,31 @@ class TestToolNodeExecutorCompatibility:
                 run,
             )
 
-        assert result.success is True
-        assert result.outputs["result"] == "done"
-        assert set(result.outputs) == {"result", "status", "executionTime"}
-        mock_execute.assert_awaited_once_with(
-            tool=tool,
-            arguments={},
-            user_id="123",
-            team_id=None,
-        )
+        assert result.error == "user_context_required"
+        assert result.outputs["status"] == "error"
+        mock_execute.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_execute_maps_tool_failure_to_public_error_outputs(self):
-        run = MagicMock(workflow_id=None, triggered_by_id="user-1")
-        tool = MagicMock()
+        run = MagicMock(workflow_id="workflow-1", triggered_by_id="user-1", id="run-1")
+        tool = MagicMock(team_id="team-1", visibility="team")
+        workflow = MagicMock(team_id="team-1")
 
         with (
             patch("app.models.tool.Tool.filter") as mock_filter,
+            patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
+            patch(
+                "app.models.user.User.get_or_none",
+                new=AsyncMock(return_value=MagicMock(id="user-1")),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.token_for_attempt",
+                new=AsyncMock(return_value="call-1"),
+            ),
+            patch(
+                "app.services.workflow.tool_approval_resume.find_execution_for_token",
+                new=AsyncMock(return_value=None),
+            ),
             patch(
                 "app.services.tool.ToolExecutor.execute",
                 new=AsyncMock(side_effect=RuntimeError("private detail")),
@@ -450,6 +517,9 @@ class TestToolNodeExecutorCompatibility:
             ) as translate_error,
         ):
             mock_filter.return_value.first = AsyncMock(return_value=tool)
+            mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=workflow
+            )
             result = await ToolNodeExecutor().execute(
                 {
                     "data": {

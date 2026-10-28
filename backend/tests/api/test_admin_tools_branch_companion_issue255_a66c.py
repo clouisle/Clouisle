@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -8,69 +8,51 @@ from app.api.v1.admin.endpoints import tools
 from app.schemas.tool import ToolExecuteRequest
 
 
-class _Query:
-    def __init__(self, value):
-        self.value = value
-
-    async def first(self):
-        return self.value
-
-
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("team_config", "global_config", "expected_credentials"),
-    [
-        (SimpleNamespace(credentials={"token": "team"}), None, {"token": "team"}),
-        (None, SimpleNamespace(credentials={"token": "global"}), {"token": "global"}),
-        (None, None, {}),
-    ],
-)
-async def test_builtin_tool_credential_fallbacks(
-    team_config, global_config, expected_credentials
-):
-    query_results = [_Query(team_config), _Query(global_config)]
+async def test_builtin_tool_routes_through_unified_boundary():
+    team_id = uuid4()
     execute = AsyncMock(return_value={"ok": True})
 
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
-        patch(
-            "app.models.tool_config.ToolConfig.filter",
-            side_effect=query_results,
-        ) as filter_config,
-        patch.object(tools.tool_registry, "execute", execute),
+        patch.object(
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute_builtin_tool=execute),
+        ),
     ):
         response = await tools.test_tool(
             ToolExecuteRequest(name="builtin", arguments={"x": 1}),
-            team_id=uuid4(),
-            current_user=SimpleNamespace(),
+            team_id=team_id,
+            current_user=SimpleNamespace(id=uuid4()),
         )
 
-    execute.assert_awaited_once_with(
-        "builtin", {"x": 1}, credentials=expected_credentials
-    )
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["tool_name"] == "builtin"
+    assert call_kwargs["arguments"] == {"x": 1}
+    assert call_kwargs["team_id"] == team_id
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.ADMIN_TEST
+    assert call_kwargs["context"].interactive is True
     assert response["data"].success is True
-    assert filter_config.call_count == (1 if team_config else 2)
 
 
 @pytest.mark.anyio
-async def test_builtin_tool_execution_failure_returns_resolved_error():
+async def test_builtin_tool_failure_is_returned_as_shaped_result():
+    execute = AsyncMock(return_value={"success": False, "error": "safe failure"})
+
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
-        patch("app.models.tool_config.ToolConfig.filter", return_value=_Query(None)),
         patch.object(
-            tools.tool_registry,
-            "execute",
-            AsyncMock(side_effect=RuntimeError("provider secret")),
+            tools,
+            "ToolExecutor",
+            return_value=SimpleNamespace(execute_builtin_tool=execute),
         ),
-        patch.object(
-            tools, "resolve_user_visible_error", Mock(return_value="safe failure")
-        ) as resolve,
     ):
         response = await tools.test_tool(
             ToolExecuteRequest(name="builtin", arguments={}),
-            current_user=SimpleNamespace(),
+            team_id=uuid4(),
+            current_user=SimpleNamespace(id=uuid4()),
         )
 
-    resolve.assert_called_once_with("provider secret")
     assert response["data"].success is False
     assert response["data"].error == "safe failure"

@@ -857,7 +857,9 @@ async def persist_partial_round_error(
     return True
 
 
-async def get_agent_tools(agent: Agent) -> list[dict]:
+async def get_agent_tools(
+    agent: Agent, user_id: UUID | str | None = None
+) -> list[dict]:
     """
     Get tools configured for the agent.
 
@@ -1054,13 +1056,15 @@ Examples of when to search:
             # Frontend uses server_id for MCP tools
             tool_id = config.get("server_id") or config.get("tool_id")
             if tool_id:
-                from app.llm.tools.mcp_client import list_mcp_tools
+                from app.services.agent_tool_execution import list_agent_mcp_tools
 
                 mcp_tool = await Tool.filter(id=tool_id, is_enabled=True).first()
                 if mcp_tool and mcp_tool.mcp_config:
                     try:
                         # Get tools from MCP server
-                        mcp_tools = await list_mcp_tools(mcp_tool.mcp_config)
+                        mcp_tools = await list_agent_mcp_tools(
+                            agent, mcp_tool, config, user_id
+                        )
                         for mt in mcp_tools:
                             # Convert MCP tool to OpenAI format
                             # Use mcp_<server_name>_<tool_name> for readability
@@ -1081,6 +1085,8 @@ Examples of when to search:
                                     },
                                 }
                             )
+                    except BusinessError:
+                        raise
                     except Exception as e:
                         logger.warning(
                             f"Failed to get MCP tools from {mcp_tool.name}: {e}"
@@ -1431,18 +1437,24 @@ async def chat(
     return await _build_non_stream_run_response(run)
 
 
-@router.post("/{agent_id}/chat/stream")
-async def chat_stream(
+async def _chat_stream_impl(
     agent_id: UUID,
     chat_in: ChatRequest,
-    request: Request,
-    auth_result: tuple[User, "APIKey | None"] = Depends(
-        deps.get_current_user_or_api_key
-    ),
+    auth_result: Any,
+    *,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
 ) -> StreamingResponse:
-    """Queue a durable run and subscribe to its replayable SSE events."""
-    del request
-    started = await start_chat_run(agent_id, chat_in, auth_result)
+    if tool_entrypoint is None and tool_entrypoint_id is None:
+        started = await start_chat_run(agent_id, chat_in, auth_result)
+    else:
+        started = await _start_chat_run(
+            agent_id,
+            chat_in,
+            auth_result,
+            tool_entrypoint=tool_entrypoint,
+            tool_entrypoint_id=tool_entrypoint_id,
+        )
     start_data = RunStartOut.model_validate(started["data"])
     from app.services.agent_run_stream import sse_events
 
@@ -1455,6 +1467,20 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/{agent_id}/chat/stream")
+async def chat_stream(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    request: Request,
+    auth_result: tuple[User, "APIKey | None"] = Depends(
+        deps.get_current_user_or_api_key
+    ),
+) -> StreamingResponse:
+    """Queue a durable run and subscribe to its replayable SSE events."""
+    del request
+    return await _chat_stream_impl(agent_id, chat_in, auth_result)
 
 
 # ============ Message Version Endpoints ============
@@ -1891,6 +1917,7 @@ async def _enqueue_existing_message_run(
         first_round_index=first_round_index,
         message_start=message_start,
         rag_contexts=rag_contexts,
+        tool_entrypoint="chat",
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])
@@ -1925,6 +1952,28 @@ async def _enqueue_existing_message_run(
     )
 
 
+async def _start_chat_run(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    auth_result: Any,
+    *,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
+) -> Any:
+    from app.models.agent_run import AgentRunMode
+    from app.services.agent_submission import start_out, submit_chat_run
+
+    submission = await submit_chat_run(
+        agent_id,
+        chat_in,
+        auth_result,
+        mode=AgentRunMode.SEND,
+        tool_entrypoint=tool_entrypoint,
+        tool_entrypoint_id=tool_entrypoint_id,
+    )
+    return start_out(submission)
+
+
 @router.post(
     "/{agent_id}/chat/runs",
     response_model=Response[RunStartOut],
@@ -1938,16 +1987,7 @@ async def start_chat_run(
     ),
 ) -> Any:
     """Persist a chat request and enqueue its durable AgentRun worker."""
-    from app.models.agent_run import AgentRunMode
-    from app.services.agent_submission import start_out, submit_chat_run
-
-    submission = await submit_chat_run(
-        agent_id,
-        chat_in,
-        auth_result,
-        mode=AgentRunMode.SEND,
-    )
-    return start_out(submission)
+    return await _start_chat_run(agent_id, chat_in, auth_result)
 
 
 @router.get(
@@ -1962,7 +2002,7 @@ async def stream_chat_run(
     """Replay and follow one durable run until its terminal event."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    await _load_owned_run(agent_id, run_id, current_user)
+    await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.services.agent_run_stream import sse_events
 
     return StreamingResponse(
@@ -1988,7 +2028,7 @@ async def get_run_status(
     """Get durable run status; owner-scoped."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     return success(data=_run_to_out(run))
 
 
@@ -2005,7 +2045,7 @@ async def get_run_events(
     """Replay buffered run events after ``after_sequence`` (authorized scope)."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    await _load_owned_run(agent_id, run_id, current_user)
+    await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.services.agent_run_stream import AgentRunStream
 
     stream = AgentRunStream(run_id)
@@ -2027,7 +2067,7 @@ async def post_run_input(
     """Queue steering / follow-up / stop for a running agent."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import AgentRunInputKind
 
     kind = {
@@ -2060,7 +2100,7 @@ async def post_run_answer(
     """Validate and submit one answer set for a waiting ask_user call."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import AgentRunStatus
     from app.services.agent_run_store import submit_user_answers
 
@@ -2185,7 +2225,7 @@ async def stop_run(
     """Cooperatively stop a run, including a non-terminal waiting run."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import (
         AgentRunInputKind,
         AgentRunStatus,
@@ -2263,17 +2303,56 @@ def _split_run_auth(auth_result: Any) -> tuple[User, "APIKey | None"]:
     return auth_result, None
 
 
+def _api_key_may_read_run(run: Any, api_key: Any) -> bool:
+    """Key-scoped run read, never just the key owner.
+
+    The explicit run column wins; pre-column rows are resolved from the worker
+    payload written by the same submitter. A run with no API-key evidence at
+    all (JWT session or pre-feature row) keeps the previous owner-scoped
+    contract.
+    """
+    key_id = getattr(api_key, "id", None)
+    if key_id is None or not getattr(api_key, "is_active", True):
+        return False
+    stored = getattr(run, "api_key_id", None)
+    if stored is not None:
+        return str(stored) == str(key_id)
+    payload = run.worker_payload if isinstance(run.worker_payload, dict) else {}
+    payload_key_id = payload.get("api_key_id")
+    if payload_key_id:
+        return str(payload_key_id) == str(key_id)
+    if payload.get("tool_entrypoint") == "api_key":
+        entrypoint_id = payload.get("tool_entrypoint_id")
+        return bool(entrypoint_id) and str(entrypoint_id) == str(key_id)
+    return True
+
+
 async def _load_owned_run(
     agent_id: UUID,
     run_id: UUID,
     current_user: User,
+    *,
+    api_key: Any = None,
 ) -> _AgentRunModel:
-    """Owner/agent scoped run lookup used by all run endpoints."""
+    """Owner/agent scoped run lookup used by all run endpoints.
+
+    An API-key request is additionally bound to the credential that submitted
+    the run: another key of the same owner cannot read it, replay its events or
+    drive its inputs. Runs persisted before API-key binding existed keep the
+    previous owner-scoped behaviour.
+    """
     from app.models.agent_run import AgentRun
     from app.models.agent import Conversation as _Conv
 
     run = await AgentRun.get_or_none(id=run_id, agent_id=agent_id)
     if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="run_not_found",
+            status_code=404,
+        )
+    if api_key is not None and not _api_key_may_read_run(run, api_key):
+        # Do not disclose whether another credential's run exists.
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="run_not_found",

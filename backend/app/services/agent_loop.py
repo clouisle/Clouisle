@@ -45,6 +45,11 @@ from app.api.v1.endpoints.chat_sse import (
 )
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
+from app.services.tool_context import (
+    RuntimeToolIdentity,
+    entrypoint_is_interactive,
+    tool_identity_scope,
+)
 from app.utils.tool_output import (
     KNOWN_OUTPUT_TOOLS,
     ToolExecutionResult,
@@ -100,6 +105,7 @@ class AgentLoopContext:
     input_capabilities: Any = None
     model_config: Any = None
     tools: list[Any] | None = None
+    resume_tool_calls: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
     # streaming config
@@ -125,6 +131,12 @@ class AgentLoopContext:
     user_locale: str | None = None
     max_iterations: int | None = None
     iteration_offset: int = 0
+    # Trusted entrypoint origin persisted by the run submitter. Missing origin
+    # on legacy runs is treated as non-interactive by the tool identity.
+    tool_entrypoint: str | None = None
+    tool_entrypoint_id: str | None = None
+    # Authenticated API key that submitted the run (api_key entrypoint only).
+    tool_api_key_id: UUID | None = None
     # Durable AgentRun callback used by model-callable interaction tools.
     pause_for_user: Callable[..., Any] | None = None
     # how one model turn is produced
@@ -196,6 +208,22 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return json.loads(arguments)
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+def _tool_call_arguments(arguments: str | dict | None) -> dict[str, Any]:
+    """Return a detached copy of the model-supplied tool call arguments.
+
+    Pausing for approval must not replace the call's business arguments with
+    interaction metadata, and a tool runner may mutate the dict it receives.
+    Re-parsing the original payload keeps display, persistence and provider
+    history on exactly what the model asked for.
+    """
+    parsed = _safe_arguments(arguments)
+    try:
+        detached = json.loads(json.dumps(parsed))
+    except (TypeError, ValueError):
+        return dict(parsed)
+    return detached if isinstance(detached, dict) else {}
 
 
 def _include_workspace_reset_result(result: str, notices: list[dict[str, Any]]) -> str:
@@ -271,6 +299,17 @@ class AgentLoop:
 
     def __init__(self, context: AgentLoopContext) -> None:
         self.context = context
+        self._mcp_tool_names = {
+            name
+            for tool in context.tools or []
+            if (
+                name := (
+                    tool.get("function", {}).get("name", "")
+                    if isinstance(tool, dict)
+                    else tool.function.name
+                )
+            ).startswith("mcp_")
+        }
         self.result = AgentLoopResult()
         self._round_index = context.first_round_index
         self._consecutive_pause_turns = 0
@@ -432,6 +471,18 @@ class AgentLoop:
         tool_result: Any = None
         try:
             with (
+                tool_identity_scope(
+                    RuntimeToolIdentity(
+                        run_id=UUID(str(ctx.observability_run_id))
+                        if ctx.observability_run_id
+                        else None,
+                        tool_call_id=str(tc.id),
+                        entrypoint=ctx.tool_entrypoint or "agent_run",
+                        entrypoint_id=ctx.tool_entrypoint_id or str(ctx.agent.id),
+                        api_key_id=ctx.tool_api_key_id,
+                        interactive=entrypoint_is_interactive(ctx.tool_entrypoint),
+                    )
+                ),
                 capture_workspace_resets() as reset_notices,
                 sandbox_execution_scope(
                     deadline_at=self._deadline_at, stop_requested=ctx.stop_requested
@@ -450,12 +501,52 @@ class AgentLoop:
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
+                is_approval = (
+                    tool_result.arguments.get("interaction_kind") == "tool_approval"
+                )
+                if is_approval:
+                    for tool in ctx.tools or []:
+                        function = (
+                            tool.get("function", {})
+                            if isinstance(tool, dict)
+                            else getattr(tool, "function", None)
+                        )
+                        name = (
+                            function.get("name")
+                            if isinstance(function, dict)
+                            else getattr(function, "name", None)
+                        )
+                        if name != tool_name:
+                            continue
+                        description = (
+                            function.get("description")
+                            if isinstance(function, dict)
+                            else getattr(function, "description", None)
+                        )
+                        if isinstance(description, str) and description.strip():
+                            tool_result = ToolInteractionRequest(
+                                tool_name=tool_name,
+                                arguments={
+                                    **tool_result.arguments,
+                                    "tool_description": description.strip(),
+                                },
+                            )
+                        break
                 metric_status = "waiting"
+                # Approval is a pause of the model's call, not a different
+                # call. Keep the original business arguments in the visible
+                # and persisted tool call; ``execution_id`` and
+                # ``interaction_kind`` belong to the durable pause marker.
+                call_arguments = (
+                    _tool_call_arguments(tc.function.arguments)
+                    if is_approval
+                    else tool_result.arguments
+                )
                 call_sse = build_tool_call_sse_event(
                     tool_call_id=tc.id,
                     tool_name=tool_name,
                     tool_display_name=display_name,
-                    arguments=tool_result.arguments,
+                    arguments=call_arguments,
                 )
                 return (
                     call_sse,
@@ -464,7 +555,7 @@ class AgentLoop:
                     {
                         "id": tc.id,
                         "name": tool_name,
-                        "arguments": tool_result.arguments,
+                        "arguments": call_arguments,
                         "display_result": "",
                         "llm_result": "",
                         "display_name": display_name,
@@ -928,7 +1019,11 @@ class AgentLoop:
 
         iteration = ctx.iteration_offset
         while True:
-            if ctx.max_iterations is not None and iteration >= ctx.max_iterations:
+            if (
+                ctx.max_iterations is not None
+                and iteration >= ctx.max_iterations
+                and not ctx.resume_tool_calls
+            ):
                 break
             iteration += 1
             # ---- deadline guard (primary normal guard) ------------------------
@@ -995,41 +1090,37 @@ class AgentLoop:
                 return
 
             # ---- provider context -------------------------------------------
-            tool_definition_tokens = (
-                ctx.count_tool_definition_tokens(
-                    ctx.tools, ctx.tokenizer_model_id, ctx.model_provider
-                )
-                if ctx.count_tool_definition_tokens and ctx.tools
-                else 0
-            )
-            kwargs = self._context_kwargs(tool_definition_tokens)
-            assert ctx.build_turn is not None
-            turn = await ctx.build_turn(**kwargs)
-            if turn.plan is not None:
-                if turn.will_summarize:
-                    start_event = self._emit(
-                        COMPRESSION_START,
-                        {
-                            "compression": turn.plan.compression,
-                            "stage": "macro",
-                        },
+            messages_for_llm: list[dict[str, Any]] = []
+            if not ctx.resume_tool_calls:
+                tool_definition_tokens = (
+                    ctx.count_tool_definition_tokens(
+                        ctx.tools, ctx.tokenizer_model_id, ctx.model_provider
                     )
-                    if start_event:
-                        yield start_event
-                prepared = await turn.plan.finalize()
-                end_event = self._emit(
-                    COMPRESSION_END,
-                    {
-                        "compression": prepared.compression,
-                    },
+                    if ctx.count_tool_definition_tokens and ctx.tools
+                    else 0
                 )
-                if end_event:
-                    yield end_event
-            else:
-                prepared = turn.prepared
-            messages_for_llm = [
-                m.model_dump(exclude_none=True) for m in prepared.messages
-            ]
+                kwargs = self._context_kwargs(tool_definition_tokens)
+                assert ctx.build_turn is not None
+                turn = await ctx.build_turn(**kwargs)
+                if turn.plan is not None:
+                    if turn.will_summarize:
+                        start_event = self._emit(
+                            COMPRESSION_START,
+                            {"compression": turn.plan.compression, "stage": "macro"},
+                        )
+                        if start_event:
+                            yield start_event
+                    prepared = await turn.plan.finalize()
+                    end_event = self._emit(
+                        COMPRESSION_END, {"compression": prepared.compression}
+                    )
+                    if end_event:
+                        yield end_event
+                else:
+                    prepared = turn.prepared
+                messages_for_llm = [
+                    m.model_dump(exclude_none=True) for m in prepared.messages
+                ]
 
             # Per-iteration accumulators reset exactly like the original
             # per-path loops (content from a tool turn is not carried into the
@@ -1047,9 +1138,12 @@ class AgentLoop:
             used_fallback = False
             client_disconnected = False
             pause_turn_pending = False
+            resuming_calls = bool(ctx.resume_tool_calls)
 
             model_state: dict[str, Any] = {
-                "handle": await self._begin_model_trajectory(messages_for_llm),
+                "handle": await self._begin_model_trajectory(messages_for_llm)
+                if not resuming_calls
+                else None,
                 "finalized": False,
                 "finish_reason": None,
             }
@@ -1073,7 +1167,11 @@ class AgentLoop:
             self._active_model_finalizer = finalize_model
 
             # ---- one model turn ---------------------------------------------
-            if ctx.streaming and ctx.team_chat_stream is not None:
+            if ctx.resume_tool_calls:
+                collected_tool_calls = ctx.resume_tool_calls
+                ctx.resume_tool_calls = None
+                iteration -= 1
+            elif ctx.streaming and ctx.team_chat_stream is not None:
                 stream = ctx.team_chat_stream(
                     team_id=str(ctx.agent.team_id),
                     messages=messages_for_llm,
@@ -1146,6 +1244,18 @@ class AgentLoop:
                             call_id = getattr(tool_call, "id", None)
                             if not call_id:
                                 continue
+                            tool_name = getattr(tool_call.function, "name", None) or ""
+                            if tool_name not in self._mcp_tool_names and (
+                                tool_name.startswith("mcp_")
+                                or (
+                                    tool_name
+                                    and any(
+                                        name.startswith(tool_name)
+                                        for name in self._mcp_tool_names
+                                    )
+                                )
+                            ):
+                                continue
                             previous_call = streamed_tool_calls.get(call_id)
                             if previous_call is not None and not _tool_call_changed(
                                 previous_call, tool_call
@@ -1153,7 +1263,6 @@ class AgentLoop:
                                 continue
                             streamed_tool_calls[call_id] = tool_call
                             started_tool_call_ids.add(call_id)
-                            tool_name = getattr(tool_call.function, "name", None) or ""
                             call_sse = self._build_tool_call_sse(tool_call)
                             if call_sse and tool_name != "ask_user":
                                 event = self._emit(TOOL_CALL, {"sse": call_sse})
@@ -1311,7 +1420,7 @@ class AgentLoop:
                     collected_tool_calls.append(_IncompleteToolCall(call_id))
 
             # ---- usage aggregation -------------------------------------------
-            if ctx.calculate_usage is not None:
+            if ctx.calculate_usage is not None and not resuming_calls:
                 (
                     iteration_input_tokens,
                     iteration_output_tokens,
@@ -1360,6 +1469,7 @@ class AgentLoop:
                 assert ctx.round_id is not None
                 pending_tool_calls: list[dict[str, Any]] = []
                 pause_record: dict[str, Any] | None = None
+                processed_call_count = 0
                 for group in self._partition_tool_batch(collected_tool_calls):
                     if ctx.is_disconnected and await ctx.is_disconnected():
                         self.result.manually_stopped = True
@@ -1467,6 +1577,7 @@ class AgentLoop:
                                 )
                             else:
                                 pending_tool_calls.append(record)
+                        processed_call_count += len(group)
                     else:
                         for tc in group:
                             tool_name = getattr(tc.function, "name", None) or ""
@@ -1492,6 +1603,7 @@ class AgentLoop:
                                 image_pool=ctx.image_pool,
                                 image_inventory=ctx.image_inventory,
                             )
+                            processed_call_count += 1
                             if record.get("interaction") is not None:
                                 pause_record = record
                                 pending_tool_calls.append(record)
@@ -1621,12 +1733,15 @@ class AgentLoop:
                         round_index=pause_tool_index,
                         iteration_index=iteration,
                         display_name=pause_record["display_name"],
+                        remaining_tool_calls=collected_tool_calls[
+                            processed_call_count:
+                        ],
                     )
                     call_sse = build_tool_call_sse_event(
                         tool_call_id=pause_record["id"],
                         tool_name=pause_record["name"],
                         tool_display_name=pause_record["display_name"],
-                        arguments=interaction.arguments,
+                        arguments=pause_record["arguments"],
                     )
                     event = self._emit(TOOL_CALL, {"sse": call_sse})
                     if event:

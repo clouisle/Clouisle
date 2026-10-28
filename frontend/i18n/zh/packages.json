@@ -39,6 +39,7 @@
     "selectTargetTeam": "请选择目标团队",
     "messages": {
       "clouisle_checksum_mismatch": "包校验和验证失败",
+      "clouisle_database_connection_required": "迁移后的数据库工具需要先配置连接才能运行",
       "clouisle_dependency_forbidden": "无权访问必要的包依赖",
       "clouisle_dependency_missing": "缺少必要的包依赖",
       "clouisle_kb_documents_not_updated": "知识库文档未更新",

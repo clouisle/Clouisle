@@ -230,8 +230,9 @@
       },
       "noSearchResults": "未找到工具",
       "requiresConfig": "需要配置",
-      "webSearchManaged": "网页搜索由站点管理员统一配置，团队级搜索密钥已不再使用。",
-      "webSearchConfigure": "配置搜索",
+      "configured": "已配置",
+      "configureConnections": "配置连接",
+      "manageConnections": "管理连接",
       "parameters": "参数",
       "searchEngine": "搜索引擎",
       "noParameters": "此工具无需参数",
@@ -257,6 +258,9 @@
       "visibilityTeam": "团队",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
+      "mcpBrowser": {
+        "open": "浏览资源与提示词"
+      },
       "filters": {
         "all": "全部",
         "builtin": "内置",
@@ -316,6 +320,12 @@
         "title": "配置 {name}",
         "description": "配置工具所需的 API 密钥和凭证"
       },
+      "connectionDialog": {
+        "description": "管理该工具的加密身份与默认连接。保存后密钥不会再次显示。",
+        "notRequired": "该工具无需保存身份。",
+        "teamRequired": "请先选择团队，再管理工具连接。",
+        "definitionUnavailable": "该工具的定义策略尚不可用。请刷新页面；如果仍然如此，需要为该团队生成内置工具定义。"
+      },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",
         "editTitle": "编辑 HTTP 工具",
@@ -345,41 +355,18 @@
         "timeout": "超时时间",
         "parameters": "入参定义",
         "addParameter": "添加参数",
-        "parametersHint": "定义工具调用时需要传入的参数，参数名可在 URL、请求头、查询参数和请求体中用 '{{参数名}}' 引用",
+        "parametersHint": "定义工具调用时需要传入的参数，参数名或已声明的连接字段名可在 URL、请求头、查询参数和请求体中用 '{{变量名}}' 引用",
         "noParameters": "暂无参数，点击上方按钮添加",
         "paramName": "参数名",
         "paramDescription": "参数描述（可选）",
         "required": "必填",
-        "variableCompletion": "参数补全",
+        "variableCompletion": "变量补全",
         "toolNamePlaceholder": "my_api_tool",
         "urlPlaceholder": "https://api.example.com/｛｛id｝｝/data",
         "keyPlaceholder": "键名",
         "headerValuePlaceholder": "｛｛token｝｝",
         "queryValuePlaceholder": "｛｛query｝｝",
         "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
-      },
-      "databaseDialog": {
-        "connectionFailed": "连接失败，请检查配置与网络",
-        "connectionSettings": "连接配置",
-        "connectionSuccess": "数据库连接成功",
-        "createTitle": "添加数据库工具",
-        "databaseName": "数据库名 (Database)",
-        "dbType": "数据库类型",
-        "description": "配置数据库连接与执行参数，连接信息绝密隔离，仅通过工具名称暴露给 Agent",
-        "descriptionPlaceholder": "描述这个数据库存储的内容与业务用途，帮助 Agent 准确选择调用",
-        "editTitle": "编辑数据库工具",
-        "host": "主机地址 (Host)",
-        "hostRequired": "请输入数据库主机地址",
-        "maxLimit": "最大返回行数",
-        "paramsMode": "参数配置",
-        "password": "密码",
-        "port": "端口",
-        "testConnection": "测试连通性",
-        "timeout": "查询超时时间 (秒)",
-        "url": "连接 URL",
-        "urlMode": "连接 URL",
-        "urlRequired": "请输入连接 URL",
-        "username": "用户名"
       },
       "mcpDialog": {
         "createTitle": "添加 MCP 服务",
@@ -417,16 +404,25 @@
         "headerValuePlaceholder": "值",
         "sseUrlPlaceholder": "http://localhost:3000/sse",
         "headerNamePlaceholder": "请求头名称",
-        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+        "httpUrlPlaceholder": "http://localhost:3000/mcp",
+        "toolsPendingApproval": "列出 MCP 工具需要审批，请审批后重试。"
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "'{\"key\": \"value\"}'"
+        "objectPlaceholder": "'{\"key\": \"value\"}'",
+        "pendingApproval": "该调用正在等待审批，不会自动重新执行。",
+        "executionId": "执行 ID：{id}",
+        "resume": "审批后继续",
+        "openApprovals": "打开审批中心",
+        "resumeFailed": "无法恢复工具调用。已完成或已拒绝的请求不会重新执行。",
+        "loadFailed": "无法通过已保存的连接获取 MCP 工具列表。",
+        "selectConnectionBeforeLoad": "请先选择连接再获取 MCP 工具列表。"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",
         "subtitle": "使用代码扩展 AI 能力",
         "run": "运行",
+        "connectionRunHint": "“运行”只预览原始代码，不会使用连接。请先保存工具，再到功能列表中通过“测试”使用所选连接凭证运行。",
         "settings": "设置",
         "output": "输出",
         "basicInfo": "基本信息",
@@ -495,6 +491,7 @@
         "saveFailed": "保存失败",
         "nameRequired": "请输入工具名称",
         "unknownToolType": "未知工具类型",
+        "loadToolDetailFailed": "加载工具详情失败",
         "cannotDeleteBuiltin": "无法删除内置工具",
         "cannotShareBuiltin": "无法分享内置工具",
         "noTeamSelected": "未选择团队",
@@ -511,8 +508,6 @@
         "httpDesc": "调用外部 REST API",
         "code": "代码工具",
         "codeDesc": "使用 JavaScript/Python 编写",
-        "database": "数据库工具",
-        "databaseDesc": "连接外部数据库",
         "mcp": "MCP 服务",
         "mcpDesc": "连接 MCP 协议服务器"
       },

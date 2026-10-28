@@ -25,11 +25,20 @@ from app.models.tool import (
     CustomToolType as DBCustomToolType,
     ToolVisibility as DBToolVisibility,
 )
+from app.models.tool_approval import ExecutionEntrypoint
 from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
-from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
-from app.llm.tools.executors import execute_http_tool
+from app.llm.tools.mcp_client import list_mcp_tools
 from app.services.error_messages import resolve_user_visible_error
+from app.services.mcp_errors import map_mcp_error
 from app.services.audit_log import AuditLogService
+from app.services.tool import ToolExecutor
+from app.services.tool_approvals import audit_tool_approval_policy_update
+from app.services.tool_execution import (
+    PendingToolApproval,
+    ToolCallContext,
+    require_caller_only_policy,
+)
+from app.services.tool_secret_contract import enforce_tool_secret_contract
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
@@ -50,6 +59,7 @@ from app.schemas.tool import (
     ToolVisibility,
     ToolSharePermission,
     ToolParameterSchema,
+    ToolConnectionField,
     ToolOut,
     ToolDetailOut,
     ToolListOut,
@@ -64,7 +74,6 @@ from app.schemas.tool import (
     CodeExecuteResponse,
     HttpConfigSchema,
     CodeConfigSchema,
-    DatabaseConfigSchema,
     McpConfigSchema,
     McpToolInfoOut,
     McpToolsListRequest,
@@ -83,15 +92,6 @@ logger = logging.getLogger(__name__)
 SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "edit", "read", "write"}
 
 
-def _reject_legacy_search_config(tool_name: str) -> None:
-    if tool_name == "web_search":
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="web_search_site_managed",
-            status_code=400,
-        )
-
-
 def _serialize_runtime_artifacts(
     artifacts: list[SandboxArtifact | Any],
 ) -> list[SandboxArtifactSchema]:
@@ -108,6 +108,140 @@ def _runtime_duration_ms(runtime_result: Any) -> int | None:
     if metadata is None:
         return None
     return getattr(metadata, "duration_ms", None)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.time() - started_at) * 1000)
+
+
+def _tool_test_context(
+    actor: User,
+    team_id: UUID,
+    entrypoint: ExecutionEntrypoint,
+    request: ToolExecuteRequest,
+) -> ToolCallContext:
+    """Trusted test identity: never inferred from client-supplied runtime fields."""
+    return ToolCallContext(
+        actor=actor,
+        team_id=team_id,
+        entrypoint=entrypoint,
+        connection_mode=request.connection_mode,
+        connection_id=request.connection_id,
+        execution_id=request.execution_id,
+        interactive=True,
+    )
+
+
+def _tool_test_response(
+    name: str,
+    *,
+    builtin: bool,
+    custom_type: Any,
+    raw: Any,
+    started_at: float,
+) -> ToolExecuteResponse:
+    """Shape a unified execution result without re-running any tool."""
+    duration_ms = _elapsed_ms(started_at)
+    if isinstance(raw, PendingToolApproval):
+        return ToolExecuteResponse(
+            name=name,
+            success=False,
+            pending_approval=True,
+            execution_id=raw.execution_id,
+            duration_ms=duration_ms,
+        )
+    if builtin:
+        if isinstance(raw, dict) and raw.get("success") is False and raw.get("error"):
+            return ToolExecuteResponse(
+                name=name,
+                success=False,
+                error=raw["error"],
+                duration_ms=duration_ms,
+            )
+        return ToolExecuteResponse(
+            name=name, success=True, result=raw, duration_ms=duration_ms
+        )
+    if not isinstance(raw, dict):
+        return ToolExecuteResponse(
+            name=name, success=True, result=raw, duration_ms=duration_ms
+        )
+    if custom_type == DBCustomToolType.CODE.value:
+        return ToolExecuteResponse(
+            name=name,
+            success=bool(raw.get("success", True)),
+            result=raw.get("result"),
+            error=raw.get("error"),
+            logs=raw.get("stdout") or None,
+            artifacts=_serialize_runtime_artifacts(raw.get("artifacts") or []),
+            duration_ms=duration_ms,
+        )
+    return ToolExecuteResponse(
+        name=name,
+        success=bool(raw.get("success", False)),
+        result=raw.get("result"),
+        error=raw.get("error"),
+        duration_ms=duration_ms,
+    )
+
+
+async def _run_saved_tool_test(
+    tool: Tool,
+    request: ToolExecuteRequest,
+    actor: User,
+    entrypoint: ExecutionEntrypoint,
+    *,
+    started_at: float,
+) -> ToolExecuteResponse:
+    """Run one stored tool through authorization, connection and approval."""
+    arguments = dict(request.arguments)
+    tool_type = getattr(tool.type, "value", tool.type)
+    custom_type = getattr(tool, "custom_type", None)
+    custom_type = getattr(custom_type, "value", custom_type)
+    operation = tool.name
+    if tool_type == DBToolType.MCP.value:
+        if not tool.mcp_config:
+            return ToolExecuteResponse(
+                name=request.name,
+                success=False,
+                error=t("mcp_tool_missing_configuration", tool_name=tool.name),
+                duration_ms=_elapsed_ms(started_at),
+            )
+        operation = str(arguments.pop("__tool_name__", "") or tool.name)
+    elif custom_type == DBCustomToolType.CODE.value:
+        if not (tool.code_config or {}).get("code"):
+            return ToolExecuteResponse(
+                name=request.name,
+                success=False,
+                error=t("tool_code_not_defined"),
+                duration_ms=_elapsed_ms(started_at),
+            )
+    context = _tool_test_context(actor, tool.team_id, entrypoint, request)
+    try:
+        raw = await ToolExecutor().execute(
+            tool, arguments, context=context, operation=operation
+        )
+    except BusinessError:
+        raise
+    except Exception as exc:
+        logger.exception("Tool test execution error: %s", exc)
+        fallback_key = (
+            "mcp_tool_execution_failed"
+            if tool_type == DBToolType.MCP.value
+            else "tool_execution_failed"
+        )
+        return ToolExecuteResponse(
+            name=request.name,
+            success=False,
+            error=resolve_user_visible_error(str(exc), fallback_key=fallback_key),
+            duration_ms=_elapsed_ms(started_at),
+        )
+    return _tool_test_response(
+        request.name,
+        builtin=False,
+        custom_type=custom_type,
+        raw=raw,
+        started_at=started_at,
+    )
 
 
 def _tool_visibility(tool: Any) -> DBToolVisibility:
@@ -149,6 +283,39 @@ async def check_tool_access(
 async def check_tool_write_access(tool: Tool, user: User) -> None:
     """Allow creators to edit their tools; team owner/admin can edit non-private tools."""
     await check_tool_access(tool, user, require_write=True)
+
+
+def _dump_config(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _enforce_tool_write_contract(
+    tool_in: Any, *, existing_connection_fields: Any = None
+) -> None:
+    """Reject inline secret values and legacy approval audiences on writes.
+
+    Credential *definitions* live in ``connection_fields``; values belong to a
+    ToolConnection. Package import/duplicate call the pure helper directly.
+    An update that omits ``approval_policy`` leaves the stored body untouched;
+    only an explicitly supplied policy is validated here.
+    """
+    require_caller_only_policy(getattr(tool_in, "approval_policy", None))
+    fields = tool_in.connection_fields
+    if fields is None:
+        fields = existing_connection_fields or []
+    enforce_tool_secret_contract(
+        credentials=getattr(tool_in, "credentials", None),
+        http_config=_dump_config(getattr(tool_in, "http_config", None)),
+        mcp_config=_dump_config(getattr(tool_in, "mcp_config", None)),
+        connection_fields=[
+            field.model_dump() if hasattr(field, "model_dump") else field
+            for field in fields
+        ],
+    )
 
 
 def _get_builtin_tool_description(
@@ -230,6 +397,44 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     return tools
 
 
+async def get_builtin_tools_for_team(
+    team_id: UUID, user_locale: str | None = None
+) -> list[ToolOut]:
+    """List builtins with their stable per-team definition identity and policy.
+
+    Registry metadata alone cannot tell a connection-aware client which
+    identity a builtin needs; the persisted definition is authoritative.
+    """
+    from app.schemas.tool_approval import ToolApprovalPolicy
+    from app.services.builtin_tools import get_builtin_definition
+
+    tools = get_builtin_tools(user_locale)
+    for tool_out in tools:
+        try:
+            definition = await get_builtin_definition(team_id, tool_out.name)
+        except BusinessError as exc:
+            logger.warning(
+                "Builtin definition unavailable for %s/%s: %s",
+                team_id,
+                tool_out.name,
+                exc.msg_key or exc.code,
+            )
+            continue
+        tool_out.id = definition.id
+        tool_out.team_id = team_id
+        tool_out.identity_policy = definition.identity_policy
+        tool_out.connection_fields = [
+            ToolConnectionField.model_validate(field)
+            for field in definition.connection_fields
+        ]
+        tool_out.approval_policy = ToolApprovalPolicy.model_validate(
+            definition.approval_policy
+        )
+        tool_out.definition_version = definition.definition_version
+        tool_out.is_enabled = definition.is_enabled
+    return tools
+
+
 def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
     """将数据库工具转换为输出格式"""
     return ToolOut(
@@ -243,6 +448,10 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
+        identity_policy=tool.identity_policy,
+        connection_fields=tool.connection_fields,
+        approval_policy=tool.approval_policy,
+        definition_version=tool.definition_version,
         requires_config=bool(tool.credentials),
         config_fields=list(tool.credentials.keys()) if tool.credentials else [],
         custom_type=CustomToolType(tool.custom_type.value)
@@ -250,9 +459,6 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
-        if getattr(tool, "database_config", None)
-        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_by_id=getattr(tool, "created_by_id", None),
@@ -273,6 +479,10 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
+        identity_policy=tool.identity_policy,
+        connection_fields=tool.connection_fields,
+        approval_policy=tool.approval_policy,
+        definition_version=tool.definition_version,
         requires_config=bool(tool.credentials),
         config_fields=list(tool.credentials.keys()) if tool.credentials else [],
         custom_type=CustomToolType(tool.custom_type.value)
@@ -280,9 +490,6 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
-        if getattr(tool, "database_config", None)
-        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_at=tool.created_at.isoformat() if tool.created_at else None,
@@ -321,7 +528,11 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
     accessible_teams = list(teams)
     deduped_tools: dict[str, ToolOut] = {}
 
-    builtin_tools = get_builtin_tools(user.locale)
+    builtin_tools = (
+        await get_builtin_tools_for_team(accessible_teams[0].id, user.locale)
+        if accessible_teams
+        else get_builtin_tools(user.locale)
+    )
     for builtin_tool in builtin_tools:
         deduped_tools[f"builtin:{builtin_tool.name}"] = builtin_tool
     for team in accessible_teams:
@@ -373,6 +584,11 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
         )
         for share in shares:
             db_tool = share.tool
+            # Defense in depth: PRIVATE means creator-only. A stale share row
+            # (for example a tool made private through an older admin update
+            # that did not clear shares) must never widen that audience.
+            if _tool_visibility(db_tool) == DBToolVisibility.PRIVATE:
+                continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
             tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = False
@@ -520,7 +736,7 @@ async def list_tools_legacy(
     """兼容旧版团队工具列表接口。"""
     await check_team_access(team_id, current_user)
 
-    builtin_tools = get_builtin_tools(current_user.locale)
+    builtin_tools = await get_builtin_tools_for_team(team_id, current_user.locale)
 
     custom_db_tools = (
         await Tool.filter(
@@ -579,6 +795,10 @@ async def list_tools_legacy(
 
         for share in shares:
             tool = share.tool
+            # PRIVATE is creator-only; a stale share row must not expose the
+            # tool (or its approval policy) to the team it was once shared with.
+            if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
+                continue
             creator_name = tool.created_by.username if tool.created_by else None
             tool_out = db_tool_to_out(tool, creator_name)
             tool_out.is_owned = False
@@ -642,6 +862,15 @@ async def list_file_parsers(
     ).all()
 
     for tool in custom_tools:
+        # PRIVATE is creator-only; a parser definition must not be selected by
+        # another team member merely because they can read the team.
+        if (
+            _tool_visibility(tool) == DBToolVisibility.PRIVATE
+            and getattr(tool, "created_by_id", None)
+            != getattr(current_user, "id", None)
+            and not getattr(current_user, "is_superuser", False)
+        ):
+            continue
         parameters = (
             [
                 ToolParameterSchema(**p)
@@ -714,29 +943,14 @@ async def get_mcp_tools(
         )
     except Exception as e:
         logger.exception("Failed to list MCP tools: %s", e)
+        mapped = map_mcp_error(e)
+        if mapped is not None:
+            raise mapped from e
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="mcp_connection_failed",
             status_code=500,
-        )
-
-
-@router.post("/database/test-connection", response_model=Response[dict])
-async def test_db_connection(
-    request: DatabaseConfigSchema,
-    current_user: User = Depends(deps.PermissionChecker("tool:create")),
-) -> Any:
-    """测试数据库连通性"""
-    from app.llm.tools.builtin.db_executor import test_database_connection
-
-    result = await test_database_connection(request.model_dump())
-    if not result.get("success"):
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key=result.get("error", "database_connection_failed"),
-            status_code=400,
-        )
-    return success(data=result, msg_key="success")
+        ) from e
 
 
 @router.post("", response_model=Response[ToolDetailOut])
@@ -748,6 +962,13 @@ async def create_tool(
 ) -> Any:
     """创建自定义工具"""
     await check_team_permission(team_id, current_user, "tool:create")
+    _enforce_tool_write_contract(tool_in)
+    if tool_in.type == ToolType.BUILTIN:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="tool_builtin_not_creatable",
+            status_code=400,
+        )
     existing = await Tool.filter(team_id=team_id, name=tool_in.name).first()
     if existing:
         raise BusinessError(
@@ -772,14 +993,14 @@ async def create_tool(
         parameters=[p.model_dump() for p in tool_in.parameters],
         http_config=tool_in.http_config.model_dump() if tool_in.http_config else {},
         code_config=tool_in.code_config.model_dump() if tool_in.code_config else {},
-        database_config=(
-            getattr(tool_in, "database_config", None).model_dump()
-            if getattr(tool_in, "database_config", None)
-            else {}
-        ),
         mcp_config=tool_in.mcp_config.model_dump() if tool_in.mcp_config else {},
-        credentials=getattr(tool_in, "credentials", None) or {},
+        # Secret values are connection-owned; the contract above rejects any
+        # non-empty credential map before this write.
+        credentials={},
         is_enabled=tool_in.is_enabled,
+        identity_policy=tool_in.identity_policy,
+        connection_fields=[field.model_dump() for field in tool_in.connection_fields],
+        approval_policy=tool_in.approval_policy.model_dump(mode="json"),
         created_by=current_user,
     )
 
@@ -883,9 +1104,24 @@ async def update_tool(
         )
 
     audit_before = AuditLogService.snapshot(tool, "tool")
+    audit_policy_before = getattr(tool, "approval_policy", None)
 
     await check_tool_write_access(tool, current_user)
     await check_team_permission(tool.team_id, current_user, "tool:update")
+
+    if any(
+        value is not None
+        for value in (
+            tool_in.credentials,
+            tool_in.http_config,
+            tool_in.mcp_config,
+            tool_in.connection_fields,
+            tool_in.approval_policy,
+        )
+    ):
+        _enforce_tool_write_contract(
+            tool_in, existing_connection_fields=tool.connection_fields
+        )
 
     # 如果修改名称，检查是否冲突
     if tool_in.name and tool_in.name != tool.name:
@@ -923,14 +1159,23 @@ async def update_tool(
         tool.http_config = tool_in.http_config.model_dump()
     if tool_in.code_config is not None:
         tool.code_config = tool_in.code_config.model_dump()
-    if getattr(tool_in, "database_config", None) is not None:
-        tool.database_config = tool_in.database_config.model_dump()
     if tool_in.mcp_config is not None:
         tool.mcp_config = tool_in.mcp_config.model_dump()
     if tool_in.credentials is not None:
-        tool.credentials = tool_in.credentials
+        # Non-empty maps are rejected above; an explicit empty map clears any
+        # legacy inline credentials so the definition references connections.
+        tool.credentials = {}
     if tool_in.is_enabled is not None:
         tool.is_enabled = tool_in.is_enabled
+    if tool_in.identity_policy is not None:
+        tool.identity_policy = tool_in.identity_policy
+    if tool_in.connection_fields is not None:
+        tool.connection_fields = [
+            field.model_dump() for field in tool_in.connection_fields
+        ]
+    if tool_in.approval_policy is not None:
+        tool.approval_policy = tool_in.approval_policy.model_dump(mode="json")
+    tool.definition_version += 1
 
     await tool.save()
 
@@ -947,6 +1192,13 @@ async def update_tool(
         changes=AuditLogService.build_changes(
             audit_before, AuditLogService.snapshot(tool, "tool")
         ),
+    )
+    await audit_tool_approval_policy_update(
+        tool=tool,
+        before=audit_policy_before,
+        after=tool.approval_policy,
+        actor=current_user,
+        http_request=request,
     )
 
     creator_name = tool.created_by.username if tool.created_by else None
@@ -1012,254 +1264,52 @@ async def test_tool(
 
     支持内置工具和自定义工具。
     """
-    start_time = time.time()
+    started_at = time.time()
 
-    # 先尝试内置工具
-    builtin_tool = tool_registry.get_tool(request.name)
-    if builtin_tool:
-        try:
-            # 对于内置工具，从 ToolConfig 表中获取 credentials
-            from app.models.tool_config import ToolConfig
-
-            credentials = {}
-
-            # 优先从团队配置获取，其次从全局配置获取
-            if team_id and request.name != "web_search":
-                tool_config = await ToolConfig.filter(
-                    tool_name=request.name, team_id=team_id
-                ).first()
-                if tool_config:
-                    credentials = tool_config.credentials or {}
-
-            # 如果团队配置不存在，尝试获取全局配置
-            if not credentials and request.name != "web_search":
-                global_config = await ToolConfig.filter(
-                    tool_name=request.name, team_id=None
-                ).first()
-                if global_config:
-                    credentials = global_config.credentials or {}
-
-            result = await tool_registry.execute(
-                request.name, request.arguments, credentials=credentials
+    # 内置工具同样需要可信的团队上下文，缺失时拒绝而不是绕过策略。
+    if tool_registry.get_tool(request.name) is not None:
+        if team_id is None:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="team_id_required",
+                status_code=400,
             )
-            duration_ms = int((time.time() - start_time) * 1000)
+        # Materializing a builtin definition writes team-scoped rows, so the
+        # caller must be authorized for that team before it happens.
+        await check_team_access(team_id, current_user)
+        context = _tool_test_context(
+            current_user, team_id, ExecutionEntrypoint.TOOL_TEST, request
+        )
+        raw = await ToolExecutor().execute_builtin_tool(
+            tool_name=request.name,
+            arguments=request.arguments,
+            team_id=team_id,
+            context=context,
+        )
+        return success(
+            data=_tool_test_response(
+                request.name,
+                builtin=True,
+                custom_type=None,
+                raw=raw,
+                started_at=started_at,
+            ),
+            msg_key="success",
+        )
 
-            return success(
-                data=ToolExecuteResponse(
-                    name=request.name,
-                    success=True,
-                    result=result,
-                    duration_ms=duration_ms,
-                ),
-                msg_key="success",
-            )
-        except Exception as e:
-            duration_ms = int((time.time() - start_time) * 1000)
-            logger.error("Builtin tool execution error: %s", e)
-
-            return success(
-                data=ToolExecuteResponse(
-                    name=request.name,
-                    success=False,
-                    error=resolve_user_visible_error(str(e)),
-                    duration_ms=duration_ms,
-                ),
-                msg_key="success",
-            )
-
-    # 尝试自定义工具
-    if team_id:
+    if team_id is not None:
         custom_tool = await Tool.filter(team_id=team_id, name=request.name).first()
-        if custom_tool:
-            await check_tool_access(custom_tool, current_user)
-            # MCP 工具
-            if custom_tool.type == DBToolType.MCP:
-                mcp_config = custom_tool.mcp_config or {}
-                if not mcp_config:
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=False,
-                            error=t(
-                                "mcp_tool_missing_configuration",
-                                tool_name=request.name,
-                            ),
-                            duration_ms=int((time.time() - start_time) * 1000),
-                        ),
-                        msg_key="success",
-                    )
-
-                # MCP 工具名称可能与数据库中的 name 不同
-                # 使用请求中的 tool_name 参数，如果没有则使用工具名称
-                mcp_tool_name = (
-                    request.arguments.pop("__tool_name__", None) or request.name
-                )
-
-                try:
-                    result = await execute_mcp_tool(
-                        mcp_config=mcp_config,
-                        tool_name=mcp_tool_name,
-                        arguments=request.arguments,
-                        timeout=60.0,
-                    )
-                    duration_ms = int((time.time() - start_time) * 1000)
-
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=result.success,
-                            result=result.result,
-                            error=result.error,
-                            duration_ms=duration_ms,
-                        ),
-                        msg_key="success",
-                    )
-                except Exception as e:
-                    logger.exception("MCP tool execution error: %s", e)
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=False,
-                            error=resolve_user_visible_error(
-                                str(e),
-                                fallback_key="mcp_tool_execution_failed",
-                            ),
-                            duration_ms=duration_ms,
-                        ),
-                        msg_key="success",
-                    )
-            # 自定义 HTTP 工具
-            elif custom_tool.custom_type == DBCustomToolType.HTTP:
-                result = await execute_http_tool(
-                    custom_tool.http_config,
-                    request.arguments,
-                    custom_tool.credentials,
-                )
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                return success(
-                    data=ToolExecuteResponse(
-                        name=request.name,
-                        success=result.get("success", False),
-                        result=result.get("result"),
-                        error=result.get("error"),
-                        duration_ms=duration_ms,
-                    ),
-                    msg_key="success",
-                )
-            elif custom_tool.custom_type == DBCustomToolType.CODE:
-                code_config = custom_tool.code_config or {}
-                code = code_config.get("code", "")
-
-                if not code:
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=False,
-                            error=t("tool_code_not_defined"),
-                            duration_ms=int((time.time() - start_time) * 1000),
-                        ),
-                        msg_key="success",
-                    )
-
-                job = compile_code_config_job(
-                    code_config=code_config,
-                    params=request.arguments,
-                    timeout=float(
-                        code_config.get("limits", {}).get("timeout_seconds", 30.0)
-                    ),
-                    source=SandboxJobSource.TOOL,
-                )
-                exec_result = await sandbox_gateway.submit_and_wait(
-                    job,
-                    timeout_seconds=job.limits.timeout_seconds + 5,
-                )
-
-                return success(
-                    data=ToolExecuteResponse(
-                        name=request.name,
-                        success=exec_result.success,
-                        result=exec_result.result,
-                        error=exec_result.error,
-                        logs=exec_result.stdout or None,
-                        artifacts=_serialize_runtime_artifacts(
-                            getattr(exec_result, "artifacts", [])
-                        ),
-                        duration_ms=_runtime_duration_ms(exec_result),
-                    ),
-                    msg_key="success",
-                )
-            elif custom_tool.custom_type == DBCustomToolType.DATABASE:
-                db_config = custom_tool.database_config or {}
-                if not db_config:
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=False,
-                            error=t("tool_execution_failed"),
-                            duration_ms=int((time.time() - start_time) * 1000),
-                        ),
-                        msg_key="success",
-                    )
-                from app.llm.tools.builtin.db_executor import execute_database_tool
-
-                timeout = float(db_config.get("timeout") or 15.0)
-                try:
-                    db_result = await execute_database_tool(
-                        tool=custom_tool,
-                        arguments=request.arguments,
-                        timeout=timeout,
-                    )
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    is_success = (
-                        db_result.get("success", True)
-                        if isinstance(db_result, dict)
-                        else True
-                    )
-                    err_msg = (
-                        db_result.get("error")
-                        if isinstance(db_result, dict) and not is_success
-                        else None
-                    )
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=is_success,
-                            result=db_result,
-                            error=err_msg,
-                            duration_ms=duration_ms,
-                        ),
-                        msg_key="success",
-                    )
-                except Exception as e:
-                    logger.exception("Database tool execution error: %s", e)
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    return success(
-                        data=ToolExecuteResponse(
-                            name=request.name,
-                            success=False,
-                            error=resolve_user_visible_error(
-                                str(e),
-                                fallback_key="tool_execution_failed",
-                            ),
-                            duration_ms=duration_ms,
-                        ),
-                        msg_key="success",
-                    )
-            else:
-                return success(
-                    data=ToolExecuteResponse(
-                        name=request.name,
-                        success=False,
-                        error=t(
-                            "unsupported_custom_tool_type",
-                            tool_type=custom_tool.custom_type,
-                        ),
-                        duration_ms=int((time.time() - start_time) * 1000),
-                    ),
-                    msg_key="success",
-                )
+        if custom_tool is not None:
+            return success(
+                data=await _run_saved_tool_test(
+                    custom_tool,
+                    request,
+                    current_user,
+                    ExecutionEntrypoint.TOOL_TEST,
+                    started_at=started_at,
+                ),
+                msg_key="success",
+            )
 
     raise BusinessError(
         code=ResponseCode.NOT_FOUND,
@@ -1394,6 +1444,16 @@ async def duplicate_tool(
 
     await check_team_access(tool.team_id, current_user, require_admin=True)
 
+    # A duplicate must reference connections, never copy plaintext secrets,
+    # and never replicate a legacy external approval audience.
+    enforce_tool_secret_contract(
+        credentials=tool.credentials,
+        http_config=tool.http_config,
+        mcp_config=tool.mcp_config,
+        connection_fields=tool.connection_fields,
+    )
+    require_caller_only_policy(tool.approval_policy)
+
     # 生成新名称
     base_name = f"{tool.name}_copy"
     new_name = base_name
@@ -1414,9 +1474,11 @@ async def duplicate_tool(
         type=tool.type,
         custom_type=tool.custom_type,
         code_config=tool.code_config,
-        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
-        credentials=tool.credentials,
+        credentials={},
+        identity_policy=tool.identity_policy,
+        connection_fields=tool.connection_fields,
+        approval_policy=tool.approval_policy,
         is_enabled=False,  # 副本默认禁用
         created_by=current_user,
     )
@@ -1441,275 +1503,6 @@ async def duplicate_tool(
 
 
 # ============ Tool Configuration Management ============
-
-
-@router.get("/config", response_model=Response[list[dict]])
-async def list_tool_configs(
-    team_id: UUID | None = None,
-    current_user: User = Depends(deps.PermissionChecker("tool:read")),
-) -> Any:
-    """
-    获取工具配置列表
-
-    如果提供 team_id，返回该团队的配置；否则返回全局配置（仅超级管理员）
-    """
-    from app.models.tool_config import ToolConfig
-
-    if team_id:
-        await check_team_access(team_id, current_user)
-        configs = await ToolConfig.filter(team_id=team_id).all()
-    else:
-        # 全局配置仅超级管理员可访问
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="permission_denied",
-                status_code=403,
-            )
-        configs = await ToolConfig.filter(team_id=None).all()
-
-    from app.schemas.tool_config import ToolConfigOut
-
-    return success(
-        data=[
-            ToolConfigOut.model_validate(c).model_dump()
-            for c in configs
-            if c.tool_name != "web_search"
-        ],
-        msg_key="success",
-    )
-
-
-@router.get("/config/{tool_name}", response_model=Response[dict])
-async def get_tool_config(
-    tool_name: str,
-    team_id: UUID | None = None,
-    current_user: User = Depends(deps.PermissionChecker("tool:read")),
-) -> Any:
-    """
-    获取指定工具的配置
-    """
-    from app.models.tool_config import ToolConfig
-
-    _reject_legacy_search_config(tool_name)
-
-    if team_id:
-        await check_team_access(team_id, current_user)
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="permission_denied",
-                status_code=403,
-            )
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-
-    if not config:
-        # For team-scoped builtin tools, create a default empty config
-        if team_id:
-            from app.llm.tools import tool_registry
-
-            if tool_registry.get_tool(tool_name):
-                config = await ToolConfig.create(
-                    tool_name=tool_name,
-                    team_id=team_id,
-                    credentials={},
-                )
-            else:
-                raise BusinessError(
-                    code=ResponseCode.NOT_FOUND,
-                    msg_key="tool_config_not_found",
-                    status_code=404,
-                )
-        else:
-            raise BusinessError(
-                code=ResponseCode.NOT_FOUND,
-                msg_key="tool_config_not_found",
-                status_code=404,
-            )
-
-    from app.schemas.tool_config import ToolConfigOut
-
-    return success(
-        data=ToolConfigOut.model_validate(config).model_dump(),
-        msg_key="success",
-    )
-
-
-@router.post("/config", response_model=Response[dict])
-async def create_tool_config(
-    data: dict,
-    request: Request,
-    team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    """
-    创建工具配置
-    """
-    from app.models.tool_config import ToolConfig
-    from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
-
-    config_data = ToolConfigCreate(**data)
-    _reject_legacy_search_config(config_data.tool_name)
-
-    if team_id:
-        await check_team_access(team_id, current_user, require_admin=True)
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="permission_denied",
-                status_code=403,
-            )
-
-    # 检查是否已存在
-    existing = await ToolConfig.filter(
-        tool_name=config_data.tool_name, team_id=team_id
-    ).first()
-
-    if existing:
-        raise BusinessError(
-            code=ResponseCode.DUPLICATE_NAME,
-            msg_key="tool_config_already_exists",
-            status_code=400,
-        )
-
-    # 创建配置
-    config = await ToolConfig.create(
-        tool_name=config_data.tool_name,
-        team_id=team_id,
-        credentials=config_data.credentials,
-    )
-
-    await AuditLogService.log(
-        user=current_user,
-        action="create_tool_config",
-        resource_type="tool_config",
-        resource_id=config.id,
-        resource_name=config_data.tool_name,
-        operation="create",
-        status="success",
-        request=request,
-        metadata={"team_id": str(team_id) if team_id else "global"},
-    )
-
-    return success(
-        data=ToolConfigOut.model_validate(config).model_dump(),
-        msg_key="tool_config_created",
-    )
-
-
-@router.put("/config/{tool_name}", response_model=Response[dict])
-async def update_tool_config(
-    tool_name: str,
-    data: dict,
-    request: Request,
-    team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    """
-    更新工具配置
-    """
-    from app.models.tool_config import ToolConfig
-    from app.schemas.tool_config import ToolConfigUpdate, ToolConfigOut
-
-    config_data = ToolConfigUpdate(**data)
-    _reject_legacy_search_config(tool_name)
-
-    if team_id:
-        await check_team_access(team_id, current_user, require_admin=True)
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="permission_denied",
-                status_code=403,
-            )
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-
-    if not config:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="tool_config_not_found",
-            status_code=404,
-        )
-
-    # 更新配置
-    config.credentials = config_data.credentials
-    await config.save()
-
-    await AuditLogService.log(
-        user=current_user,
-        action="update_tool_config",
-        resource_type="tool_config",
-        resource_id=config.id,
-        resource_name=tool_name,
-        operation="update",
-        status="success",
-        request=request,
-        metadata={"team_id": str(team_id) if team_id else "global"},
-    )
-
-    return success(
-        data=ToolConfigOut.model_validate(config).model_dump(),
-        msg_key="tool_config_updated",
-    )
-
-
-@router.delete("/config/{tool_name}", response_model=Response[None])
-async def delete_tool_config(
-    tool_name: str,
-    request: Request,
-    team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    """
-    删除工具配置
-    """
-    from app.models.tool_config import ToolConfig
-
-    _reject_legacy_search_config(tool_name)
-
-    if team_id:
-        await check_team_access(team_id, current_user, require_admin=True)
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="permission_denied",
-                status_code=403,
-            )
-        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-
-    if not config:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="tool_config_not_found",
-            status_code=404,
-        )
-
-    config_id = config.id
-    await config.delete()
-
-    await AuditLogService.log(
-        user=current_user,
-        action="delete_tool_config",
-        resource_type="tool_config",
-        resource_id=config_id,
-        resource_name=tool_name,
-        operation="delete",
-        status="success",
-        request=request,
-        metadata={"team_id": str(team_id) if team_id else "global"},
-    )
-
-    return success(
-        data=None,
-        msg_key="tool_config_deleted",
-    )
 
 
 # ============ Tool Sharing APIs ============
@@ -1953,6 +1746,11 @@ async def list_shared_tools(
 
     for share in shares:
         tool = share.tool
+        # PRIVATE is creator-only. Sharing is forbidden for private tools, but
+        # an older admin visibility update may leave a stale share row behind;
+        # never let that row disclose the definition to the former team.
+        if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
+            continue
 
         # 构建工具输出
         tool_out = ToolOut(

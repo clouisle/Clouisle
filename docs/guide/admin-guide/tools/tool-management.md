@@ -25,7 +25,7 @@ As an administrator, you can:
 The tool list shows:
 
 - **Tool name**
-- **Type** (Builtin, Custom — HTTP, Code, or Database, MCP)
+- **Type** (Builtin, Custom — HTTP or Code, MCP)
 - **Category** (Time, Math, Search, Web, File, Code, Sandbox, API, Data, etc.)
 - **Status** (Enabled / Disabled)
 
@@ -86,7 +86,7 @@ Site Configuration:
   tavily_api_key: ... # write-only
 ```
 
-Site administrators manage search from the **Configure search** button on the platform **Capabilities** page, or from **Capabilities → Tools → Web Search → Configure** in the dashboard, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
+Site administrators manage search from **Capabilities → Tools → Web Search → Configure** in the dashboard, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
 
 Agent orchestration and workflow `web_search` tool nodes share an enabled-only engine selector. **Auto** inherits the site default. Disabled providers are not offered; an existing saved selection is retained rather than silently changed. Execution rechecks the site configuration, so disabling a provider also blocks previously saved selections.
 
@@ -195,9 +195,11 @@ Example Response:
     "status": "active"
   }
 ```
-> **Important:** Custom HTTP tools do not support `{{variable}}` substitution in the URL path or URL string. Keep the endpoint URL static and pass variables through `Query Parameters`, request `Headers`, or `Body Template` fields.
+> **Important:** Custom HTTP tools support `{{variable}}` substitution in the URL path or URL string, query parameters, request headers, and body templates. Variables come from tool parameters and declared connection fields. The URL is rendered before the request is sent and the final URL passes SSRF validation; a placeholder without a value fails the call instead of silently changing the endpoint. The editor suggests available variable names after `{{`.
 
-> **Note:** A custom tool can also be a **Database** tool (`type: database`) that runs a SQL query against a configured connection (PostgreSQL, MySQL, Redis, or MongoDB), configured with host/port/database/credentials, a query timeout, and a maximum row limit. Verify connectivity with `POST /api/v1/tools/database/test-connection` (requires `tool:create`).
+> **Note:** Database querying is a **builtin capability**, not a custom tool type. Four registry builtins — `postgresql_query`, `mysql_query`, `redis_query`, and `mongodb_query` — run read-only schema/query operations. The database identity (URL or host/port, database, username, password, SSL, timeout, row limit) is stored in a personal or team **connection**, so one builtin can serve many databases and rotating credentials never edits an Agent or workflow. An Agent or workflow node selects the connection; a personal connection is only usable interactively by its owner, while non-interactive runs use the connection bound to the definition. Database targets are checked against the central SSRF allowlist at every execution; add internal database hosts to **Site Settings → Security → SSRF allowed targets** before attaching them.
+>
+> Definitions created before the builtin cutover are migrated atomically on startup. Historical tool ids and audit records remain; noncanonical legacy definitions are disabled, connections retain their ids, and Agent/workflow/version references move to the builtin plus the selected connection. Policies merge conservatively, so a stricter legacy policy or disabled definition can restrict the team's canonical builtin. Conflicting defaults or multiple same-engine database attachments in one Agent stop startup rather than silently choose an identity. Resolve these in the previous release before upgrading; if startup already failed, roll back the application version to edit the unchanged configuration, then retry. The new release's UI is unavailable while startup is blocked.
 
 ### Custom Tool with POST
 
@@ -292,7 +294,32 @@ Example Response:
 
 ### Available Integrations
 
-> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP, Code, or Database), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the Email and generic Webhook notification settings in Site Settings.
+> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin` (including the database query builtins), `custom` (HTTP or Code), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the Email and generic Webhook notification settings in Site Settings.
+
+## MCP Connections and Approvals
+
+Saved MCP tools execute with an encrypted personal, team or site connection.
+A personal connection can only be selected by its owner; selecting it when
+configuring an Agent or workflow authorizes that saved definition to reuse the
+identity when the definition is shared or run in the background. The owner can
+authorize OAuth when the server requires it. Operations and metadata can require
+approval depending on the tool's own
+caller-only policy and the Agent binding's confirmation switch. Only the
+principal that initiated an Agent call can confirm or reject it —
+the signed-in user, or for an API-key Agent run the same API key. Workflow tool
+calls never create approval gates. Stored user/role approver policies in a tool
+definition fail closed until the tool editor re-saves them with caller
+confirmation.
+
+Team Owners/Admins can also review and change each editable tool's own policy
+in one place from **Team management → Tool Approvals**
+(`/app/team?tab=approvals`). That page edits the same per-tool policy through
+the normal update authorization; it adds no team-level layer, never lists
+another member's private tool, and keeps tools shared into the team read-only
+without revealing the owning team. See
+[MCP Connections and Approvals](mcp-connections-and-approvals.md) for identity
+modes, connection bindings, OAuth, caller confirmation, resource/prompt use and live
+subscription limits.
 
 ## Testing Tools
 

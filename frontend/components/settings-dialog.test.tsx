@@ -71,8 +71,10 @@ mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, 
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
-  Loader2: Icon, Mail: Icon, Shield: Icon, Unlink: Icon, User: Icon,
+  Loader2: Icon, Mail: Icon, Shield: Icon, Unlink: Icon, User: Icon, Link2: Icon,
+  Check: Icon, ExternalLink: Icon, Plus: Icon, RefreshCw: Icon, Star: Icon, Trash2: Icon, X: Icon,
 }))
+mock.module('./user-tool-connections', () => ({ UserToolConnections: () => <div data-testid="user-tool-connections" /> }))
 mock.module('@/contexts/site-settings-context', () => ({ useSiteSettings: () => ({ settings: siteSettings }) }))
 mock.module('@/lib/api', () => ({
   ApiError,
@@ -214,6 +216,26 @@ afterEach(() => {
 })
 
 describe('SettingsDialog', () => {
+  test('only offers tool connections to users who may read tools', async () => {
+    await render()
+    expect(container.textContent).not.toContain('connections.tabTitle')
+
+    act(() => root.unmount())
+    container.remove()
+    user = {
+      ...user,
+      roles: [{
+        id: 'role-member',
+        name: 'Member',
+        description: null,
+        is_system_role: true,
+        permissions: [{ id: 'perm-tool-read', scope: 'tool', code: 'tool:read', description: null }],
+      }],
+    }
+    await render()
+    expect(container.textContent).toContain('connections.tabTitle')
+  })
+
   test('loads only when open and populates the profile tab', async () => {
     await render(false)
     expect(getCurrentUser).not.toHaveBeenCalled()

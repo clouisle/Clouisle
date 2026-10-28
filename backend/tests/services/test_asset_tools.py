@@ -9,6 +9,8 @@ from uuid import uuid4
 
 import pytest
 
+import app.services.asset_document  # noqa: F401  (bind real asset_service)
+import app.services.asset_view  # noqa: F401  (bind the real resolver before mocks)
 from app.api.v1.endpoints.chat_tools import _execute_asset_tool
 from app.services.citations import stable_citation_id
 from app.schemas.response import BusinessError

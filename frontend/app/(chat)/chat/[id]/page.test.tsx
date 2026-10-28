@@ -92,6 +92,12 @@ mock.module('@/lib/api', () => ({
   },
   publicAgentsApi: { getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation },
   uploadApi: { uploadFileWithProgress },
+  toolExecutionsApi: { get: mock(async () => ({ status: 'awaiting_approval', operation: 'run', parameters_preview: {} })) },
+  runInteractionsApi: {
+    list: mock(async () => ({ items: [], total: 0, page: 1, page_size: 20 })),
+    respond: mock(async () => ({ outcome: 'accept' })),
+  },
+  getElicitationUrl: () => null,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/utils/message-converter', () => ({ convertBackendMessages }))
@@ -126,7 +132,8 @@ mock.module('lucide-react', () => ({
   Loader2: element('i'), LogIn: element('i'), ArrowLeft: element('i'), AlertCircle: element('i'),
   SquarePen: element('i'), PanelLeftClose: element('i'), PanelLeft: element('i'), MessageSquare: element('i'),
   Trash2: element('i'), MoreHorizontal: element('i'), Sparkles: element('i'), Pencil: element('i'),
-  ChevronDown: element('i'), ChevronUp: element('i'),
+  ChevronDown: element('i'), ChevronUp: element('i'), RefreshCw: element('i'),
+  ShieldCheck: element('i'), AlertTriangle: element('i'), ExternalLink: element('i'), ServerCog: element('i'),
 }))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
@@ -534,6 +541,8 @@ describe('PublicChatPage', () => {
 
     expect(chatContainerProps.loadingLabel).toBe('runStatusWaiting')
     expect(chatInputProps.disabled).toBe(true)
+    expect(chatInputProps.isLoading).toBe(true)
+    expect(chatContainerProps.isStreaming).toBe(true)
     expect(output()).not.toContain('runStatusWaiting')
   })
 

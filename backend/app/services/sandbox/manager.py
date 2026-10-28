@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,12 +24,19 @@ from app.core.sandbox_network_policy import (
 )
 from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
-from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
 from app.services import upload_gateway
 
 from .egress_proxy import SandboxEgressProxy
 from .artifacts import SandboxArtifactStore
+from .credentials import (
+    CREDENTIALS_ENV_VAR,
+    CREDENTIALS_METADATA_KEY,
+    SandboxCredentialError,
+    credential_file_path,
+    decrypt_sandbox_credentials,
+    write_credentials_file,
+)
 from .models import (
     SandboxExecutionMetadata,
     SandboxJob,
@@ -44,6 +52,10 @@ from .process_launcher import (
     _session_lock_fd,
 )
 from .python_env import PythonEnvironmentManager
+from .snippet import (
+    build_javascript_snippet_wrapper,
+    build_python_snippet_wrapper,
+)
 from .result_store import sandbox_result_store
 from .session_store import STANDALONE_ROUND, sandbox_session_store
 from .workspace import SandboxWorkspace, SandboxWorkspaceManager
@@ -77,10 +89,36 @@ BLOCKED_ENV = frozenset(
         "npm_config_proxy",
         "npm_config_https_proxy",
         "npm_config_noproxy",
+        CREDENTIALS_ENV_VAR,
     }
 )
 
 BWRAP_USER_NS_ERROR_MARKER = "No permissions to create new namespace"
+
+
+@dataclass
+class SandboxExecutionOutcome:
+    """Raw outcome of one sandbox process, before it is snapshotted.
+
+    Internal to the manager: callers only ever receive :class:`SandboxResult`
+    (status, metadata, artifacts). Kept as a plain dataclass because it is
+    built and consumed synchronously inside one execution call.
+    """
+
+    success: bool
+    result: Any = None
+    error: str | None = None
+    stdout: str = ""
+    stderr: str = ""
+    stdout_log: str | None = None
+    stderr_log: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_lines: int | None = None
+    stderr_lines: int | None = None
+    stdout_log_partial: bool = False
+    stderr_log_partial: bool = False
+    timed_out: bool = False
 
 
 def translate_sandbox_error(message: str | None) -> str | None:
@@ -215,6 +253,15 @@ class SandboxManager:
         session_team_id: str | None = None,
     ):
         sandbox_policy_engine.validate(job)
+        envelope = (
+            job.metadata.get(CREDENTIALS_METADATA_KEY)
+            if isinstance(job.metadata, dict)
+            else None
+        )
+        if envelope and not (job.code and job.language):
+            raise SandboxCredentialError(
+                "sandbox credentials require a code/language snippet payload"
+            )
         metadata = await self._load_or_create_metadata(job.job_id)
         now = datetime.now(UTC)
         metadata.mark_started(now)
@@ -292,7 +339,7 @@ class SandboxManager:
                 if keyword is not None and partial is not None:
                     transfer[f"{keyword}_log"] = partial
                     transfer[f"{keyword}_log_partial"] = True
-                result = LegacyExecutionResult(
+                result = SandboxExecutionOutcome(
                     success=False,
                     error=str(exc),
                     stderr=str(exc),
@@ -358,7 +405,7 @@ class SandboxManager:
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         # Snapshot once per job so package installs and the payload share the
         # same policy; ``None`` means the administrator disabled restrictions.
         allowed_hosts = await get_sandbox_network_allowlist()
@@ -388,7 +435,7 @@ class SandboxManager:
         metadata: SandboxExecutionMetadata,
         network_proxy: SandboxEgressProxy | None,
         network_unrestricted: bool = False,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         try:
             env = await self._build_command_env(
                 job,
@@ -398,13 +445,13 @@ class SandboxManager:
                 network_unrestricted,
             )
         except SandboxNetworkPolicyError as exc:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=str(exc),
                 stderr=str(exc),
             )
         except subprocess.CalledProcessError as exc:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=t("tool_execution_failed"),
                 stdout=exc.output or "",
@@ -421,28 +468,45 @@ class SandboxManager:
         )
 
         if job.code and job.language:
-            script_path, command = self._prepare_snippet_execution(job, workspace, env)
-            process_result = await self.process_launcher.launch(
-                command,
-                cwd=str(workspace.root),
-                env=env,
-                timeout_seconds=min(
-                    job.limits.timeout_seconds,
-                    max(0.001, job.deadline_at - time.time()),
+            credential_file: Path | None = None
+            try:
+                credentials = self._decrypt_credentials(job)
+                # The pointer is reserved: drop any caller/tool-provided value
+                # before optionally setting our own, so job.env cannot spoof it.
+                env.pop(CREDENTIALS_ENV_VAR, None)
+                if credentials:
+                    credential_file = credential_file_path(workspace.tmp_dir)
+                    write_credentials_file(credential_file, credentials)
+                    env[CREDENTIALS_ENV_VAR] = str(credential_file)
+                script_path, command = self._prepare_snippet_execution(
+                    job, workspace, env
                 )
-                if job.deadline_at is not None
-                else job.limits.timeout_seconds,
-                max_stdout_kb=job.limits.max_stdout_kb,
-                max_stderr_kb=job.limits.max_stderr_kb,
-                workspace_root=str(workspace.root),
-                cache_root=str(self.workspace_manager.cache_root),
-                network_proxy=network_proxy,
-                network_unrestricted=network_unrestricted,
-                log_dir=str(workspace.logs_dir),
-                log_stem=f"exec-{job.job_id}",
-            )
-            metadata.mark_execute_completed(datetime.now(UTC))
-            return self._parse_snippet_result(process_result, script_path, workspace)
+                process_result = await self.process_launcher.launch(
+                    command,
+                    cwd=str(workspace.root),
+                    env=env,
+                    timeout_seconds=min(
+                        job.limits.timeout_seconds,
+                        max(0.001, job.deadline_at - time.time()),
+                    )
+                    if job.deadline_at is not None
+                    else job.limits.timeout_seconds,
+                    max_stdout_kb=job.limits.max_stdout_kb,
+                    max_stderr_kb=job.limits.max_stderr_kb,
+                    workspace_root=str(workspace.root),
+                    cache_root=str(self.workspace_manager.cache_root),
+                    network_proxy=network_proxy,
+                    network_unrestricted=network_unrestricted,
+                    log_dir=str(workspace.logs_dir),
+                    log_stem=f"exec-{job.job_id}",
+                )
+                metadata.mark_execute_completed(datetime.now(UTC))
+                return self._parse_snippet_result(
+                    process_result, script_path, workspace
+                )
+            finally:
+                if credential_file is not None:
+                    credential_file.unlink(missing_ok=True)
 
         if job.command:
             cwd = self.workspace_manager.resolve_workspace_path(workspace, job.cwd)
@@ -476,7 +540,7 @@ class SandboxManager:
                     "sandbox_process_exit_code",
                     exit_code=process_result.exit_code,
                 )
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=success,
                 result=result_value,
                 error=error,
@@ -486,7 +550,7 @@ class SandboxManager:
             )
 
         metadata.mark_execute_completed(datetime.now(UTC))
-        return LegacyExecutionResult(
+        return SandboxExecutionOutcome(
             success=False,
             error=t("sandbox_missing_executable_payload"),
         )
@@ -629,18 +693,33 @@ class SandboxManager:
         )
 
         if job.language == "python":
-            wrapper = self._build_python_snippet_wrapper(job.code or "", params)
+            wrapper = build_python_snippet_wrapper(job.code or "", params)
             script_path.write_text(wrapper, encoding="utf-8")
             return script_path, self._build_python_snippet_command(
                 job, script_path, env
             )
 
-        wrapper = self._build_javascript_snippet_wrapper(job.code or "", params)
+        wrapper = build_javascript_snippet_wrapper(job.code or "", params)
         script_path.write_text(wrapper, encoding="utf-8")
         self._link_node_modules_into_workspace(workspace, env)
         return script_path, self._build_javascript_snippet_command(
             job, script_path, env
         )
+
+    @staticmethod
+    def _decrypt_credentials(job: SandboxJob) -> dict[str, str]:
+        """Decrypt the job's credential envelope just before execution.
+
+        Only the encrypted envelope travels in the durable Celery payload;
+        plaintext exists in worker memory and a mode-0600 file that the wrapper
+        unlinks before user code runs.
+        """
+        if not isinstance(job.metadata, dict):
+            return {}
+        envelope = job.metadata.get(CREDENTIALS_METADATA_KEY)
+        if not envelope:
+            return {}
+        return decrypt_sandbox_credentials(str(envelope), job_id=job.job_id)
 
     def _build_python_snippet_command(
         self,
@@ -665,68 +744,6 @@ class SandboxManager:
         if executable in {"javascript", "node"}:
             executable = env.get("SANDBOX_NODE_BINARY") or "node"
         return self._resolve_command([executable, *command[1:], str(script_path)], env)
-
-    def _build_python_snippet_wrapper(self, code: str, params: dict[str, Any]) -> str:
-        indented_code = "\n".join(f"    {line}" for line in code.split("\n"))
-        return (
-            f"""
-import json
-import sys
-from io import StringIO
-
-params = json.loads({json.dumps(params)!r})
-_logs = []
-_original_stdout = sys.stdout
-sys.stdout = StringIO()
-
-def __execute__():
-{indented_code}
-
-try:
-    result = __execute__()
-    _captured = sys.stdout.getvalue()
-    sys.stdout = _original_stdout
-    if _captured:
-        _logs.extend(_captured.strip().split('\\n'))
-    output = {{"success": True, "result": result, "logs": _logs}}
-    print('__RESULT__' + json.dumps(output, default=str) + '__END__')
-except Exception as e:
-    sys.stdout = _original_stdout
-    output = {{"success": False, "error": str(e), "logs": _logs}}
-    print('__RESULT__' + json.dumps(output, default=str) + '__END__')
-""".strip()
-            + "\n"
-        )
-
-    def _build_javascript_snippet_wrapper(
-        self, code: str, params: dict[str, Any]
-    ) -> str:
-        return (
-            f"""
-const params = {json.dumps(params)};
-const logs = [];
-const originalLog = console.log;
-console.log = (...args) => {{
-  logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
-}};
-
-async function __execute__() {{
-{code}
-}}
-
-(async () => {{
-  try {{
-    const result = await __execute__();
-    console.log = originalLog;
-    process.stdout.write('__RESULT__' + JSON.stringify({{ success: true, result, logs }}) + '__END__');
-  }} catch (e) {{
-    console.log = originalLog;
-    process.stdout.write('__RESULT__' + JSON.stringify({{ success: false, error: e.message || String(e), logs }}) + '__END__');
-  }}
-}})();
-""".strip()
-            + "\n"
-        )
 
     def _link_node_modules_into_workspace(
         self,
@@ -817,7 +834,7 @@ async function __execute__() {{
         process_result,
         script_path: Path,
         workspace: SandboxWorkspace | None = None,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         del script_path
         stdout = process_result.stdout
         stderr = process_result.stderr
@@ -826,7 +843,7 @@ async function __execute__() {{
             end = stdout.index("__END__")
             payload = json.loads(stdout[start:end])
             logs = payload.get("logs", [])
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=bool(payload.get("success", False)),
                 result=payload.get("result"),
                 error=None
@@ -841,7 +858,7 @@ async function __execute__() {{
             )
 
         if process_result.timed_out:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=t("request_timeout"),
                 stdout=stdout,
@@ -849,7 +866,7 @@ async function __execute__() {{
                 **self._transfer_execution_logs(process_result, workspace),
             )
 
-        return LegacyExecutionResult(
+        return SandboxExecutionOutcome(
             success=process_result.exit_code == 0,
             result=stdout.strip() or None,
             error=None

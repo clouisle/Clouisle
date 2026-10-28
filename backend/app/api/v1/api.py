@@ -14,6 +14,9 @@ from app.api.v1.endpoints import (
     agent_stats,
     chat,
     tools,
+    tool_connections,
+    tool_oauth,
+    tool_mcp,
     packages,
     skills,
     api_keys,
@@ -27,6 +30,8 @@ from app.api.v1.endpoints import (
     wechat_knowledge,
     feishu_agent,
     feishu_agent_settings,
+    tool_approvals,
+    run_interactions,
 )
 from app.api.v1 import workflow_versions
 from app.api.v1.admin.api import admin_router
@@ -51,6 +56,38 @@ api_router.include_router(
 api_router.include_router(agent_stats.router, prefix="/agents", tags=["agent-stats"])
 api_router.include_router(chat.router, prefix="/agents", tags=["chat"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
+api_router.include_router(
+    tool_approvals.router, prefix="/tool-approvals", tags=["tool-approvals"]
+)
+api_router.include_router(
+    tool_approvals.execution_router,
+    prefix="/tool-executions",
+    tags=["tool-executions"],
+)
+api_router.include_router(
+    tool_connections.router, prefix="/tools", tags=["tool-connections"]
+)
+api_router.include_router(
+    tool_connections.connection_router,
+    prefix="/tool-connections",
+    tags=["tool-connections"],
+)
+api_router.include_router(
+    tool_oauth.router,
+    prefix="/tool-connections",
+    tags=["tool-oauth"],
+)
+api_router.include_router(
+    tool_oauth.callback_router,
+    prefix="/tool-oauth",
+    tags=["tool-oauth"],
+)
+api_router.include_router(
+    run_interactions.router,
+    prefix="/run-interactions",
+    tags=["run-interactions"],
+)
+api_router.include_router(tool_mcp.router, prefix="/tools", tags=["tool-mcp"])
 api_router.include_router(packages.router, prefix="/packages", tags=["packages"])
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 api_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])

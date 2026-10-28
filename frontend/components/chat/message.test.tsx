@@ -656,7 +656,7 @@ describe('message behavior', () => {
     expect(thought).not.toBeNull()
     expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
     expect(thought?.textContent).toContain('Inspecting evidence')
-    expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.actionCallingToolsParallel count=2')
+    expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.actionQueryingTool tool=Web search')
     expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['output-available', 'input-available', 'output-error', 'input-streaming'])
@@ -780,6 +780,71 @@ describe('message behavior', () => {
     />)
     expect(finalStep).toContain('chat.reasoning.thoughtFor seconds=2')
     expect(finalStep).not.toContain('chat.reasoning.thinkingDefault')
+
+    const parallel = renderToStaticMarkup(<Message
+      message={{
+        id: 'parallel-tools',
+        role: 'assistant',
+        parts: [
+          { type: 'tool-call', toolCallId: 'p1', toolName: 'web_search', input: {}, state: 'running' },
+          { type: 'tool-call', toolCallId: 'p2', toolName: 'read_file', input: {}, state: 'running' },
+        ],
+      }}
+    />)
+    expect(parallel).toContain('chat.reasoning.actionCallingToolsParallel count=2')
+  })
+
+  test('keeps the thought header stable while MCP invocations stream', () => {
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    roots.push(root)
+    const renderMessage = (parts: React.ComponentProps<typeof Message>['message']['parts']) => {
+      act(() => {
+        root.render(<Message isStreaming message={{ id: 'mcp-header', role: 'assistant', parts }} />)
+      })
+    }
+
+    renderMessage([
+      { type: 'reasoning', text: 'Inspecting the request', state: 'streaming' },
+    ])
+    const thought = container.querySelector('[data-chat-thought-process="true"]') as HTMLElement
+    const header = thought.querySelector('h3') as HTMLElement
+    expect(header.textContent).toBe('chat.reasoning.thinkingDefault')
+    const headerHtml = header.outerHTML
+
+    renderMessage([
+      { type: 'reasoning', text: 'Inspecting the request', state: 'streaming' },
+      { type: 'tool-call', toolCallId: 'mcp-prefixed', toolName: 'mcp_docs_lookup', input: { id: 7 }, state: 'pending' },
+    ])
+    expect(container.querySelector('[data-chat-thought-process="true"]')).toBe(thought)
+    expect(thought.querySelector('h3')).toBe(header)
+    expect(header.textContent).toBe('chat.reasoning.thinkingDefault')
+    expect(header.outerHTML).toBe(headerHtml)
+    expect(header.textContent).not.toContain('mcp')
+    expect(thought.textContent).toContain('mcp_docs_lookup')
+
+    renderMessage([
+      { type: 'reasoning', text: 'Inspecting the request', state: 'done' },
+      { type: 'tool-call', toolCallId: 'mcp-prefixed', toolName: 'mcp_docs_lookup', input: { id: 7 }, state: 'done' },
+      { type: 'mcp-tool-call', toolCallId: 'mcp-dedicated', serverName: 'repo', toolName: 'read', input: { path: 'README.md' }, state: 'done' },
+      { type: 'mcp-tool-result', toolCallId: 'mcp-dedicated', serverName: 'repo', toolName: 'read', output: { ok: true } },
+    ])
+    expect(thought.querySelector('h3')).toBe(header)
+    expect(header.textContent).toBe('chat.reasoning.thinkingDefault')
+    expect(header.outerHTML).toBe(headerHtml)
+    expect(header.textContent).not.toContain('mcp')
+    expect(thought.textContent).toContain('repo/read')
+    expect(thought.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
+
+    renderMessage([
+      { type: 'reasoning', text: 'Inspecting the request again', state: 'streaming' },
+      { type: 'tool-call', toolCallId: 'mcp-prefixed', toolName: 'mcp_docs_lookup', input: { id: 7 }, state: 'done' },
+      { type: 'mcp-tool-call', toolCallId: 'mcp-dedicated', serverName: 'repo', toolName: 'read', input: { path: 'README.md' }, state: 'done' },
+      { type: 'mcp-tool-result', toolCallId: 'mcp-dedicated', serverName: 'repo', toolName: 'read', output: { ok: true } },
+    ])
+    expect(thought.querySelector('h3')).toBe(header)
+    expect(header.textContent).toBe('chat.reasoning.thinkingDefault')
+    expect(header.textContent).not.toContain('mcp')
   })
 
   test('keeps thought process actively updating during later tool iterations even with text present', () => {

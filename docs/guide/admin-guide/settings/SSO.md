@@ -52,6 +52,8 @@ Save **HTTP callback** as the delivery mode. Configure the matching Verification
 
 Users can message the bot only in private text chats. `/agents` lists the user's accessible published Agents and `/use <number>` shares the personal-settings selection. `/new` starts a fresh conversation after the active run finishes, `/status` reports progress, `/stop` stops the selected Agent's active run, and `/help` lists commands. Plain text resumes the selected Agent's waiting `ask_user` run.
 
+Tool calls requiring confirmation are sent as redacted messages. Reply with the exact `/approve <execution UUID>` or `/reject <execution UUID>` shown in the message; only the caller can decide. Plain-text replies such as “agree” or “reject” are not decisions.
+
 The callback API is documented in [Feishu Agent Chat API](../../api-reference/endpoints/feishu-agent.md). Treat it as a Feishu provider callback, not a public application API.
 
 ## Configure WeChat features

@@ -162,6 +162,10 @@ Team management allows administrators to:
 
 Model access is managed from the **Model Authorization** tab. It lists the models granted to the team and lets an authorized administrator grant or revoke available platform models. There is no separate Resources tab in the team detail UI.
 
+### Tool Approvals
+
+Tool approval policies are not managed in this administrator console. Team members, creators, and team Owners/Admins manage each tool's own policy on the platform team page: **Team switcher → Manage Current Team → Tool Approvals** (`/app/team?tab=approvals`). The page never adds a team-level approval layer and never exposes another member's private tool. See [Team Management § Tool Approvals](../../user-guide/settings/team-settings.md#tool-approvals).
+
 ## Managing Team Members
 
 ### Adding Members

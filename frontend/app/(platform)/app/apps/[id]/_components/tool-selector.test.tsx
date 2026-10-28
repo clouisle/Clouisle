@@ -26,6 +26,14 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: n
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().filter(Boolean).join(' ') }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('@/components/tools/connection-picker', () => ({
+  ToolConnectionPicker: () => null,
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null },
+  getToolConnectionBinding: (config?: { connection_mode?: 'personal' | 'team' | null; connection_id?: string | null }) => ({
+    connection_mode: config?.connection_mode ?? null,
+    connection_id: config?.connection_id ?? null,
+  }),
+}))
 mock.module('@/components/tools/web-search-engine-select', () => ({
   WebSearchEngineSelect: element('select'),
 }))
@@ -68,8 +76,11 @@ mock.module('lucide-react', () => ({
   Code2: element('svg'),
   Link: element('svg'),
   ChartColumn: element('svg'),
-  Database: element('svg'),
   Settings2: element('svg'),
+  ShieldAlert: element('svg'),
+}))
+mock.module('@/components/tools/tool-icons', () => ({
+  renderToolIcon: ({ icon, name }: { icon?: string; name?: string }) => jsx('svg', { 'data-icon-key': icon || name }),
 }))
 
 const { AddToolButton, ToolSelector } = await import('./tool-selector')
@@ -202,12 +213,12 @@ describe('ToolSelector', () => {
       requires_config: false,
       config_fields: [],
     }
-    const dbTool: Tool = {
-      name: 'orders_db',
-      display_name: 'Orders DB',
-      description: 'Database',
+    const customTool: Tool = {
+      name: 'orders_api',
+      display_name: 'Orders API',
+      description: 'Orders',
       type: 'custom',
-      custom_type: 'database',
+      custom_type: 'http',
       category: 'data',
       parameters: [],
       is_enabled: true,
@@ -223,7 +234,7 @@ describe('ToolSelector', () => {
       stateIndex = 0
       const parent = ToolSelector({
         toolsConfig: [webSearchConfig],
-        availableTools: [webSearchTool, dbTool],
+        availableTools: [webSearchTool, customTool],
         onChange,
       }) as unknown as Tree
       const item = (parent.props.children as Tree[])[0]
@@ -251,11 +262,11 @@ describe('ToolSelector', () => {
       ;(deleteBtn.props.onMouseLeave as () => void)()
       ;(deleteBtn.props.onClick as (e: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} })
     }
-    // Also test database tool rendering in AddToolButton
+    // Also test custom tool rendering in AddToolButton
     stateIndex = 0
     state = []
-    const addTree = renderAdd({ availableTools: [dbTool] })
-    expect(text(addTree)).toContain('Orders DB')
+    const addTree = renderAdd({ availableTools: [customTool] })
+    expect(text(addTree)).toContain('Orders API')
   })
 
   test('renders image icon for custom tools with url icons', () => {
@@ -284,6 +295,16 @@ describe('ToolSelector', () => {
     expect(images[0].props.src).toBe('https://example.com/icon.png')
   })
 
+  test('renders builtin database icon marks instead of icon identifiers', () => {
+    const database = tool({
+      name: 'postgresql_query', display_name: 'PostgreSQL', type: 'builtin', category: 'data', icon: 'postgresql',
+    })
+    stateIndex = 0
+    const tree = renderAdd({ availableTools: [database] })
+    expect(text(tree)).not.toContain('postgresql')
+    expect(findAll(tree, (node) => node.props['data-icon-key'] === 'postgresql')).toHaveLength(1)
+  })
+
   test('hides delete switch and settings button when readOnly is true', () => {
     const config: ToolConfig = { type: 'builtin', name: 'clock' }
     stateIndex = 0
@@ -297,5 +318,23 @@ describe('ToolSelector', () => {
     expect(switches).toHaveLength(0)
     const deleteButtons = findAll(tree, (node) => node.type === 'button')
     expect(deleteButtons).toHaveLength(0)
+  })
+
+  test('toggles require_approval when confirmation button is clicked', () => {
+    const config: ToolConfig = { type: 'builtin', name: 'clock', require_approval: false }
+    const onChange = mock()
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [config],
+      availableTools: [builtin],
+      onChange,
+    })
+    const buttons = findAll(tree, (node) => node.type === 'button')
+    expect(buttons.length).toBeGreaterThan(0)
+    const confirmButton = buttons.find((btn) => typeof btn.props.title === 'string' && btn.props.title.includes('requireApproval'))
+    if (confirmButton && typeof confirmButton.props.onClick === 'function') {
+      ;(confirmButton.props.onClick as (e: unknown) => void)({ stopPropagation: () => {} })
+      expect(onChange).toHaveBeenCalledWith([{ ...config, require_approval: true }])
+    }
   })
 })

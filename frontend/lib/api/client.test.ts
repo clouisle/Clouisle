@@ -183,8 +183,8 @@ describe('API response behavior', () => {
     const technical = await api.get('/technical', { silent: true }).catch(value => value)
 
     expect(localized.message).toBe('资料已更新')
-    expect(wrongLanguage.message).toBe('Request failed')
-    expect(technical.message).toBe('Request failed')
+    expect(wrongLanguage.message).toBe('请求失败')
+    expect(technical.message).toBe('请求失败')
   })
 
   test.each([200, 502])('preserves long localized permission guidance on HTTP %s', async (status) => {
@@ -208,7 +208,7 @@ describe('API response behavior', () => {
     const timeout = await api.get('/timeout', { silent: true }).catch(value => value)
     expect(timeout).toBeInstanceOf(ApiError)
     expect(timeout.code).toBe(-1)
-    expect(timeout.message).toBe('Request timeout, please try again later')
+    expect(timeout.message).toBe('Request timed out')
 
     axiosInstance.defaults.adapter = async (config) => {
       throw new AxiosError('missing', 'ERR_BAD_REQUEST', config, undefined, {
@@ -270,6 +270,6 @@ describe('API response behavior', () => {
 
     axiosInstance.interceptors.request.eject(interceptor)
     expect(error).toBeInstanceOf(ApiError)
-    expect(error.message).toBe('Network error, please check your connection')
+    expect(error.message).toBe('Network connection failed')
   })
 })

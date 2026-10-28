@@ -10,7 +10,7 @@ const setters = Array.from({ length: 11 }, () => mock(() => {}))
 let hookIndex = 0
 let currentTeam: { id: string } | null = { id: 'team-1' }
 const list = mock(async () => ({ builtin: [], custom: [], mcp: [] }))
-const listMcpTools = mock(async () => ({ tools: [] }))
+const listSavedMcpTools = mock(async () => ({ status: 'completed', operation: 'list:tools', execution_id: null, pending_approval: null, result: { items: [] } }))
 
 mock.module('react', () => ({
   default: {
@@ -35,7 +35,7 @@ mock.module('next/image', () => ({ default: component }))
 mock.module('lucide-react', () => ({
   AlertCircle, Trash2: component, Search: component, ChevronDown: component, Wrench: component, Check: component,
   Loader2: component, Clock3: component, Calculator: component, Globe: component, FolderOpen: component,
-  Code2: component, Link: component, ChartColumn: component, Database: component,
+  Code2: component, Link: component, ChartColumn: component,
 }))
 for (const [path, names] of [
   ['@/components/ui/button', ['Button']], ['@/components/ui/input', ['Input']], ['@/components/ui/label', ['Label']],
@@ -45,11 +45,16 @@ for (const [path, names] of [
 ] as const) mock.module(path, () => Object.fromEntries(names.map(name => [name, component])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/tools/web-search-engine-select', () => ({ WebSearchEngineSelect }))
+mock.module('@/components/tools/connection-picker', () => ({
+  ToolConnectionPicker: component,
+  getToolConnectionBinding: () => ({ connection_mode: null, connection_id: null }),
+}))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/api', () => ({
-  toolsApi: { list, listMcpTools },
+  toolsApi: { list },
   isPresetToolCategory: (category: string) => ['time', 'math', 'search', 'web', 'file', 'code', 'sandbox', 'api', 'data', 'other'].includes(category),
 }))
+mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools: listSavedMcpTools } }))
 
 const { ToolNodeConfig } = await import('./tool-node-config')
 
@@ -106,9 +111,9 @@ beforeEach(() => {
   for (const setter of setters) setter.mockClear()
   currentTeam = { id: 'team-1' }
   list.mockClear()
-  listMcpTools.mockClear()
+  listSavedMcpTools.mockClear()
   list.mockImplementation(async () => ({ builtin: [], custom: [], mcp: [] }))
-  listMcpTools.mockImplementation(async () => ({ tools: [] }))
+  listSavedMcpTools.mockImplementation(async () => ({ status: 'completed', operation: 'list:tools', execution_id: null, pending_approval: null, result: { items: [] } }))
 })
 
 test('selects configured tools and builds parameter mappings', () => {
@@ -125,6 +130,19 @@ test('selects configured tools and builds parameter mappings', () => {
   }))
   expect(descendants(choice).some(node => node.type === AlertCircle)).toBe(true)
 })
+
+test('clears a previous connection binding when another tool is selected', () => {
+  const current = render(
+    { toolType: 'builtin', connection_mode: 'personal', connection_id: 'conn-1', parameterMappings: [], outputVariable: 'result' },
+    { 2: [builtin] },
+  )
+  click(find(current.tree, node => node.type === 'button' && text(node).includes('Web Search')))
+  expect(current.onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    connection_mode: null,
+    connection_id: null,
+  }))
+})
+
 
 test('updates constants, variables, validation, output, and clearing', () => {
   const mappings = [{ name: 'query', type: 'string', required: true, description: 'Search terms', source: 'constant', constantValue: '' }]
@@ -214,9 +232,10 @@ test('loads only enabled workflow tools and contains API failures', async () => 
 })
 
 test('loads MCP credentials/config and resets state on service errors', async () => {
-  listMcpTools.mockImplementationOnce(async config => {
-    expect(config).toEqual({ url: 'https://mcp.test' })
-    return { tools: [{ name: 'remote', parameters: {} }] }
+  listSavedMcpTools.mockImplementationOnce(async (toolId, params) => {
+    expect(toolId).toBe('mcp-1')
+    expect(params).toEqual({ teamId: 'team-1' })
+    return { status: 'completed', operation: 'list:tools', execution_id: null, pending_approval: null, result: { items: [{ name: 'remote', parameters: {} }] } }
   })
   render({ toolId: 'mcp-1', toolType: 'mcp', parameterMappings: [], outputVariable: 'result' }, { 2: [mcp] })
   await flush()
@@ -224,14 +243,14 @@ test('loads MCP credentials/config and resets state on service errors', async ()
   expect(setters[8]).toHaveBeenNthCalledWith(1, true)
   expect(setters[8]).toHaveBeenLastCalledWith(false)
 
-  listMcpTools.mockImplementationOnce(async () => { throw new Error('credentials rejected') })
+  listSavedMcpTools.mockImplementationOnce(async () => { throw new Error('credentials rejected') })
   render({ toolId: 'mcp-1', toolType: 'mcp', parameterMappings: [], outputVariable: 'result' }, { 2: [mcp] })
   await flush()
   expect(setters[7]).toHaveBeenCalledWith([])
   expect(setters[8]).toHaveBeenLastCalledWith(false)
 
-  listMcpTools.mockClear()
+  listSavedMcpTools.mockClear()
   render({ toolType: 'builtin', parameterMappings: [], outputVariable: 'result' }, { 2: [builtin], 7: [{ name: 'stale' }] })
-  expect(listMcpTools).not.toHaveBeenCalled()
+  expect(listSavedMcpTools).not.toHaveBeenCalled()
   expect(setters[7]).toHaveBeenCalledWith([])
 })

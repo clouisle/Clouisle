@@ -690,6 +690,13 @@ async def update_workflow(
                 status_code=400,
                 users=", ".join(invalid_approvers[:5]),
             )
+        from app.services.tool_connections import ToolConnectionService
+
+        await ToolConnectionService.assert_definition_bindings_allowed(
+            actor=current_user,
+            team_id=workflow.team_id,
+            definition=workflow_in.definition,
+        )
         workflow.definition = workflow_in.definition
         workflow.version += 1  # Increment version on definition change
     if workflow_in.variables is not None:
@@ -862,6 +869,14 @@ async def duplicate_workflow(
         workflow_id, current_user, require_write=True
     )
     await check_team_permission(workflow.team_id, current_user, "workflow:create")
+
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_definition_bindings_allowed(
+        actor=current_user,
+        team_id=workflow.team_id,
+        definition=workflow.definition,
+    )
 
     # Create a copy
     new_workflow = await Workflow.create(
@@ -1056,6 +1071,21 @@ async def trigger_workflow_webhook(
     try:
         normalized_inputs = normalize_webhook_inputs(inputs)
 
+        # Provenance comes from the authenticated surface, never from the body:
+        # an API-key call must bind grants to this key, not to the workflow.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            api_key_origin,
+            origin_snapshot,
+            workflow_origin,
+        )
+
+        origin = (
+            api_key_origin(api_key.id)
+            if api_key is not None
+            else workflow_origin(matched_workflow.id)
+        )
+
         # Create run record with authenticated user
         run = await WorkflowRun.create(
             workflow_id=matched_workflow.id,
@@ -1064,6 +1094,7 @@ async def trigger_workflow_webhook(
             is_debug=False,
             status=RunStatus.PENDING,
             inputs=normalized_inputs,
+            context_snapshot={ORIGIN_SNAPSHOT_KEY: origin_snapshot(origin)},
         )
         from app.services.observability_v2 import record_workflow_submission
 
@@ -1123,7 +1154,14 @@ async def run_workflow(
         )
 
     try:
-        # Create run record first
+        # Create run record first. Provenance is server-derived: this route is
+        # the workflow surface regardless of the workflow's configured trigger.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            origin_snapshot,
+            workflow_origin,
+        )
+
         run = await WorkflowRun.create(
             workflow_id=workflow_id,
             trigger_type=workflow.trigger_type,
@@ -1131,6 +1169,9 @@ async def run_workflow(
             is_debug=False,
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
+            context_snapshot={
+                ORIGIN_SNAPSHOT_KEY: origin_snapshot(workflow_origin(workflow_id))
+            },
         )
         from app.services.observability_v2 import record_workflow_submission
 
@@ -1193,7 +1234,13 @@ async def debug_workflow(
     )
 
     try:
-        # Create run record first
+        # Debug runs are still the workflow surface, not the configured trigger.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            origin_snapshot,
+            workflow_origin,
+        )
+
         run = await WorkflowRun.create(
             workflow_id=workflow_id,
             trigger_type=workflow.trigger_type,
@@ -1201,6 +1248,9 @@ async def debug_workflow(
             is_debug=True,
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
+            context_snapshot={
+                ORIGIN_SNAPSHOT_KEY: origin_snapshot(workflow_origin(workflow_id))
+            },
         )
         from app.services.observability_v2 import record_workflow_submission
 
@@ -2217,6 +2267,13 @@ async def restore_workflow_version(
     )
 
     # Restore the workflow to the specified version
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_definition_bindings_allowed(
+        actor=current_user,
+        team_id=workflow.team_id,
+        definition=workflow_version.definition,
+    )
     workflow.definition = workflow_version.definition
     workflow.variables = workflow_version.variables
     workflow.trigger_type = workflow_version.trigger_type

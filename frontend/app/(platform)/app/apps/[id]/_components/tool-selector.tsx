@@ -17,14 +17,21 @@ import {
   Code2,
   Link,
   ChartColumn,
-  Database,
   Settings2,
+  ShieldAlert,
 } from 'lucide-react'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
+import {
+  EMPTY_CONNECTION_BINDING,
+  ToolConnectionPicker,
+  getToolConnectionBinding,
+  type ToolConnectionBinding,
+} from '@/components/tools/connection-picker'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -291,7 +298,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                         >
                           {/* 图标 */}
                           <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl overflow-hidden relative">
-                            {tool.icon ? (
+                            {tool.icon && tool.type !== 'builtin' ? (
                               tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
                                 <Image
                                   src={tool.icon}
@@ -303,10 +310,15 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                               ) : (
                                 <span>{tool.icon}</span>
                               )
-                            ) : tool.custom_type === 'database' ? (
-                              <Database className="h-5 w-5" />
                             ) : (
-                              category.icon
+                              renderToolIcon({
+                                name: tool.name,
+                                icon: tool.icon,
+                                type: tool.type,
+                                custom_type: tool.custom_type,
+                                category: tool.category,
+                                size: 20,
+                              })
                             )}
                           </div>
 
@@ -371,20 +383,44 @@ interface ToolDisplayItemProps {
   tool: Tool | null
   config: ToolConfig
   onUpdateConfig?: (newConfig: Record<string, unknown>) => void
+  onUpdateBinding?: (binding: ToolConnectionBinding) => void
+  onToggleApproval?: (requireApproval: boolean) => void
   onDelete: () => void
   readOnly?: boolean
 }
-
-function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = false }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onToggleApproval, onDelete, readOnly = false }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
+  const tConnection = useTranslations('tools.connections')
+  const { currentTeam } = useTeam()
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const [configOpen, setConfigOpen] = React.useState(false)
+  const [connectionOpen, setConnectionOpen] = React.useState(false)
   const isMissing = !tool
 
   // 获取显示名称
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
   const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
   const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
+  const needsConnection = !!tool && (tool.identity_policy ?? 'none') !== 'none'
+  const identityPolicy = tool?.identity_policy ?? 'none'
+  const builtinToolKey = tool?.type === 'builtin' ? tool.name : undefined
+  const connectionMode = config.connection_mode ?? null
+  // A personal/selectable tool with no pinned connection resolves the
+  // invoking user's account at runtime, so the summary must say so instead
+  // of implying the author's account is fixed.
+  const isAutomaticConnection =
+    needsConnection &&
+    identityPolicy !== 'team_only' &&
+    !config.connection_id &&
+    (connectionMode === null || connectionMode === 'personal')
+  const connectionModeLabel = isAutomaticConnection
+    ? tConnection('automaticBadge')
+    : connectionMode === 'team' || (!!config.connection_id && identityPolicy === 'team_only')
+      ? tConnection('modeTeam')
+      : connectionMode === 'personal' || !!config.connection_id
+        ? tConnection('modePersonal')
+        : null
+  const requireApproval = Boolean(config.require_approval)
 
   const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
 
@@ -420,7 +456,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
         {/* 图标 */}
         {isMissing ? (
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-        ) : tool?.icon ? (
+        ) : tool?.icon && tool.type !== 'builtin' ? (
           tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
             <div className="relative h-4 w-4 shrink-0 rounded overflow-hidden">
               <Image
@@ -434,10 +470,20 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
           ) : (
             <span className="text-sm shrink-0 leading-none">{tool.icon}</span>
           )
-        ) : tool?.custom_type === 'database' ? (
-          <Database className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
         ) : (
-          <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
+          tool ? (
+            renderToolIcon({
+              name: tool.name,
+              icon: tool.icon,
+              type: tool.type,
+              custom_type: tool.custom_type,
+              category: tool.category,
+              size: 16,
+              className: 'shrink-0',
+            })
+          ) : (
+            <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
+          )
         )}
         {/* 名称 */}
         <div className="flex-1 min-w-0">
@@ -450,6 +496,16 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
                 {engineLabels[searchEngine] || searchEngine}
               </Badge>
             )}
+            {connectionModeLabel && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
+                {connectionModeLabel}
+              </Badge>
+            )}
+            {requireApproval && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10">
+                {t('requireApprovalActive')}
+              </Badge>
+            )}
           </div>
           {isMissing && (
             <p className="text-xs text-destructive/80">{t('toolNotFound')}</p>
@@ -458,6 +514,46 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
 
         {/* 操作 */}
         <div className="flex items-center gap-1 shrink-0">
+          {!readOnly && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-6 w-6 cursor-pointer transition-colors',
+                      requireApproval
+                        ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+                        : 'text-muted-foreground/60 hover:text-foreground'
+                    )}
+                    title={requireApproval ? t('requireApprovalActive') : t('requireApproval')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleApproval?.(!requireApproval)
+                    }}
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('requireApprovalTooltip')}</TooltipContent>
+            </Tooltip>
+          )}
+          {needsConnection && !readOnly && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer text-muted-foreground hover:text-foreground"
+              title={tConnection('title')}
+              onClick={(e) => {
+                e.stopPropagation()
+                setConnectionOpen(true)
+              }}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {isWebSearch && !readOnly && (
             <Button
               variant="ghost"
@@ -493,6 +589,34 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
           )}
         </div>
       </div>
+
+      {needsConnection && (
+        <Dialog open={connectionOpen} onOpenChange={setConnectionOpen}>
+          <DialogContent className="sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-orange-500" />
+                {tConnection('title')}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-3">
+              <ToolConnectionPicker
+                tool={tool}
+                builtinToolKey={builtinToolKey}
+                teamId={currentTeam?.id}
+                value={tool ? getToolConnectionBinding(config) : EMPTY_CONNECTION_BINDING}
+                onChange={(binding) => onUpdateBinding?.(binding)}
+                disabled={readOnly}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setConnectionOpen(false)}>
+                {t('config.cancel')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {isWebSearch && (
         <Dialog open={configOpen} onOpenChange={setConfigOpen}>
@@ -584,6 +708,16 @@ export function ToolSelector({
     next[index] = { ...next[index], config: newConfig }
     onChange(next)
   }
+  const handleUpdateToolBinding = (index: number, binding: ToolConnectionBinding) => {
+    const next = [...toolsConfig]
+    next[index] = { ...next[index], ...binding }
+    onChange(next)
+  }
+  const handleToggleApproval = (index: number, requireApproval: boolean) => {
+    const next = [...toolsConfig]
+    next[index] = { ...next[index], require_approval: requireApproval }
+    onChange(next)
+  }
 
   if (selectedTools.length === 0) {
     return (
@@ -610,7 +744,9 @@ export function ToolSelector({
           tool={tool}
           config={config}
           onUpdateConfig={(cfg) => handleUpdateToolConfig(index, cfg)}
+          onUpdateBinding={(binding) => handleUpdateToolBinding(index, binding)}
           onDelete={() => handleDeleteTool(config)}
+          onToggleApproval={(req) => handleToggleApproval(index, req)}
           readOnly={readOnly}
         />
       ))}

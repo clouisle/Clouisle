@@ -4,9 +4,8 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from app.api.v1.endpoints.tools import get_tool_config, list_tool_shares, share_tool
+from app.api.v1.endpoints.tools import list_tool_shares, share_tool
 from app.models.tool import ToolVisibility as DBToolVisibility
-from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool import ToolShareInput, ToolSharePermission
 
 
@@ -28,85 +27,6 @@ class Query:
             return self.result
 
         return resolve().__await__()
-
-
-def config(team_id):
-    now = datetime.now(UTC)
-    return SimpleNamespace(
-        id=uuid4(),
-        tool_name="weather",
-        team_id=team_id,
-        credentials={},
-        created_at=now,
-        updated_at=now,
-    )
-
-
-@pytest.mark.anyio
-async def test_get_tool_config_creates_builtin_team_default():
-    team_id = uuid4()
-    created = config(team_id)
-    user = SimpleNamespace()
-
-    with (
-        patch(
-            "app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()
-        ) as access,
-        patch("app.models.tool_config.ToolConfig.filter", return_value=Query(None)),
-        patch(
-            "app.models.tool_config.ToolConfig.create",
-            new=AsyncMock(return_value=created),
-        ) as create,
-        patch(
-            "app.api.v1.endpoints.tools.tool_registry.get_tool",
-            return_value=object(),
-        ),
-    ):
-        response = await get_tool_config("weather", team_id=team_id, current_user=user)
-
-    access.assert_awaited_once_with(team_id, user)
-    create.assert_awaited_once_with(
-        tool_name="weather", team_id=team_id, credentials={}
-    )
-    assert response["data"]["tool_name"] == "weather"
-
-    global_config = config(None)
-    with patch(
-        "app.models.tool_config.ToolConfig.filter", return_value=Query(global_config)
-    ):
-        response = await get_tool_config(
-            "weather",
-            team_id=None,
-            current_user=SimpleNamespace(is_superuser=True),
-        )
-
-    assert response["data"]["team_id"] is None
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("team_id", "is_superuser"),
-    [(uuid4(), False), (None, True), (None, False)],
-)
-async def test_get_tool_config_rejects_missing_or_unauthorized(team_id, is_superuser):
-    with (
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
-        patch("app.models.tool_config.ToolConfig.filter", return_value=Query(None)),
-        patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        pytest.raises(BusinessError) as error,
-    ):
-        await get_tool_config(
-            "missing",
-            team_id=team_id,
-            current_user=SimpleNamespace(is_superuser=is_superuser),
-        )
-
-    expected = (
-        ResponseCode.PERMISSION_DENIED
-        if team_id is None and not is_superuser
-        else ResponseCode.NOT_FOUND
-    )
-    assert error.value.code == expected
 
 
 @pytest.mark.anyio

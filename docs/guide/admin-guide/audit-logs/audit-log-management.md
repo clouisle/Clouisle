@@ -12,6 +12,7 @@ As an administrator, you can:
 - **Export logs**: Download logs for analysis (CSV or JSON)
 - **Archive logs**: Manage log retention
 - **Monitor activity**: Track user and system actions
+- **Review approvals**: Audit tool-execution decisions and tool approval-policy changes
 - **Inspect changes**: Review field-level before/after changes with sensitive data redacted
 
 ## Accessing Audit Logs
@@ -31,7 +32,7 @@ The audit log shows:
 - **Action**: What was done
 - **Resource Type**: Type of resource (user, agent, team, etc.)
 - **Resource Name**: Name of affected resource
-- **Operation**: Create, read, update, delete
+- **Operation**: Create, read, update, delete, approve, or reject
 - **Status**: Success or failure
 - **IP Address**: Source IP
 - **Details**: Additional information
@@ -257,6 +258,140 @@ Resource Name: Customer Support Agent
 Operation: delete
 Status: success
 ```
+
+### Tool Approval Events
+
+Tool-execution approvals and approval-policy changes produce their own audit
+events. The action filter offers `approve_tool_execution`,
+`reject_tool_execution`, and `update_tool_approval_policy`.
+
+**Approved execution:**
+```yaml
+Action: approve_tool_execution
+User: john.doe@example.com
+Timestamp: 2026-02-11 14:30:00
+Resource Type: tool_execution
+Resource ID: execution-456
+Resource Name: tool:search_issues
+Operation: approve
+Status: success
+Auth Method: jwt
+Metadata:
+  execution_id: execution-456
+  approval_request_id: request-789
+  team_id: team-123
+  tool_id: tool-456
+  operation: tool:search_issues
+  entrypoint: chat
+  run_kind: agent
+  run_id: run-123
+  connection_scope: user
+  decision: approve
+  outcome: ready
+  execution_status: ready
+```
+
+**Rejected execution:**
+```yaml
+Action: reject_tool_execution
+User: john.doe@example.com
+Timestamp: 2026-02-11 14:31:00
+Resource Type: tool_execution
+Resource ID: execution-457
+Resource Name: tool:delete_task
+Operation: reject
+Status: success
+Metadata:
+  decision: reject
+  outcome: rejected
+  execution_status: cancelled
+```
+
+**Failed decision:**
+```yaml
+Action: approve_tool_execution
+User: jane.doe@example.com
+Timestamp: 2026-02-11 14:32:00
+Resource Type: tool_execution
+Resource ID: execution-456
+Resource Name: tool:search_issues
+Operation: approve
+Status: failed
+Auth Method: api_key
+Error Message: tool_approval_not_authorized
+Metadata:
+  execution_id: execution-456
+  approval_request_id: request-789
+  team_id: team-123
+  tool_id: tool-456
+  operation: tool:search_issues
+  decision: approve
+```
+
+For an API-key decision, the actor is the key's owning user and the row records
+`Auth Method: api_key` plus `api_key_id`; the key value, prefix, and hash are
+never stored. Channel decisions (Feishu/WeChat) have no HTTP request, so IP
+address and user agent are recorded as `system`.
+
+Failed decision rows cover an unauthorized approver (including a wrong or
+differently bound API key), an expired gate, an already-decided
+gate, a changed binding, a decision conflict, and a reused idempotency key for a
+different decision. `Error Message` is the error's `msg_key`, such as
+`tool_approval_not_authorized`, `tool_approval_expired`,
+`tool_approval_already_decided`, `tool_approval_binding_changed`, or
+`tool_approval_conflict`. Malformed input (an invalid vote or a missing
+idempotency key) is rejected before an audit row is written. Background expiry
+sweeps and stopped-run cancellations are not audited as decisions; when a tool
+definition changes, the next decision on an affected gate is audited as a failed
+`binding_changed` decision.
+
+An idempotent replay with the same idempotency key returns the stored decision
+and writes no second success row. A different key used on an already-resolved
+gate is audited as a failed already-decided decision.
+
+**Approval-policy change:**
+```yaml
+Action: update_tool_approval_policy
+User: admin@example.com
+Timestamp: 2026-02-11 15:00:00
+Resource Type: tool
+Resource ID: tool-456
+Resource Name: support-search
+Operation: update
+Status: success
+Changes:
+  before:
+    approval_policy:
+      default_decision: allow
+      gates: []
+      operation_overrides: {}
+  after:
+    approval_policy:
+      default_decision: require_approval
+      gates:
+        - kind: caller
+          allow_self_approval: false
+      operation_overrides: {}
+Metadata:
+  team_id: team-123
+  definition_version: 8
+  source: tool_definition
+```
+
+The policy event is written by both `PUT /tools/{id}` and
+`PUT /admin/tools/{id}` only when the normalized policy actually changes; saving
+the same policy again emits no policy event. The before/after payload contains the
+default decision, gates (including approver user ids, roles, and
+`allow_self_approval`), and operation overrides. Tool call arguments, parameter
+previews or digests, credentials, connection secrets, API key values, and the
+approver's reason text are never recorded, and decision events have no
+`Changes` payload.
+
+Audit writes for decisions and policy changes are best-effort: a logging failure
+is recorded server-side but never rolls back the durable decision or makes a
+successful policy update report failure. Reading these entries still requires
+`audit:read` (export requires `audit:export`); the rows do not expose the tool
+definition body, call parameters, reviewer reasons, or secret material.
 
 ### API Key Events
 
@@ -526,6 +661,12 @@ When an entry records field-level changes, the `before` / `after` payloads are p
 - **Values are truncated** to a maximum field length (500 characters), and oversized structures are replaced with a preview string.
 
 Because of this redaction, raw secrets never appear in audit logs.
+
+Tool-approval entries go further: tool call arguments and their previews,
+credentials, API key values or prefixes, and the approver's reason text are
+never written at all, so they cannot appear even in redacted form. Decision
+events have no `Changes` payload; only approval-policy updates store a
+before/after policy.
 
 ### Related Logs
 

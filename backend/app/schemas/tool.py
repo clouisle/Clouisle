@@ -5,13 +5,29 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.response import PageData
 from app.services.sandbox.cache import normalize_package_source_url
+from app.schemas.tool_approval import ToolApprovalPolicy, default_tool_approval_policy
+from app.schemas.tool_oauth import HttpOAuth2Config, McpOAuthConfig
+
+
+class ToolConnectionField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    label: str = Field(min_length=1, max_length=100)
+    required: bool = True
+    secret: bool = True
+    label_key: str | None = None
+    input_type: Literal["text", "password", "number", "select"] | None = None
+    default: str | None = None
+    options: list[str] = Field(default_factory=list)
+    input_mode: Literal["url", "host"] | None = None
 
 
 class ToolType(str, Enum):
@@ -27,7 +43,6 @@ class CustomToolType(str, Enum):
 
     HTTP = "http"  # HTTP API 调用
     CODE = "code"  # 代码执行
-    DATABASE = "database"  # 数据库工具
 
 
 class ToolCategory(str, Enum):
@@ -91,6 +106,7 @@ class HttpConfigSchema(BaseModel):
     method: HttpMethod = Field(default=HttpMethod.GET, description="HTTP 方法")
     url: str = Field(..., description="请求 URL，支持 {{variable}} 占位符")
     headers: dict[str, str] = Field(default_factory=dict, description="请求头")
+    oauth2: HttpOAuth2Config | None = None
     query_params: dict[str, str] = Field(default_factory=dict, description="查询参数")
     body_template: str | None = Field(default=None, description="请求体模板 (JSON)")
     content_type: str | None = Field(
@@ -105,23 +121,6 @@ class HttpConfigSchema(BaseModel):
     response_path: str | None = Field(
         default=None, description="响应 JSON 路径，如 data.result"
     )
-
-
-class DatabaseConfigSchema(BaseModel):
-    """数据库工具配置"""
-
-    db_type: str = Field(..., description="数据库类型 (postgresql/mysql/redis/mongodb)")
-    host: str | None = Field(default=None, description="主机名或 IP")
-    port: int | None = Field(default=None, description="端口号")
-    database: str | None = Field(default=None, description="数据库名称")
-    username: str | None = Field(default=None, description="用户名")
-    password: str | None = Field(default=None, description="密码")
-    ssl: str | bool | None = Field(default=None, description="SSL 配置")
-    url: str | None = Field(default=None, description="Redis / MongoDB 连接 URL")
-    db: int | None = Field(default=None, description="Redis 逻辑库序号")
-    auth_source: str | None = Field(default=None, description="MongoDB 认证库")
-    timeout: int = Field(default=15, ge=1, le=120, description="查询超时时间（秒）")
-    max_limit: int = Field(default=100, ge=1, le=1000, description="最大返回记录数")
 
 
 class SandboxArtifactSchema(BaseModel):
@@ -211,6 +210,16 @@ class McpConfigSchema(BaseModel):
     # SSE/HTTP 模式
     url: str | None = Field(default=None, description="URL (sse/http 模式)")
     headers: dict[str, str] = Field(default_factory=dict, description="请求头")
+    oauth: McpOAuthConfig | None = None
+    roots: list[dict[str, str]] = Field(default_factory=list)
+    roots_allowlist: list[str] = Field(default_factory=list)
+    elicitation_url_hosts: list[str] = Field(default_factory=list)
+    enable_sampling: bool = False
+    enable_elicitation: bool = False
+    callback_timeout_seconds: int = Field(default=120, ge=10, le=900)
+    max_sampling_requests: int = Field(default=4, ge=0, le=20)
+    max_elicitation_requests: int = Field(default=4, ge=0, le=20)
+    sampling_max_tokens: int = Field(default=1024, ge=1, le=8192)
 
 
 # ============ Tool Output Schemas ============
@@ -234,6 +243,14 @@ class ToolOut(BaseModel):
         default=False, description="是否需要配置（如 API Key）"
     )
     config_fields: list[str] = Field(default_factory=list, description="需要配置的字段")
+    identity_policy: Literal["none", "team_only", "personal_only", "selectable"] = (
+        "none"
+    )
+    connection_fields: list[ToolConnectionField] = Field(default_factory=list)
+    approval_policy: ToolApprovalPolicy = Field(
+        default_factory=default_tool_approval_policy
+    )
+    definition_version: int = Field(default=1, ge=1)
 
     # 自定义工具额外字段
     custom_type: CustomToolType | None = Field(
@@ -241,9 +258,6 @@ class ToolOut(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
-    database_config: DatabaseConfigSchema | None = Field(
-        default=None, description="数据库配置"
-    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
@@ -335,14 +349,18 @@ class ToolCreateInput(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
-    database_config: DatabaseConfigSchema | None = Field(
-        default=None, description="数据库配置"
-    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
     credentials: dict[str, str] = Field(default_factory=dict, description="凭证")
     is_enabled: bool = Field(default=True, description="是否启用")
+    identity_policy: Literal["none", "team_only", "personal_only", "selectable"] = (
+        "none"
+    )
+    connection_fields: list[ToolConnectionField] = Field(default_factory=list)
+    approval_policy: ToolApprovalPolicy = Field(
+        default_factory=default_tool_approval_policy
+    )
 
     @field_validator("name")
     @classmethod
@@ -366,10 +384,14 @@ class ToolUpdateInput(BaseModel):
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None
     code_config: CodeConfigSchema | None = None
-    database_config: DatabaseConfigSchema | None = None
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
+    identity_policy: (
+        Literal["none", "team_only", "personal_only", "selectable"] | None
+    ) = None
+    connection_fields: list[ToolConnectionField] | None = None
+    approval_policy: ToolApprovalPolicy | None = None
 
     @field_validator("name")
     @classmethod
@@ -417,6 +439,9 @@ class ToolExecuteRequest(BaseModel):
 
     name: str = Field(..., description="工具名称")
     arguments: dict[str, Any] = Field(default_factory=dict, description="参数")
+    connection_mode: Literal["personal", "team"] | None = None
+    connection_id: UUID | None = None
+    execution_id: UUID | None = None
 
 
 class ToolExecuteResponse(BaseModel):
@@ -431,6 +456,8 @@ class ToolExecuteResponse(BaseModel):
         default_factory=list, description="产物列表"
     )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
+    pending_approval: bool = False
+    execution_id: UUID | None = None
 
 
 class CodeExecuteRequest(BaseModel):
@@ -522,6 +549,39 @@ class ToolShareListOut(BaseModel):
 
 
 # ============ 内置工具元数据 ============
+
+
+def _db_connection_field(name: str, label: str) -> dict[str, Any]:
+    """Describe encrypted connection values independently of input masking."""
+    field: dict[str, Any] = {
+        "name": name,
+        "label": label,
+        "label_key": f"fields.{name}",
+        "required": False,
+        "secret": name in {"url", "password"},
+        "input_type": "password" if name in {"url", "password"} else "text",
+    }
+    if name in {"port", "db", "timeout", "max_limit"}:
+        field["input_type"] = "number"
+    if name in {"db", "timeout", "max_limit"}:
+        field["default"] = {"db": "0", "timeout": "15", "max_limit": "100"}[name]
+    if name == "ssl":
+        field.update(
+            input_type="select",
+            default="prefer",
+            options=[
+                "disable",
+                "allow",
+                "prefer",
+                "require",
+                "verify-ca",
+                "verify-full",
+            ],
+        )
+    if name not in {"ssl", "timeout", "max_limit"}:
+        field["input_mode"] = "url" if name == "url" else "host"
+    return field
+
 
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "get_current_time": {
@@ -615,6 +675,121 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "category": ToolCategory.SANDBOX,
         "icon": None,
         "requires_config": False,
+    },
+    # Database querying. The database identity (engine parameters + credentials)
+    # lives in a personal or team ToolConnection; the tool definition only
+    # declares the fields, so one builtin serves any number of databases.
+    "postgresql_query": {
+        "display_name_key": "builtin_tool_postgresql_query",
+        "category": ToolCategory.DATA,
+        "icon": "postgresql",
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "ssl",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            {**_db_connection_field("port", "Port"), "default": "5432"},
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("ssl", "SSL"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max rows"),
+        ],
+    },
+    "mysql_query": {
+        "display_name_key": "builtin_tool_mysql_query",
+        "category": ToolCategory.DATA,
+        "icon": "mysql",
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            {**_db_connection_field("port", "Port"), "default": "3306"},
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max rows"),
+        ],
+    },
+    "redis_query": {
+        "display_name_key": "builtin_tool_redis_query",
+        "category": ToolCategory.DATA,
+        "icon": "redis",
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "db",
+            "username",
+            "password",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            {**_db_connection_field("port", "Port"), "default": "6379"},
+            _db_connection_field("db", "Database index"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max results"),
+        ],
+    },
+    "mongodb_query": {
+        "display_name_key": "builtin_tool_mongodb_query",
+        "category": ToolCategory.DATA,
+        "icon": "mongodb",
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "auth_source",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            {**_db_connection_field("port", "Port"), "default": "27017"},
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("auth_source", "Auth source"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max documents"),
+        ],
     },
 }
 

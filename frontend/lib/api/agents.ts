@@ -2,7 +2,7 @@ import { api, ApiError, getErrorMessage } from './client'
 
 function getPublicStatusErrorMessage(status: number): string {
   if (status === 404) return getErrorMessage('resourceNotFound')
-  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  if (status >= 500 && status < 600) return getErrorMessage('serverErrorDescription')
   return getErrorMessage('requestFailed')
 }
 
@@ -72,6 +72,9 @@ export interface ToolConfig {
   server_id?: string | null  // for mcp tools
   skill_id?: string | null  // for skills
   config?: Record<string, unknown> | null
+  connection_mode?: 'personal' | 'team' | null
+  connection_id?: string | null
+  require_approval?: boolean
 }
 
 export type VariableType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox' | 'array' | 'object' | 'file' | 'image' | 'files' | 'images'
@@ -489,6 +492,7 @@ export interface MessageVersion {
 }
 
 export interface ConversationWithMessages extends Conversation {
+  active_run_id?: string | null
   messages: Message[]
 }
 

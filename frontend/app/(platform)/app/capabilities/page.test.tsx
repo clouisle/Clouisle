@@ -6,10 +6,9 @@ const getById = mock()
 const createTool = mock()
 const updateTool = mock()
 const deleteTool = mock()
-const getConfig = mock()
-const createConfig = mock()
-const updateConfig = mock()
 const getMyTeams = mock(() => Promise.resolve([]))
+type ConnectionState = { id: string; status: string; tool_id?: string | null; builtin_tool_key?: string | null }
+const listConnections = mock((): Promise<ConnectionState[]> => Promise.resolve([]))
 const replace = mock()
 const push = mock()
 const toastError = mock()
@@ -77,16 +76,16 @@ mock.module('@/lib/api', () => ({
     create: createTool,
     update: updateTool,
     delete: deleteTool,
-    getConfig,
-    createConfig,
-    updateConfig,
   },
   teamsApi: { getMyTeams },
   isPresetToolCategory: () => false,
 }))
+mock.module('@/lib/api/tool-connections', () => ({
+  toolConnectionsApi: { list: listConnections },
+}))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1', role: 'member' } }) }))
 mock.module('@/hooks/use-require-team', () => ({ useRequireTeam: mock() }))
-mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (code: string) => permissions.has(code) }) }))
+mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (code: string | string[]) => { const codes = Array.isArray(code) ? code : [code]; return codes.some((item) => permissions.has(item)) } }) }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user: { id: 'user-1', is_superuser: false } }) }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
@@ -105,7 +104,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 }))
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
-  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
+  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), ChevronDown: element('svg'),
   PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
@@ -113,13 +112,12 @@ mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: {
 const { ToolList } = await import('./_components/tool-list')
 const component = (tag: string) => (props: Record<string, unknown>) => ({ type: tag, props })
 mock.module('./_components', () => ({ SkillsPanel: component('skills-panel'), ToolList, ToolTestPanel: component('test-panel') }))
-mock.module('./_components/tool-config-dialog', () => ({ ToolConfigDialog: component('config-dialog') }))
+mock.module('@/components/tools/tool-connection-dialog', () => ({ ToolConnectionDialog: component('connection-dialog') }))
 mock.module('./_components/http-tool-dialog', () => ({ HttpToolDialog: component('http-dialog') }))
 mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('mcp-dialog') }))
-mock.module('./_components/database-tool-dialog', () => ({ DatabaseToolDialog: component('database-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
-mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: component('web-search-dialog') }))
+mock.module('@/components/tools/mcp-tool-browser', () => ({ McpToolBrowser: component('mcp-browser') }))
 
 const { default: CapabilitiesPage } = await import('./page')
 
@@ -174,11 +172,10 @@ beforeEach(() => {
   createTool.mockReset()
   updateTool.mockReset()
   deleteTool.mockReset()
-  getConfig.mockReset()
-  createConfig.mockReset()
-  updateConfig.mockReset()
   getMyTeams.mockReset()
   getMyTeams.mockResolvedValue([])
+  listConnections.mockReset()
+  listConnections.mockResolvedValue([])
   replace.mockReset()
   push.mockReset()
   toastError.mockReset()
@@ -273,12 +270,31 @@ describe('CapabilitiesPage', () => {
     expect(deleteTool).toHaveBeenCalledWith('custom-1')
   })
 
-  test('creates tools and handles builtin config and guarded actions', async () => {
+  test('opens the connection manager for a builtin detail and reports detail load failures', async () => {
+    const materialized = { ...builtin, id: 'builtin-1', requires_config: true, identity_policy: 'selectable' }
+    list.mockResolvedValue({ builtin: [materialized], custom: [custom], mcp: [] })
+    getById.mockResolvedValueOnce(materialized)
+    render()
+    await settle()
+
+    const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
+    await (clock.props.onEdit as (tool: typeof materialized) => Promise<void>)(materialized)
+    expect(getById).toHaveBeenCalledWith('builtin-1')
+    const dialog = find(render(), (node) => node.type === 'connection-dialog')
+    expect(dialog.props.tool.name).toBe('clock')
+
+    const originalError = console.error
+    console.error = mock()
+    getById.mockRejectedValueOnce(new Error('detail unavailable'))
+    const weather = find(render(), (node) => node.type === 'article' && node.props.children === 'Weather')
+    await (weather.props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
+    expect(toastError).toHaveBeenCalledWith('tools.error.loadToolDetailFailed')
+    console.error = originalError
+  })
+
+  test('creates tools and opens the builtin connection manager for guarded actions', async () => {
     const configurable = { ...builtin, requires_config: true, config_fields: ['API_KEY'] }
     list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
-    getConfig.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({})
-    createConfig.mockResolvedValue({})
-    updateConfig.mockResolvedValue({})
     createTool.mockResolvedValue({})
     searchParams = new URLSearchParams('action=create')
 
@@ -288,15 +304,14 @@ describe('CapabilitiesPage', () => {
     expect(replace).toHaveBeenCalledWith('/app/capabilities', { scroll: false })
     await (find(tree, (node) => node.type === 'http-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'http' })
     expect(createTool).toHaveBeenCalledWith('team-1', { name: 'http' })
+    await settle()
 
     const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
     await (clock.props.onEdit as (tool: typeof configurable) => Promise<void>)(configurable)
     tree = render()
-    await (find(tree, (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'saved' })
-    expect(createConfig).toHaveBeenCalledWith('clock', { API_KEY: 'saved' }, 'team-1')
-
-    await (find(render(), (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'updated' })
-    expect(updateConfig).toHaveBeenCalledWith('clock', { API_KEY: 'updated' }, 'team-1')
+    const connectionDialog = find(render(), (node) => node.type === 'connection-dialog')
+    expect(connectionDialog.props.teamId).toBe('team-1')
+    expect(connectionDialog.props.tool.name).toBe('clock')
 
     ;(clock.props.onDelete as (tool: typeof configurable) => void)(configurable)
     ;(clock.props.onShare as (tool: typeof configurable) => void)(configurable)
@@ -304,26 +319,77 @@ describe('CapabilitiesPage', () => {
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotShareBuiltin')
   })
 
-  test('opens site search configuration from the real capabilities entry when permitted', async () => {
+  test('marks a builtin configured only when connection state confirms it', async () => {
+    const configurable = { ...builtin, requires_config: true }
+    list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
+
+    render()
+    await settle()
+    await settle()
+    let tree = render()
+    let card = find(tree, (node) => node.type === 'article')
+    expect(listConnections).toHaveBeenCalledWith('team-1')
+    expect(card.props.configured).toBe(false)
+
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'active', tool_id: null, builtin_tool_key: 'clock' },
+    ])
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBe(true)
+
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'reauth_required', tool_id: null, builtin_tool_key: 'clock' },
+    ])
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBe(false)
+
+    const originalError = console.error
+    console.error = mock()
+    listConnections.mockRejectedValue(new Error('offline'))
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBeUndefined()
+    console.error = originalError
+  })
+
+  test('matches a builtin connection bound to its materialized definition id', async () => {
+    const materialized = { ...builtin, id: 'builtin-1', requires_config: true }
+    list.mockResolvedValue({ builtin: [materialized], custom: [], mcp: [] })
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'active', tool_id: 'builtin-1', builtin_tool_key: null },
+    ])
+
+    render()
+    await settle()
+    await settle()
+    const card = find(render(), (node) => node.type === 'article')
+
+    expect(listConnections).toHaveBeenCalledWith('team-1')
+    expect(card.props.configured).toBe(true)
+  })
+
+  test('does not expose site search configuration on the team capabilities page', async () => {
     const webSearch = { ...builtin, name: 'web_search', display_name: 'Web Search', category: 'search', requires_config: true }
     list.mockResolvedValue({ builtin: [webSearch], custom: [], mcp: [] })
     permissions = new Set(['tool:read', 'admin:capability:read'])
     render()
     await settle()
-
-    let tree = render()
-    expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
-    ;(find(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure')).props.onClick as () => void)()
-    tree = render()
-    const dialog = find(tree, (node) => node.type === 'web-search-dialog')
-    expect(dialog.props.open).toBe(true)
-    const saved = dialog.props.onSaved as () => Promise<void>
-    await saved()
-    expect(list).toHaveBeenCalledTimes(2)
-
-    permissions = new Set(['tool:read'])
-    hooks = []
-    tree = render()
+    const tree = render()
+    expect(findAll(tree, (node) => node.props['data-testid'] === 'web-search-managed-notice')).toHaveLength(0)
     expect(findAll(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure'))).toHaveLength(0)
     expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
   })
@@ -353,41 +419,11 @@ describe('CapabilitiesPage', () => {
     ;(findAll(tree, (node) => node.type === 'menuitem')[2].props.onClick as () => void)()
     await (find(render(), (node) => node.type === 'mcp-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'new-mcp' })
     expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new-mcp' })
+    await settle()
 
     await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
     expect(push).toHaveBeenCalledWith('/app/capabilities/code?id=custom-1')
     await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
     expect(toastError).toHaveBeenCalledWith('tools.error.unknownToolType')
-  })
-  test('creates and edits database tools in CapabilitiesPage', async () => {
-    const dbToolItem = { ...custom, id: 'db-1', custom_type: 'database', display_name: 'Database Tool' }
-    getById.mockResolvedValueOnce({ ...dbToolItem, database_config: { db_type: 'postgresql', host: 'localhost' } })
-    createTool.mockResolvedValue({})
-    updateTool.mockResolvedValue({})
-    render()
-    await settle()
-
-    let tree = render()
-    // click create database tool menu item (index 3 in create menu)
-    const menuItems = findAll(tree, (node) => node.type === 'menuitem')
-    const dbMenuItem = menuItems.find((item) => item.props.onClick && String(item.props.children).includes('database')) || menuItems[3]
-    if (dbMenuItem?.props?.onClick) {
-      ;(dbMenuItem.props.onClick as () => void)()
-      tree = render()
-      const dbDialog = find(tree, (node) => node.type === 'database-dialog')
-      if (dbDialog) {
-        await (dbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ name: 'new_db', custom_type: 'database' })
-        expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new_db', custom_type: 'database' })
-      }
-    }
-
-    // edit database tool
-    await (find(render(), (node) => node.type === 'article').props.onEdit as (tool: typeof dbToolItem) => Promise<void>)(dbToolItem)
-    tree = render()
-    const editDbDialog = find(tree, (node) => node.type === 'database-dialog')
-    if (editDbDialog) {
-      await (editDbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ display_name: 'Updated DB' })
-      expect(updateTool).toHaveBeenCalledWith('db-1', { display_name: 'Updated DB' })
-    }
   })
 })

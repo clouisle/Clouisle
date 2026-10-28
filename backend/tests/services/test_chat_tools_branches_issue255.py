@@ -1,13 +1,45 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints.chat_tools import execute_tool_call
 from app.core.i18n import t
-from app.models.tool import CustomToolType
+
+
+def _patch_policy_boundary(monkeypatch, user):
+    """Run the real invoke resolver while stubbing approval persistence.
+
+    Memory, knowledge and asset tools are executed through the stored-tool
+    approval boundary. These cases exercise argument resolution, so the
+    boundary runs the operation directly; the approval gate itself is
+    covered by tests/services/test_tool_execution_stored_policy.py.
+    """
+    from app.services import builtin_tools, tool_execution
+
+    async def execute(definition, operation, arguments, context, invoke, **kwargs):
+        return await invoke(arguments, None)
+
+    monkeypatch.setattr(tool_execution, "execute_stored_tool", execute)
+    monkeypatch.setattr(
+        builtin_tools,
+        "get_builtin_definition",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4(), name="definition")),
+    )
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
+
+
+def _tool_agent(tool_id, tool_type):
+    """Agent whose ``tools_config`` binds one stored tool."""
+    return SimpleNamespace(
+        id=uuid4(),
+        team_id=uuid4(),
+        tools_config=[{"type": tool_type, "tool_id": str(tool_id)}],
+    )
 
 
 @pytest.mark.anyio
@@ -93,14 +125,23 @@ from app.models.tool import CustomToolType
     ],
 )
 async def test_memory_tools_require_user_and_route_arguments(
-    tool_name, arguments, handler_name, expected_kwargs
+    monkeypatch, tool_name, arguments, handler_name, expected_kwargs
 ):
     assert "error" in json.loads(await execute_tool_call(tool_name, arguments))
 
+    user = SimpleNamespace(id="user-1")
+    # A user without an agent cannot be authorized for the Agent's memory.
+    missing_agent = await execute_tool_call(tool_name, arguments, user=user)
+    assert json.loads(missing_agent) == {"error": t("agent_context_required")}
+
+    _patch_policy_boundary(monkeypatch, user)
     handler = AsyncMock(return_value={"ok": True})
     with patch(f"app.services.memory.MemoryService.{handler_name}", handler):
         result = await execute_tool_call(
-            tool_name, arguments, user=SimpleNamespace(id="user-1")
+            tool_name,
+            arguments,
+            user=user,
+            agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
         )
 
     assert json.loads(result) == {"ok": True}
@@ -145,13 +186,16 @@ async def test_get_memory_subgraph_accepts_exact_names_through_tool_route(monkey
         get_subgraph,
     )
 
+    user = SimpleNamespace(id=user_id)
+    _patch_policy_boundary(monkeypatch, user)
     result = await execute_tool_call(
         "get_memory_subgraph",
         {
             "entity_ids": ["教智研一号开发项目", "教科院二期功能开发"],
             "max_depth": 2,
         },
-        user=SimpleNamespace(id=user_id),
+        user=user,
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
     )
     payload = json.loads(result)
 
@@ -176,7 +220,9 @@ async def test_get_memory_subgraph_accepts_exact_names_through_tool_route(monkey
 
 
 @pytest.mark.anyio
-async def test_knowledge_search_aggregates_results_and_handles_provider_error():
+async def test_knowledge_search_aggregates_results_and_handles_provider_error(
+    monkeypatch,
+):
     knowledge_base = SimpleNamespace(
         id="kb-1",
         name="Handbook",
@@ -208,6 +254,10 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
         )
     )
 
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+    _patch_policy_boundary(monkeypatch, user)
+
     with (
         patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
         patch("app.services.retrieval.retrieve", retrieve),
@@ -215,7 +265,8 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
         result = await execute_tool_call(
             "knowledge_search",
             {"query": "policy", "top_k": 2},
-            agent=SimpleNamespace(id="agent-1"),
+            agent=agent,
+            user=user,
         )
 
     payload = json.loads(result)
@@ -243,135 +294,131 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
 
     query.prefetch_related.side_effect = RuntimeError("provider unavailable")
     with patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query):
-        error = await execute_tool_call(
-            "knowledge_search", {}, agent=SimpleNamespace(id="agent-1")
-        )
+        error = await execute_tool_call("knowledge_search", {}, agent=agent, user=user)
     assert "error" in json.loads(error)
 
 
 @pytest.mark.anyio
-async def test_mcp_tool_validates_configuration_and_executes_configured_server():
-    query = MagicMock()
-    query.first = AsyncMock(return_value=None)
-    with patch("app.models.tool.Tool.filter", return_value=query):
-        missing = await execute_tool_call("mcp_docs_search", {})
-    assert "error" in json.loads(missing)
+async def test_mcp_tool_validates_configuration_and_executes_configured_server(
+    monkeypatch,
+):
+    from app.services.tool import ToolExecutor
 
-    query.first.return_value = SimpleNamespace(mcp_config={"url": "https://mcp.test"})
-    mcp_result = SimpleNamespace(success=True, result={"answer": 42}, error=None)
-    with (
-        patch("app.models.tool.Tool.filter", return_value=query),
-        patch(
-            "app.llm.tools.mcp_client.execute_mcp_tool",
-            new=AsyncMock(return_value=mcp_result),
-        ) as execute_mcp,
-    ):
-        result = await execute_tool_call(
-            "mcp_docs_search", {"query": "answer"}, tool_timeouts={"mcp": 7}
-        )
-
-    assert json.loads(result) == {
-        "success": True,
-        "result": {"answer": 42},
-        "error": None,
+    # No runtime identity: stored tools fail closed instead of executing.
+    assert json.loads(await execute_tool_call("mcp_docs_search", {})) == {
+        "error": t("user_context_required")
     }
-    execute_mcp.assert_awaited_once_with(
-        mcp_config={"url": "https://mcp.test"},
-        tool_name="search",
-        arguments={"query": "answer"},
-        timeout=7,
+
+    tool_id = uuid4()
+    tool = SimpleNamespace(id=tool_id, name="docs", display_name="Docs")
+    agent = _tool_agent(tool_id, "mcp")
+    user = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
     )
-    assert "error" in json.loads(await execute_tool_call("mcp_invalid", {}))
+    tool_lookup = AsyncMock(return_value=tool)
+    monkeypatch.setattr("app.models.tool.Tool.get_or_none", tool_lookup)
+    execute = AsyncMock(return_value={"answer": 42})
+    monkeypatch.setattr(ToolExecutor, "execute", execute)
+
+    result = await execute_tool_call(
+        "mcp_docs_search", {"query": "answer"}, agent=agent, user=user
+    )
+
+    tool_lookup.assert_awaited_once_with(id=str(tool_id), is_enabled=True)
+    assert json.loads(result) == {"answer": 42}
+    called_tool, called_arguments = execute.await_args.args
+    assert called_tool is tool
+    assert called_arguments == {"query": "answer"}
+    assert execute.await_args.kwargs["operation"] == "search"
+    context = execute.await_args.kwargs["context"]
+    assert context.team_id == agent.team_id
+    assert context.actor is user
+
+    # The Agent has no alias for this tool, so it never reaches the executor.
+    unknown = json.loads(
+        await execute_tool_call("mcp_unknown_tool", {}, agent=agent, user=user)
+    )
+    assert "error" in unknown
+    assert execute.await_count == 1
 
 
 @pytest.mark.anyio
-async def test_custom_http_tool_returns_formatted_result_and_masks_executor_error():
-    tool = SimpleNamespace(
-        custom_type=CustomToolType.HTTP,
-        http_config={"url": "https://api.test"},
-        credentials={"token": "secret"},
+async def test_custom_tool_requires_user_context_and_maps_policy_errors(monkeypatch):
+    from app.schemas.response import BusinessError
+    from app.services.tool import ToolExecutor
+
+    missing_user = await execute_tool_call("custom_weather", {"city": "Paris"})
+    assert json.loads(missing_user) == {"error": t("user_context_required")}
+
+    tool_id = uuid4()
+    tool = SimpleNamespace(id=tool_id, name="weather", display_name="Weather")
+    agent = _tool_agent(tool_id, "custom")
+    user = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
     )
-    query = MagicMock()
-    query.first = AsyncMock(return_value=tool)
-    executor = AsyncMock(return_value={"status": 200})
+    monkeypatch.setattr(
+        "app.models.tool.Tool.get_or_none", AsyncMock(return_value=tool)
+    )
+    execute = AsyncMock(return_value={"status": 200})
+    monkeypatch.setattr(ToolExecutor, "execute", execute)
 
-    with (
-        patch("app.models.tool.Tool.filter", return_value=query),
-        patch("app.llm.tools.executors.execute_http_tool", executor),
-        patch(
-            "app.llm.tools.executors.format_http_result_for_llm",
-            return_value="status: 200",
-        ),
-    ):
-        result = await execute_tool_call(
-            "custom_weather", {"city": "Paris"}, tool_timeouts={"http": 4}
-        )
-
-    assert json.loads(result) == {
-        "result": {"status": 200},
-        "llm_result": "status: 200",
-    }
-    executor.assert_awaited_once_with(
-        http_config={"url": "https://api.test"},
-        arguments={"city": "Paris"},
-        credentials={"token": "secret"},
-        timeout=4,
+    result = await execute_tool_call(
+        "custom_weather", {"city": "Paris"}, agent=agent, user=user
     )
 
-    executor.side_effect = RuntimeError("secret provider detail")
-    with (
-        patch("app.models.tool.Tool.filter", return_value=query),
-        patch("app.llm.tools.executors.execute_http_tool", executor),
-    ):
-        error = await execute_tool_call("custom_weather", {})
-    assert json.loads(error) == {"error": t("tool_execution_failed")}
+    assert json.loads(result) == {"status": 200}
+    assert execute.await_args.kwargs["operation"] == "weather"
+
+    execute.side_effect = BusinessError(
+        code=403, msg_key="tool_access_denied", status_code=403
+    )
+    error = json.loads(
+        await execute_tool_call("custom_weather", {}, agent=agent, user=user)
+    )
+    assert error == {"error": t("agent_tool_access_denied", tool_name="Weather")}
 
 
 @pytest.mark.anyio
-async def test_builtin_credentials_fall_back_from_team_to_global_configuration():
-    async def handler(query, credentials=None):
-        return {"query": query, "credentials": credentials}
+async def test_builtin_tools_execute_through_the_stored_tool_boundary(monkeypatch):
+    from app.services.tool import ToolExecutor
 
-    tool_info = SimpleNamespace(handler=handler)
-    team_query = MagicMock()
-    team_query.first = AsyncMock(return_value=None)
-    global_query = MagicMock()
-    global_query.first = AsyncMock(
-        return_value=SimpleNamespace(credentials={"API_KEY": "global-key"})
+    tool_info = SimpleNamespace(handler=AsyncMock())
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), tools_config=[])
+    execute_builtin = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr("app.llm.tools.tool_registry.get_tool", lambda _name: tool_info)
+    monkeypatch.setattr(
+        "app.llm.tools.tool_registry.get_sandbox_tool_class", lambda _name: None
     )
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
+    monkeypatch.setattr(ToolExecutor, "execute_builtin_tool", execute_builtin)
 
-    with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=tool_info),
-        patch("app.llm.tools.tool_registry.get_sandbox_tool_class", return_value=None),
-        patch(
-            "app.models.tool_config.ToolConfig.filter",
-            side_effect=[team_query, global_query],
-        ) as tool_config_filter,
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as execute,
-    ):
-        result = await execute_tool_call(
-            "calendar", {"query": "today"}, agent=SimpleNamespace(team_id="team-1")
-        )
+    assert json.loads(await execute_tool_call("calendar", {}, agent=agent)) == {
+        "error": t("user_context_required")
+    }
 
-    assert result == {"ok": True}
-    assert tool_config_filter.call_args_list == [
-        call(tool_name="calendar", team_id="team-1"),
-        call(tool_name="calendar", team_id=None),
-    ]
-    execute.assert_awaited_once_with(
+    result = await execute_tool_call(
         "calendar",
         {"query": "today"},
-        credentials={"API_KEY": "global-key"},
-        agent_tool_config={},
-        session_id=None,
-        agent=SimpleNamespace(team_id="team-1"),
-        user=None,
-        current_images=None,
-        conversation_id=None,
+        agent=agent,
+        user=user,
+        conversation_id="conversation-1",
     )
+
+    assert result == {"ok": True}
+    kwargs = execute_builtin.await_args.kwargs
+    assert kwargs["tool_name"] == "calendar"
+    assert kwargs["arguments"] == {"query": "today"}
+    assert kwargs["team_id"] == agent.team_id
+    assert kwargs["context"].actor is user
+    assert kwargs["context"].team_id == agent.team_id
+    assert kwargs["agent"] is agent
+    assert kwargs["user"] is user
+    assert kwargs["conversation_id"] == "conversation-1"
 
 
 @pytest.mark.anyio

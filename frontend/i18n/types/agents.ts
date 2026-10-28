@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T16:46:30.975Z
+// GENERATED — 2026-10-28T12:09:56.988Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -261,6 +261,9 @@ export type AgentsMessages = {
         empty: string
         unknownTool: string
         toolNotFound: string
+        requireApproval: string
+        requireApprovalActive: string
+        requireApprovalTooltip: string
         builtinTools: {
           calculate: string
           unit_convert: string
@@ -495,6 +498,40 @@ export type AgentsMessages = {
         skipped: string
       }
       answerNote: string
+      approval: {
+        title: string
+        description: string
+        pauseTitle: string
+        pauseDescription: string
+        waitingPayload: string
+        viewTitle: string
+        viewDescription: string
+        listEndpoint: string
+        streamEndpoint: string
+        readEndpoint: string
+        executionEndpoint: string
+        viewResponse: string
+        viewResponseDescription: string
+        decisionTitle: string
+        decisionDescription: string
+        inboxEndpoint: string
+        decisionBody: string
+        decisionResponse: string
+        decisionResponseDescription: string
+        previewNote: string
+        resumeTitle: string
+        resumeDescription: string
+        statusEndpoint: string
+        apiKeyTitle: string
+        apiKeyDescription: string
+        apiKeyWaitLabel: string
+        apiKeyViewLabel: string
+        apiKeyDecisionLabel: string
+        apiKeyResumeLabel: string
+        workflowTitle: string
+        workflowDescription: string
+        apiKeyScopeNote: string
+      }
       messageEndExample: string
       codeExamples: string
       tabs: {

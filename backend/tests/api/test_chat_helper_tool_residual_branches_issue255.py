@@ -11,7 +11,6 @@ from app.api.v1.endpoints.chat_helpers.general import (
 )
 from app.api.v1.endpoints.chat_tools import (
     build_file_content_for_context,
-    execute_code_tool,
     execute_tool_call,
 )
 
@@ -49,23 +48,6 @@ async def test_knowledge_search_requires_agent_context_issue255():
     result = json.loads(await execute_tool_call("knowledge_search", {"query": "x"}))
 
     assert result["error"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("stdout", ["", "sandbox log"])
-async def test_execute_code_tool_shapes_dict_stdout_residuals_issue255(stdout):
-    tool = SimpleNamespace(code_config={"language": "python", "code": "return value"})
-    execute_code = AsyncMock(
-        return_value=SimpleNamespace(success=True, result={"value": 1}, stdout=stdout)
-    )
-
-    with patch("app.llm.tools.sandbox.execute_code", execute_code):
-        result = json.loads(await execute_code_tool(tool, {}))
-
-    expected = {"value": 1}
-    if stdout:
-        expected["__logs__"] = stdout
-    assert result == expected
 
 
 @pytest.mark.anyio

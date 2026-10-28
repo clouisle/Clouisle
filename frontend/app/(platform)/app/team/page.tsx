@@ -21,6 +21,7 @@ import {
   MoreHorizontal,
   LogOut,
   AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react'
 
 import {
@@ -77,12 +78,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+import { TeamToolApprovalsPanel } from './_components/tool-approvals-panel'
+
 type TeamRole = 'owner' | 'admin' | 'member' | 'viewer'
-type TeamTab = 'members' | 'models' | 'settings'
+type TeamTab = 'members' | 'models' | 'approvals' | 'settings'
 type AddableRole = 'admin' | 'member' | 'viewer'
 
 const isTeamTab = (value: string | null): value is TeamTab =>
-  value === 'members' || value === 'models' || value === 'settings'
+  value === 'members' ||
+  value === 'models' ||
+  value === 'approvals' ||
+  value === 'settings'
 
 const RoleIcon = ({ role }: { role: TeamRole }) => {
   switch (role) {
@@ -150,6 +156,8 @@ export default function PlatformTeamPage() {
   const isTeamAdmin = isOwner || currentMembership?.role === 'admin'
   const canManageTeam = !isPermissionsLoading && (currentUser?.is_superuser || (isTeamAdmin && hasPermission('team:manage')))
   const canUpdateTeam = !isPermissionsLoading && (currentUser?.is_superuser || (isTeamAdmin && hasPermission('team:update')))
+  const canReadTools = !isPermissionsLoading && hasPermission('tool:read')
+  const canUpdateTools = !isPermissionsLoading && hasPermission('tool:update')
 
   const loadTeamDetail = React.useCallback(async () => {
     if (!currentTeam?.id) {
@@ -344,7 +352,7 @@ export default function PlatformTeamPage() {
 
       {/* 标签页面板 */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="members" className="gap-2">
             <Users className="h-4 w-4" />
             {t('members')}
@@ -352,6 +360,10 @@ export default function PlatformTeamPage() {
           <TabsTrigger value="models" className="gap-2">
             <Cpu className="h-4 w-4" />
             {t('modelAuth')}
+          </TabsTrigger>
+          <TabsTrigger value="approvals" className="gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            {t('toolApprovals.tab')}
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
             <SettingsIcon className="h-4 w-4" />
@@ -546,7 +558,7 @@ export default function PlatformTeamPage() {
                                   provider={tm.model.provider}
                                   displayName={tm.model.provider_display_name}
                                   modelId={tm.model.model_id}
-                                  size={12}
+                                  showIcon={false}
                                 />
                                 <span className="truncate">· {tm.model.model_id}</span>
                               </div>
@@ -582,7 +594,19 @@ export default function PlatformTeamPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* Tab 3: 基本设置与安全 */}
+        {/* Tab 3: 工具审批策略 */}
+        <TabsContent value="approvals">
+          <TeamToolApprovalsPanel
+            teamId={currentTeam.id}
+            enabled={activeTab === 'approvals'}
+            currentUserId={currentUser?.id}
+            isSuperuser={Boolean(currentUser?.is_superuser)}
+            membershipRole={currentMembership?.role as TeamRole | undefined}
+            canReadTools={canReadTools}
+            canUpdateTools={canUpdateTools}
+          />
+        </TabsContent>
+        {/* Tab 4: 基本设置与安全 */}
         <TabsContent value="settings" className="space-y-6">
           <Card>
             <CardHeader>

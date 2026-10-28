@@ -4,6 +4,7 @@
 export type { ActivitiesMessages } from './activities.js'
 export type { AgentsMessages } from './agents.js'
 export type { ApiKeysMessages } from './apiKeys.js'
+export type { ApprovalsMessages } from './approvals.js'
 export type { AppsMessages } from './apps.js'
 export type { AuditLogsMessages } from './auditLogs.js'
 export type { AuthMessages } from './auth.js'

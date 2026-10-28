@@ -95,7 +95,7 @@ import { McpToolDialog } from '@/app/(platform)/app/capabilities/_components/mcp
 import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolTestPanel } from '@/app/(platform)/app/capabilities/_components/tool-test-panel'
-import { ToolConfigDialog } from '@/app/(platform)/app/capabilities/_components/tool-config-dialog'
+import { ToolConnectionDialog } from '@/components/tools/tool-connection-dialog'
 import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
@@ -356,7 +356,7 @@ export function ToolsClient() {
         }
 
         if (!tool.id) {
-            if (tool.requires_config) {
+            if (tool.requires_config || (tool.identity_policy && tool.identity_policy !== 'none')) {
                 handleConfigureTool(tool)
             }
             return
@@ -374,6 +374,12 @@ export function ToolsClient() {
             if (detail.type === 'mcp') {
                 setEditingMcpTool(detail)
                 setMcpDialogOpen(true)
+            } else if (detail.type === 'builtin') {
+                if (detail.name === 'web_search') {
+                    setWebSearchDialogOpen(true)
+                } else {
+                    handleConfigureTool(detail)
+                }
             } else if (detail.type === 'custom') {
                 if (detail.custom_type === 'http') {
                     setEditingHttpTool(detail)
@@ -394,6 +400,7 @@ export function ToolsClient() {
             }
         } catch (error) {
             console.error('Failed to load tool detail:', error)
+            toast.error(t('error.loadToolDetailFailed'))
         }
     }
 
@@ -439,38 +446,6 @@ export function ToolsClient() {
         }
     }
 
-    // 保存内置工具配置
-    const handleSaveConfig = async (config: Record<string, string>) => {
-        if (!currentTeamId || !configuringTool) return
-
-        try {
-            let configExists = false
-            try {
-                await adminToolsApi.getConfig(configuringTool.name, currentTeamId)
-                configExists = true
-            } catch (error: unknown) {
-                const apiError = error as { response?: { status?: number } }
-                if (apiError?.response?.status !== 404) {
-                    throw error
-                }
-            }
-
-            if (configExists) {
-                await adminToolsApi.updateConfig(configuringTool.name, config, currentTeamId)
-            } else {
-                await adminToolsApi.createConfig(configuringTool.name, config, currentTeamId)
-            }
-
-            toast.success(t('configSaved'))
-            setConfigDialogOpen(false)
-            setConfiguringTool(null)
-        } catch (error) {
-            console.error('Failed to save config:', error)
-            throw error
-        }
-    }
-
-    // 打开删除 Dialog
     const handleDelete = (tool: Tool) => {
         setSelectedTool(tool)
         setDeleteDialogOpen(true)
@@ -795,7 +770,7 @@ export function ToolsClient() {
                                         <TableCell>
                                             {((canPerform('admin:capability:execute')) ||
                                                 (tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:read') || canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
-                                                (tool.type === 'builtin' && (tool.requires_config || tool.name === 'web_search') && canPerform('admin:capability:update'))) && (
+                                                (tool.type === 'builtin' && (tool.requires_config || tool.name === 'web_search' || (tool.identity_policy && tool.identity_policy !== 'none')) && canPerform('admin:capability:update'))) && (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                                                             <MoreHorizontal className="h-4 w-4" />
@@ -970,11 +945,12 @@ export function ToolsClient() {
                 onSelectedTeamChange={(teamId) => setCurrentTeamId(teamId ?? '')}
             />
 
-            <ToolConfigDialog
+            <ToolConnectionDialog
                 tool={configuringTool}
+                teamId={currentTeamId}
                 open={configDialogOpen}
                 onOpenChange={setConfigDialogOpen}
-                onSave={handleSaveConfig}
+                onChanged={loadTools}
             />
 
             {webSearchDialogOpen && (
@@ -989,7 +965,7 @@ export function ToolsClient() {
                 tool={testingTool}
                 open={!!testingTool}
                 onOpenChange={(open) => !open && setTestingTool(null)}
-                teamId={testingTool?.team_id || testingTool?.owner_team_id}
+                teamId={testingTool?.team_id || testingTool?.owner_team_id || currentTeamId}
                 api={adminToolsApi}
             />
 

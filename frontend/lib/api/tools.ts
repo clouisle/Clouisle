@@ -5,8 +5,36 @@ import type { PageData } from './users'
 
 export type ToolType = 'builtin' | 'custom' | 'mcp' | 'skill'
 export type ToolVisibility = 'private' | 'team'
+export type ToolIdentityPolicy = 'none' | 'team_only' | 'personal_only' | 'selectable'
+export interface ToolConnectionField {
+  name: string
+  label: string
+  required: boolean
+  secret: boolean
+  label_key?: string | null
+  input_type?: 'text' | 'password' | 'number' | 'select' | null
+  default?: string | null
+  options?: string[]
+  input_mode?: 'url' | 'host' | null
+}
+export interface ToolApprovalGate {
+  /**
+   * Only `caller` is writable. `user` and `team_role` can still appear on
+   * legacy saved policies; they must be surfaced and reconfigured, never
+   * converted to `caller` or `allow`.
+   */
+  kind: 'caller' | 'user' | 'team_role'
+  user_ids: string[]
+  roles: string[]
+  allow_self_approval: boolean
+}
+export interface ToolApprovalPolicy {
+  default_decision: 'allow' | 'deny' | 'require_approval'
+  gates: ToolApprovalGate[]
+  operation_overrides: Record<string, ToolApprovalPolicy>
+}
 
-export type CustomToolType = 'http' | 'code' | 'database'
+export type CustomToolType = 'http' | 'code'
 
 export const PRESET_TOOL_CATEGORIES = [
   'time',
@@ -93,23 +121,6 @@ export interface CodeConfig {
   limits?: SandboxLimitsConfig
 }
 
-export type DatabaseType = 'postgresql' | 'mysql' | 'redis' | 'mongodb'
-
-export interface DatabaseConfig {
-  db_type: DatabaseType
-  host?: string
-  port?: number
-  database?: string
-  username?: string
-  password?: string
-  ssl?: string | boolean
-  url?: string
-  db?: number
-  auth_source?: string
-  timeout?: number
-  max_limit?: number
-}
-
 export type McpTransportType = 'stdio' | 'sse' | 'http'
 
 export interface McpConfig {
@@ -121,6 +132,15 @@ export interface McpConfig {
   // SSE/HTTP 配置
   url?: string
   headers?: Record<string, string>
+  enable_sampling?: boolean
+  enable_elicitation?: boolean
+  roots?: Array<{ uri: string; name?: string }>
+  roots_allowlist?: string[]
+  elicitation_url_hosts?: string[]
+  callback_timeout_seconds?: number
+  max_sampling_requests?: number
+  max_elicitation_requests?: number
+  sampling_max_tokens?: number
 }
 export interface Tool {
   id?: string
@@ -135,10 +155,13 @@ export interface Tool {
   is_enabled: boolean
   requires_config: boolean
   config_fields: string[]
+  identity_policy?: ToolIdentityPolicy
+  connection_fields?: ToolConnectionField[]
+  approval_policy?: ToolApprovalPolicy
+  definition_version?: number
   custom_type?: CustomToolType
   http_config?: HttpConfig
   code_config?: CodeConfig
-  database_config?: DatabaseConfig
   mcp_config?: McpConfig
   team_id?: string
   created_by_id?: string | null
@@ -199,9 +222,11 @@ export interface ToolCreateInput {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
-  database_config?: DatabaseConfig
   credentials?: Record<string, string>
   is_enabled?: boolean
+  identity_policy?: ToolIdentityPolicy
+  connection_fields?: ToolConnectionField[]
+  approval_policy?: ToolApprovalPolicy
 }
 
 export interface ToolUpdateInput {
@@ -217,14 +242,19 @@ export interface ToolUpdateInput {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
-  database_config?: DatabaseConfig
   credentials?: Record<string, string>
   is_enabled?: boolean
+  identity_policy?: ToolIdentityPolicy
+  connection_fields?: ToolConnectionField[]
+  approval_policy?: ToolApprovalPolicy
 }
 
 export interface ToolExecuteRequest {
   name: string
   arguments: Record<string, unknown>
+  connection_mode?: 'personal' | 'team'
+  connection_id?: string
+  execution_id?: string
 }
 
 export interface ToolExecuteResponse {
@@ -235,6 +265,8 @@ export interface ToolExecuteResponse {
   logs?: string
   artifacts?: SandboxArtifactConfig[]
   duration_ms?: number
+  pending_approval?: boolean
+  execution_id?: string
 }
 
 export interface CodeExecuteRequest {
@@ -273,15 +305,6 @@ export interface McpToolsListResponse {
   tools: McpToolInfo[]
   server_name?: string
   server_version?: string
-}
-
-export interface ToolConfig {
-  id: string
-  tool_name: string
-  team_id?: string
-  credentials: Record<string, string>
-  created_at: string
-  updated_at: string
 }
 
 // ============ Web Search Types ============
@@ -496,62 +519,6 @@ export const toolsApi = {
    */
   listMcpTools: async (mcpConfig: McpConfig): Promise<McpToolsListResponse> => {
     return api.post<McpToolsListResponse>('/tools/mcp/list-tools', { mcp_config: mcpConfig })
-  },
-  /**
-   * 测试数据库连接
-   */
-  testDatabaseConnection: async (config: DatabaseConfig): Promise<{ success: boolean; message?: string; ping?: unknown }> => {
-    return api.post<{ success: boolean; message?: string; ping?: unknown }>('/tools/database/test-connection', config)
-  },
-
-  // ============ Tool Configuration Management ============
-
-  /**
-   * 获取工具配置列表
-   */
-  listConfigs: async (teamId?: string): Promise<ToolConfig[]> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.get<ToolConfig[]>('/tools/config', { params })
-  },
-
-  /**
-   * 获取指定工具的配置
-   */
-  getConfig: async (toolName: string, teamId?: string): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.get<ToolConfig>(`/tools/config/${toolName}`, { params })
-  },
-
-  /**
-   * 创建工具配置
-   */
-  createConfig: async (
-    toolName: string,
-    credentials: Record<string, string>,
-    teamId?: string
-  ): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.post<ToolConfig>('/tools/config', { tool_name: toolName, credentials }, { params })
-  },
-
-  /**
-   * 更新工具配置
-   */
-  updateConfig: async (
-    toolName: string,
-    credentials: Record<string, string>,
-    teamId?: string
-  ): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.put<ToolConfig>(`/tools/config/${toolName}`, { credentials }, { params })
-  },
-
-  /**
-   * 删除工具配置
-   */
-  deleteConfig: async (toolName: string, teamId?: string): Promise<void> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.delete(`/tools/config/${toolName}`, { params })
   },
 
   // ============ Tool Sharing Management ============

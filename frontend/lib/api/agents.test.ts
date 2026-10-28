@@ -410,7 +410,7 @@ describe('public agents API requests', () => {
     for (let index = 0; index < 9; index += 1) {
       await expect(publicAgentsApi.getPublicAgent('broken')).rejects.toMatchObject<ApiError>({
         code: 500,
-        message: getErrorMessage('serverError'),
+        message: getErrorMessage('serverErrorDescription'),
       })
     }
 

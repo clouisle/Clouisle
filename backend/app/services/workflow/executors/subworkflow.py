@@ -12,6 +12,7 @@ import os
 
 from app.services import upload_gateway
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..execution_origin import inherited_origin
 from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 from ..errors import MaxDepthExceededError
 from ..errors import translate_public_workflow_error
@@ -135,6 +136,9 @@ class SubWorkflowNodeExecutor(NodeExecutor):
                 user_id=triggered_by_id,
                 team_id=None,  # Inherit from parent
                 stream=False,  # Don't stream sub-workflow
+                # A nested run never gains a new surface: it inherits the root
+                # run's entrypoint so grants stay bound to how it was invoked.
+                origin=inherited_origin(run),
             )
 
             # Get sub-workflow results

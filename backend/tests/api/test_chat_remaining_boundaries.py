@@ -194,24 +194,27 @@ async def test_builtin_tool_config_selects_agent_credentials_and_web_engine(
         lambda _name: SimpleNamespace(handler=lambda credentials=None: credentials),
     )
     monkeypatch.setattr(tool_registry, "get_sandbox_tool_class", lambda _name: None)
-    monkeypatch.setattr(tool_registry, "execute", executed)
-    credential_lookup = AsyncMock(return_value={"BOCHA_API_KEY": "agent-key"})
-    monkeypatch.setattr(chat_tools, "_get_builtin_tool_credentials", credential_lookup)
+    monkeypatch.setattr("app.services.tool.ToolExecutor.execute_builtin_tool", executed)
+    user = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
 
     agent = SimpleNamespace(
+        id=uuid4(),
+        team_id=uuid4(),
         tools_config=[
             {"type": "builtin", "name": "web_search", "config": {"engine": "bocha"}}
-        ]
+        ],
     )
-    await chat_tools.execute_tool_call("web_search", {}, agent=agent)
+    await chat_tools.execute_tool_call("web_search", {}, agent=agent, user=user)
 
-    assert credential_lookup.await_args.args == (
-        "web_search",
-        agent,
-        {"engine": "bocha"},
-    )
-    assert executed.await_args.args[1]["search_engine"] == "bocha"
-    assert executed.await_args.kwargs["credentials"] == {"BOCHA_API_KEY": "agent-key"}
+    kwargs = executed.await_args.kwargs
+    assert kwargs["agent_tool_config"] == {"engine": "bocha"}
+    # The engine is orchestration configuration, not a model argument: it is
+    # added to the dispatched parameters only, never to the call's arguments.
+    assert kwargs["arguments"] == {}
+    assert "credentials" not in kwargs
 
 
 @pytest.mark.anyio
@@ -220,6 +223,20 @@ async def test_memory_subgraph_normalizes_invalid_filter_and_depth(monkeypatch):
 
     get_subgraph = AsyncMock(return_value={"entities": [], "relations": []})
     monkeypatch.setattr(MemoryService, "handle_get_memory_subgraph", get_subgraph)
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+
+    async def run_invoke(definition, operation, arguments, context, invoke, **_):
+        return await invoke(arguments, None)
+
+    monkeypatch.setattr("app.services.tool_execution.execute_stored_tool", run_invoke)
+    monkeypatch.setattr(
+        "app.services.builtin_tools.get_builtin_definition",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4(), name="definition")),
+    )
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
     result = await chat_tools.execute_tool_call(
         "get_memory_subgraph",
         {
@@ -227,7 +244,8 @@ async def test_memory_subgraph_normalizes_invalid_filter_and_depth(monkeypatch):
             "relation_types": "not-a-list",
             "max_depth": "bad",
         },
-        user=SimpleNamespace(id=uuid4()),
+        user=user,
+        agent=agent,
     )
 
     assert json.loads(result) == {"entities": [], "relations": []}

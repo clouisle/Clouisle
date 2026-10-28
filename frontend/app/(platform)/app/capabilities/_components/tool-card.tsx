@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Tool, ToolType, isPresetToolCategory, type PresetToolCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   AlertCircle,
+  Check,
   MoreVertical,
   Pencil,
   Trash2,
@@ -32,7 +34,6 @@ import {
   Link,
   ChartColumn,
   Wrench,
-  Database,
   Lock,
 } from 'lucide-react'
 
@@ -43,11 +44,18 @@ interface ToolCardProps {
   onEdit?: (tool: Tool) => void
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
+  onBrowseMcp?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
   canConfigure?: boolean
   canEdit?: boolean
   canShare?: boolean
   canDelete?: boolean
+  /**
+   * Whether the caller has confirmed an existing usable connection for this
+   * builtin tool. Only `true` — backed by fetched connection state — may be
+   * presented as configured; `undefined` means no evidence was loaded.
+   */
+  configured?: boolean
 }
 
 // 分类图标和颜色映射
@@ -109,11 +117,13 @@ export function ToolCard({
   onEdit,
   onDelete,
   onConfigure,
+  onBrowseMcp,
   onShare,
   canConfigure = false,
   canEdit = false,
   canShare = false,
   canDelete = false,
+  configured,
 }: ToolCardProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
@@ -121,11 +131,15 @@ export function ToolCard({
   const categoryLabel = isPresetToolCategory(tool.category) ? t(`categories.${tool.category}`) : tool.category
   const typeColor = typeColorConfig[tool.type]
   const isEditable = tool.type === 'custom' || tool.type === 'mcp'
-  const needsConfig = tool.type === 'builtin' && tool.requires_config
+  const needsConfig = tool.requires_config
+  const hasConfiguredEvidence = tool.type === 'builtin' && configured === true
   const isOwned = tool.is_owned !== false // 默认为 true
   const isShared = !isOwned // 共享给当前团队的工具
   const showConfig = needsConfig && canConfigure
   const showMenu = isEditable && (canEdit || canShare || canDelete)
+  const configLabel = hasConfiguredEvidence
+    ? t('manageConnections')
+    : t('configureConnections')
 
   // 类型标签映射（使用 i18n）
   const typeLabels: Record<ToolType, string> = {
@@ -136,8 +150,16 @@ export function ToolCard({
   }
 
   // 判断图标是否为 URL
-  const iconUrl = tool.icon?.startsWith('http') ? tool.icon : null
-  const displayIcon = tool.icon || (tool.custom_type === 'database' ? <Database className="h-4 w-4" /> : category.icon)
+  const iconUrl = tool.icon?.startsWith('http') || tool.icon?.startsWith('/') || tool.icon?.startsWith('data:') ? tool.icon : null
+  const displayIcon = renderToolIcon({
+    name: tool.name,
+    icon: tool.icon,
+    type: tool.type,
+    custom_type: tool.custom_type,
+    category: tool.category,
+    size: 18,
+    className: 'shrink-0',
+  })
 
   return (
     <Card
@@ -173,13 +195,22 @@ export function ToolCard({
               <CardTitle className="text-sm font-medium truncate">
                 {tool.display_name}
               </CardTitle>
-              {tool.requires_config && (
+              {needsConfig && !hasConfiguredEvidence && (
                 <Tooltip>
                   <TooltipTrigger render={<span />} className="cursor-help">
                     <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
                   </TooltipTrigger>
                   <TooltipContent>{t('requiresConfig')}</TooltipContent>
                 </Tooltip>
+              )}
+              {hasConfiguredEvidence && (
+                <Badge
+                  variant="outline"
+                  className="text-xs px-1.5 py-0 shrink-0 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                >
+                  <Check className="h-3 w-3 mr-1" />
+                  {t('configured')}
+                </Badge>
               )}
               {tool.type !== 'builtin' && tool.visibility === 'private' && (
                 <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0 text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10">
@@ -252,6 +283,23 @@ export function ToolCard({
               <Play className="h-3.5 w-3.5" />
             </Button>
 
+            {tool.type === 'mcp' && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onBrowseMcp?.(tool)
+                  }}
+                  render={
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={t('mcpBrowser.open')}>
+                      <Globe className="h-3.5 w-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('mcpBrowser.open')}</TooltipContent>
+              </Tooltip>
+            )}
+
             {showConfig && (
               <Tooltip>
                 <TooltipTrigger
@@ -260,12 +308,12 @@ export function ToolCard({
                     onConfigure?.(tool)
                   }}
                   render={
-                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={t('requiresConfig')}>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={configLabel}>
                       <Settings className="h-3.5 w-3.5" />
                     </Button>
                   }
                 />
-                <TooltipContent>{t('requiresConfig')}</TooltipContent>
+                <TooltipContent>{configLabel}</TooltipContent>
               </Tooltip>
             )}
 

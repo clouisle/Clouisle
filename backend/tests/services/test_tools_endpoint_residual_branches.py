@@ -9,7 +9,6 @@ from app.models.tool import ToolType as DBToolType
 from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import CodeExecuteRequest, McpToolsListRequest, ToolExecuteRequest
-from app.services.sandbox.models import SandboxExecutionMetadata, SandboxJobSource
 
 
 class DummyUser:
@@ -41,8 +40,10 @@ class DummyTool:
         team_id="team-1",
         created_by_id=None,
         visibility=DBToolVisibility.TEAM,
+        name="script",
         **config,
     ):
+        self.name = name
         self.type = type
         self.custom_type = custom_type
         self.team_id = team_id
@@ -75,11 +76,15 @@ async def test_get_mcp_tools_wraps_connection_failure():
 async def test_test_tool_mcp_requires_saved_config():
     request = ToolExecuteRequest(name="remote", arguments={"x": 1})
     tool = DummyTool(type=DBToolType.MCP, mcp_config={})
+    execute = AsyncMock()
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await tools.test_tool(
             request, team_id="team-1", current_user=DummyUser()
@@ -87,37 +92,38 @@ async def test_test_tool_mcp_requires_saved_config():
 
     assert response["data"].success is False
     assert response["data"].error
+    execute.assert_not_awaited()
 
 
 @pytest.mark.anyio
-async def test_test_tool_mcp_uses_tool_name_override_without_leaking_argument():
+async def test_test_tool_mcp_uses_copied_tool_name_override():
     request = ToolExecuteRequest(
         name="remote", arguments={"__tool_name__": "actual", "x": 1}
     )
     tool = DummyTool(
         type=DBToolType.MCP, mcp_config={"transport": "http", "url": "https://mcp.test"}
     )
-    result = SimpleNamespace(success=True, result={"ok": True}, error=None)
+    execute = AsyncMock(
+        return_value={"success": True, "result": {"ok": True}, "error": None}
+    )
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
         patch(
-            "app.api.v1.endpoints.tools.execute_mcp_tool",
-            new=AsyncMock(return_value=result),
-        ) as mock_execute,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await tools.test_tool(
             request, team_id="team-1", current_user=DummyUser()
         )
 
-    mock_execute.assert_awaited_once_with(
-        mcp_config=tool.mcp_config,
-        tool_name="actual",
-        arguments={"x": 1},
-        timeout=60.0,
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is tool
+    assert args_arg == {"x": 1}
+    assert execute.await_args.kwargs["operation"] == "actual"
+    assert request.arguments == {"__tool_name__": "actual", "x": 1}
     assert response["data"].success is True
     assert response["data"].result == {"ok": True}
 
@@ -128,11 +134,15 @@ async def test_test_tool_code_without_code_returns_validation_error():
     tool = DummyTool(
         custom_type=DBCustomToolType.CODE, code_config={"language": "python"}
     )
+    execute = AsyncMock()
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await tools.test_tool(
             request, team_id="team-1", current_user=DummyUser()
@@ -140,10 +150,11 @@ async def test_test_tool_code_without_code_returns_validation_error():
 
     assert response["data"].success is False
     assert response["data"].error
+    execute.assert_not_awaited()
 
 
 @pytest.mark.anyio
-async def test_test_tool_code_submits_sandbox_job_and_serializes_logs():
+async def test_test_tool_code_shapes_logs_and_unified_result():
     request = ToolExecuteRequest(name="script", arguments={"x": 1})
     tool = DummyTool(
         custom_type=DBCustomToolType.CODE,
@@ -153,43 +164,34 @@ async def test_test_tool_code_submits_sandbox_job_and_serializes_logs():
             "limits": {"timeout_seconds": 12},
         },
     )
-    job = SimpleNamespace(limits=SimpleNamespace(timeout_seconds=12.0))
-    runtime_result = SimpleNamespace(
-        success=False,
-        result=None,
-        error="bad",
-        stdout="trace",
-        artifacts=[],
-        metadata=SandboxExecutionMetadata(duration_ms=88, total_ms=88),
+    execute = AsyncMock(
+        return_value={
+            "success": False,
+            "result": None,
+            "error": "bad",
+            "stdout": "trace",
+            "artifacts": [],
+        }
     )
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
         patch(
-            "app.api.v1.endpoints.tools.compile_code_config_job", return_value=job
-        ) as mock_compile,
-        patch(
-            "app.api.v1.endpoints.tools.sandbox_gateway.submit_and_wait",
-            new=AsyncMock(return_value=runtime_result),
-        ) as mock_submit,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await tools.test_tool(
             request, team_id="team-1", current_user=DummyUser()
         )
 
-    mock_compile.assert_called_once_with(
-        code_config=tool.code_config,
-        params={"x": 1},
-        timeout=12.0,
-        source=SandboxJobSource.TOOL,
-    )
-    mock_submit.assert_awaited_once_with(job, timeout_seconds=17.0)
+    assert execute.await_args.args[1] == {"x": 1}
+    assert execute.await_args.kwargs["operation"] == tool.name
     assert response["data"].success is False
     assert response["data"].error == "bad"
     assert response["data"].logs == "trace"
-    assert response["data"].duration_ms == 88
+    assert response["data"].duration_ms is not None
 
 
 @pytest.mark.anyio

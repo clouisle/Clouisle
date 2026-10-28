@@ -9,7 +9,6 @@ from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
 from app.models.tool import ToolVisibility as DBToolVisibility
-from app.models.tool_config import ToolConfig
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolCreateInput, ToolExecuteRequest, ToolUpdateInput
 
@@ -82,24 +81,12 @@ def db_tool(**overrides):
         "mcp_config": {},
         "credentials": {},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": SimpleNamespace(username="creator"),
-        "created_at": now,
-        "updated_at": now,
-        "save": AsyncMock(),
-        "delete": AsyncMock(),
-    }
-    values.update(overrides)
-    return SimpleNamespace(**values)
-
-
-def config(**overrides):
-    now = datetime.now(UTC)
-    values = {
-        "id": uuid4(),
-        "tool_name": "search",
-        "team_id": uuid4(),
-        "credentials": {"token": "secret"},
         "created_at": now,
         "updated_at": now,
         "save": AsyncMock(),
@@ -284,7 +271,7 @@ async def test_update_tool_persists_fields_and_stops_on_duplicate(monkeypatch):
         custom_type="code",
         parameters=[{"name": "value", "type": "string"}],
         code_config={"language": "python", "code": "return 2"},
-        credentials={"token": "new"},
+        credentials={},
         is_enabled=False,
     )
 
@@ -293,6 +280,7 @@ async def test_update_tool_persists_fields_and_stops_on_duplicate(monkeypatch):
     assert result.name == "renamed"
     assert existing.custom_type == DBCustomToolType.CODE
     assert existing.is_enabled is False
+    assert existing.credentials == {}
     existing.save.assert_awaited_once()
 
     duplicate = db_tool()
@@ -339,18 +327,14 @@ async def test_delete_and_toggle_cover_not_found_access_and_persistence(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_builtin_execution_uses_team_config_and_returns_safe_provider_failure(
-    monkeypatch,
-):
+async def test_builtin_execution_routes_through_unified_boundary(monkeypatch):
     current = user()
     team_id = uuid4()
     execute = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: object())
-    monkeypatch.setattr(tools.tool_registry, "execute", execute)
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(
-        ToolConfig,
-        "filter",
-        lambda **_kwargs: Query(first=config(team_id=team_id)),
+        tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )
 
     result = data(
@@ -359,41 +343,42 @@ async def test_builtin_execution_uses_team_config_and_returns_safe_provider_fail
         )
     )
     assert result.success is True
-    assert execute.await_args.kwargs["credentials"] == {"token": "secret"}
+    assert result.result == {"ok": True}
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["tool_name"] == "search"
+    assert call_kwargs["arguments"] == {"q": "x"}
+    assert call_kwargs["team_id"] == team_id
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.TOOL_TEST
+    assert call_kwargs["context"].team_id == team_id
+    assert call_kwargs["context"].interactive is True
 
-    monkeypatch.setattr(
-        tools.tool_registry,
-        "execute",
-        AsyncMock(side_effect=RuntimeError("provider secret")),
-    )
-    monkeypatch.setattr(
-        tools, "resolve_user_visible_error", lambda _error: "safe error"
-    )
-    failed = data(
+    with pytest.raises(BusinessError) as exc_info:
         await tools.test_tool(ToolExecuteRequest(name="search"), None, current)
+    assert exc_info.value.msg_key == "team_id_required"
+
+    execute.return_value = {"success": False, "error": "safe error"}
+    failed = data(
+        await tools.test_tool(ToolExecuteRequest(name="search"), team_id, current)
     )
     assert failed.success is False
     assert failed.error == "safe error"
 
 
 @pytest.mark.asyncio
-async def test_custom_execution_checks_team_and_covers_http_and_missing(monkeypatch):
+async def test_custom_execution_checks_team_and_routes_http(monkeypatch):
     current = user()
     team_id = uuid4()
-    access = AsyncMock()
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_tool_access", access)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
 
     with pytest.raises(BusinessError) as exc_info:
         await tools.test_tool(ToolExecuteRequest(name="missing"), team_id, current)
     assert exc_info.value.msg_key == "tool_not_found"
-    access.assert_not_awaited()
 
     existing = db_tool(team_id=team_id, visibility=DBToolVisibility.TEAM)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
     execute = AsyncMock(return_value={"success": False, "error": "upstream"})
-    monkeypatch.setattr(tools, "execute_http_tool", execute)
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
     result = data(
         await tools.test_tool(
             ToolExecuteRequest(name=existing.name, arguments={"city": "Paris"}),
@@ -403,62 +388,11 @@ async def test_custom_execution_checks_team_and_covers_http_and_missing(monkeypa
     )
     assert result.success is False
     assert result.error == "upstream"
-    execute.assert_awaited_once_with(
-        existing.http_config, {"city": "Paris"}, existing.credentials
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is existing
+    assert args_arg == {"city": "Paris"}
+    assert execute.await_args.kwargs["operation"] == existing.name
+    assert (
+        execute.await_args.kwargs["context"].entrypoint
+        is tools.ExecutionEntrypoint.TOOL_TEST
     )
-    access.assert_awaited_once_with(existing, current)
-
-
-@pytest.mark.asyncio
-async def test_config_access_create_update_delete_and_persistence_failures(monkeypatch):
-    current = user()
-    request = MagicMock()
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query())
-
-    with pytest.raises(BusinessError) as exc_info:
-        await tools.list_tool_configs(None, current)
-    assert exc_info.value.status_code == 403
-
-    with pytest.raises(BusinessError) as exc_info:
-        await tools.create_tool_config(
-            {"tool_name": "search", "credentials": {}}, request, None, current
-        )
-    assert exc_info.value.status_code == 403
-
-    admin = user(is_superuser=True)
-    existing = config(team_id=None)
-    create = AsyncMock(return_value=existing)
-    audit = AsyncMock()
-    monkeypatch.setattr(ToolConfig, "create", create)
-    monkeypatch.setattr(tools.AuditLogService, "log", audit)
-    created = data(
-        await tools.create_tool_config(
-            {"tool_name": "search", "credentials": {"token": "secret"}},
-            request,
-            None,
-            admin,
-        )
-    )
-    assert created["tool_name"] == "search"
-    audit.assert_awaited_once()
-
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query(first=existing))
-    updated = data(
-        await tools.update_tool_config(
-            "search", {"credentials": {"token": "new"}}, request, None, admin
-        )
-    )
-    assert updated["credentials"] == {"token": "new"}
-    existing.save.assert_awaited_once()
-
-    await tools.delete_tool_config("search", request, None, admin)
-    existing.delete.assert_awaited_once()
-
-    failing = config(team_id=None)
-    failing.save = AsyncMock(side_effect=RuntimeError("database unavailable"))
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query(first=failing))
-    with pytest.raises(RuntimeError, match="database unavailable"):
-        await tools.update_tool_config(
-            "search", {"credentials": {}}, request, None, admin
-        )
-    assert audit.await_count == 3

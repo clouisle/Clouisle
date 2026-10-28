@@ -415,7 +415,7 @@ export function ModelDialog({
     message: string
   } | null>(null)
   const [providerDisplayName, setProviderDisplayName] = React.useState('')
-  const [outputModalities, setOutputModalities] = React.useState<string[]>([])
+  const [outputModalities, setOutputModalities] = React.useState<string[]>(['text'])
   const discoveredModelIds = React.useMemo(
     () => discoveredModels.map((item) => item.id),
     [discoveredModels]
@@ -488,8 +488,8 @@ export function ModelDialog({
       )
 
       const caps = model.capabilities || {}
-      setInputModalities(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : ['text'])
-      setOutputModalities(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])
+      setInputModalities([...new Set(['text', ...(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : [])])])
+      setOutputModalities([...new Set(['text', ...(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])])])
       setSupportsFunctionCall(!!caps.function_call)
       setSupportsStreaming(caps.streaming !== false)
       setSupportsJsonMode(!!caps.json_mode)
@@ -533,7 +533,7 @@ export function ModelDialog({
       setPresencePenalty('')
       setMaxTokens('')
       setInputModalities(['text'])
-      setOutputModalities([])
+      setOutputModalities(['text'])
       setSupportsFunctionCall(false)
       setSupportsStreaming(true)
       setSupportsJsonMode(false)
@@ -745,8 +745,8 @@ export function ModelDialog({
     }
     if (discoveredModel.capabilities) {
       const capabilities = discoveredModel.capabilities
-      if (Array.isArray(capabilities.input_modalities)) setInputModalities(capabilities.input_modalities as unknown as string[])
-      if (Array.isArray(capabilities.output_modalities)) setOutputModalities(capabilities.output_modalities as unknown as string[])
+      if (Array.isArray(capabilities.input_modalities)) setInputModalities([...new Set(['text', ...capabilities.input_modalities as unknown as string[]])])
+      if (Array.isArray(capabilities.output_modalities)) setOutputModalities([...new Set(['text', ...capabilities.output_modalities as unknown as string[]])])
       if ('function_call' in capabilities) setSupportsFunctionCall(capabilities.function_call)
       if ('streaming' in capabilities) setSupportsStreaming(capabilities.streaming)
       if ('json_mode' in capabilities) setSupportsJsonMode(capabilities.json_mode)
@@ -2106,7 +2106,7 @@ export function ModelDialog({
               <div className="grid grid-cols-2 gap-2">
                 {['text', 'image', 'audio', 'video', 'file'].map((modality) => (
                   <label key={modality} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={outputModalities.includes(modality)} onCheckedChange={(checked) => setOutputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
+                    <Checkbox checked={outputModalities.includes(modality)} disabled={modality === 'text'} onCheckedChange={(checked) => setOutputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
                     {t(`modality.${modality}`)}
                   </label>
                 ))}

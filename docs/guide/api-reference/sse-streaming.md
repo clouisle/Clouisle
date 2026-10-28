@@ -117,7 +117,7 @@ data: <json_data>
 | `reasoning_delta` | Reasoning content delta |
 | `reasoning_end` | Reasoning ended with duration |
 | `content_delta` | Response content delta (text token) |
-| `tool_call` | Tool call with tool name and arguments |
+| `tool_call` | Tool call with tool name and the original model-supplied arguments |
 | `tool_result` | Tool execution result |
 | `media_result` | UI-only media result; inspect `success`, and fetch protected URLs with authentication; it is not LLM replay text |
 | `compression_start` | Context compression started |
@@ -195,11 +195,74 @@ event: run_end
 data: {"status": "completed", "message_id": "msg-456"}
 ```
 
-`run_status` reports run lifecycle transitions. Besides `running`, a run can
-enter `waiting` when the model calls the `ask_user` tool: the payload carries
-the pending `tool_call_id`, `pending_tool_name` and `pending_tool_input` so the
-client can render the question form. Submit answers through the run answer
-endpoint to resume.
+`run_status` reports run lifecycle transitions. A run enters `waiting` when the
+model calls `ask_user` or a tool call requires approval.
+
+For `ask_user`, `pending_tool_input` contains the questions; submit answers
+through the run answer endpoint to resume.
+
+For approval, `pending_tool_name` stays the original tool name and
+`pending_tool_input` is the interaction marker:
+
+```
+event: tool_call
+data: {"tool_call_id": "call-123", "tool_name": "mcp_delete_task", "tool_display_name": "Delete task", "arguments": {"task_id": "T-42"}}
+
+event: run_status
+data: {"status": "waiting", "pending_tool_call_id": "call-123", "pending_tool_name": "mcp_delete_task", "pending_tool_input": {"interaction_kind": "tool_approval", "execution_id": "9f1c2a7e-4b8d-4c61-9a30-2f5b8e1d7c44"}}
+```
+
+`tool_call.arguments` is always the original model-supplied arguments object,
+including on an approval pause. The approval is bound to that exact call.
+Only the caller who started the run can decide it: the signed-in user for an
+interactive run, or the same API key for an Agent run started with
+`Authorization: Bearer clou_...`. A different key — even one owned by the same
+user — cannot decide, and neither can another user, team administrator or
+superuser. Read the secret-safe call
+projection from `GET /api/v1/tool-executions/{execution_id}`, whose
+`parameters_preview` is already redacted:
+
+- `POST /api/v1/tool-executions/{execution_id}/decision` decides the pending
+  gate directly. Body: `decision` (`approve` or `reject`), optional `reason`
+  (max 2000 characters) and `idempotency_key`. The approvals inbox
+  equivalents are `GET /api/v1/tool-approvals` and
+  `POST /api/v1/tool-approvals/{request_id}/decision`.
+- These routes accept the same JWT or API key as the run. The key must still be
+  active, authorized for the Agent (no Agent associations covers all Agents)
+  and match the key that started the run, otherwise the decision fails with
+  `6504 tool_approval_not_authorized`.
+  Reading the execution through `GET /api/v1/tool-executions[/{id}]` gives
+  `403 tool_execution_access_denied`, and an unknown or foreign execution id
+  returns `404 tool_execution_not_found`. A revoked or expired key fails
+  authentication with `401 invalid_api_key` / `api_key_expired`. A key that lost
+  its Agent scope is also unauthorized for the decision; the Agent run routes
+  return `403 api_key_no_agent_access`.
+- An API key's inbox and execution list include only executions whose durable
+  AgentRun was submitted by that key. Legacy runs created before run-level key
+  binding (no recorded key id) are omitted from lists; if you hold such an
+  execution id, direct detail/decision still validates the legacy binding and
+  rejects a conflicting key.
+- The response returns the immutable decision, `execution_status` and
+  `remaining_approvals`. A decision never edits the bound parameters or
+  performs the side effect: after every gate is approved, the worker resumes
+  the original call and emits a normal `tool_result` for the same
+  `tool_call_id`.
+- Rejecting, expiry, revocation or a stopped run cancels the call and ends it
+  with a tool error; it never becomes an approval. Do not send approval pauses
+  to the answers endpoint — it returns `409 pending_interaction_mismatch`.
+
+An API-key Agent run parks in `waiting` exactly like an interactive run; the
+stream then closes. After the same key approves, reconnect to
+`/agents/{agent_id}/chat/runs/{run_id}/stream?after_sequence=N` and the resumed
+worker emits the `tool_result` and continues. The non-streaming `/chat`
+endpoint cannot complete an approval-required call; start it through
+`/chat/runs` (202) instead.
+
+Embed, legacy-channel and scheduled entrypoints remain non-interactive: they
+never wait for approval. A tool whose policy requires confirmation fails closed
+with an error `tool_result` and no side effect. Workflow tool calls never create
+an approval gate, so a workflow run (including one started with a workflow API
+key or a nested call) never pauses for tool approval.
 
 `run_end` is exactly one terminal event per run (`completed | stopped |
 failed | interrupted`). Streams stop after a terminal event.

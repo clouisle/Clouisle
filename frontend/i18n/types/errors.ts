@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.004Z
+// GENERATED — 2026-10-27T08:31:34.094Z
 // Source: i18n/en/errors.json
 export type ErrorsMessages = {
   errors: {
@@ -26,5 +26,8 @@ export type ErrorsMessages = {
     modelVisionNotSupported: string
     modelNotFound: string
     modelNotAuthorized: string
+    requestFailed: string
+    permissionDenied: string
+    sessionExpired: string
   }
 }

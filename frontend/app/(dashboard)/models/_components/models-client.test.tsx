@@ -25,6 +25,8 @@ mock.module('next-intl', () => ({
 }))
 mock.module('sonner', () => ({ toast: { success, loading, error, dismiss } }))
 mock.module('lucide-react', () => ({
+  ArrowDownWideNarrow: () => null, Boxes: () => null, Gavel: () => null,
+  ArrowRight: () => null, AudioLines: () => null, File: () => null, Image: () => null, Type: () => null, Video: () => null,
   Plus: () => null, Search: () => null, MoreHorizontal: () => null, Pencil: () => null,
   Trash2: () => null, ChevronLeft: () => null, ChevronRight: () => null, ChevronsLeft: () => null,
   ChevronsRight: () => null, X: () => null, Star: () => null, Power: () => null,

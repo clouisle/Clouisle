@@ -96,6 +96,12 @@ describe('ChatInput behavior', () => {
     expect(submitButtonHtml(streamingMarkup)).not.toContain('disabled=""')
   })
 
+  test('shows stop instead of send when a waiting run disables the composer', () => {
+    const markup = renderInput({ value: 'draft', disabled: true, isLoading: true, onStop: () => {} })
+    expect(markup).toContain('aria-label="stop"')
+    expect(markup).not.toContain('aria-label="send"')
+  })
+
   test('submits files without text and omits remove controls while uploading', () => {
     const uploading = file('notes.pdf', { isUploading: true, uploadProgress: 42 })
     const markup = renderInput({ value: '', files: [uploading], onSubmit: () => {} })

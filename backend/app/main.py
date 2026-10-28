@@ -81,6 +81,16 @@ async def lifespan(app: FastAPI):
     # Authentication configuration must be migrated before ORM schema generation.
     # Fail startup on a failed cutover rather than serving split configuration.
     await migrate_integration_schema()
+    from app.core.tool_policy_migration import migrate_tool_policy_schema
+
+    await migrate_tool_policy_schema()
+
+    # API-key identity columns must exist before any ORM read of AgentRun or
+    # ToolExecution. Existing databases are altered in place; the columns stay
+    # nullable so an old pod can keep writing during a rolling deploy.
+    from app.core.api_key_approval_migration import migrate_api_key_approval_schema
+
+    await migrate_api_key_approval_schema()
 
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
@@ -131,6 +141,7 @@ async def lifespan(app: FastAPI):
         init_kb_visibility_fields,
         init_tool_visibility_fields,
         init_tool_database_config,
+        init_tool_type_field,
         init_skills_table,
         init_clouisle_import_sessions_table,
         init_postgres_lexical_search,
@@ -159,6 +170,10 @@ async def lifespan(app: FastAPI):
         await init_tool_database_config()
     except Exception as e:
         logger.warning(f"Tool database_config migration failed: {e}")
+    try:
+        await init_tool_type_field()
+    except Exception as e:
+        logger.warning(f"Tool type migration failed: {e}")
 
     try:
         await fix_cascade_delete_policies()
@@ -370,6 +385,72 @@ async def lifespan(app: FastAPI):
     await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    # Retired designated-user/team-role approval gates can never become caller
+    # confirmation or an implicit allow. Preserve every policy and historical
+    # row, but cancel unstarted executions atomically so an old gate cannot
+    # approve work after the cutover. Fatal on failure: a partially migrated
+    # deployment could still let an external audience approve an execution.
+    from app.core.tool_approval_caller_migration import (
+        migrate_caller_only_tool_confirmation,
+    )
+
+    caller_only_migration = await migrate_caller_only_tool_confirmation()
+    if (
+        caller_only_migration["executions_cancelled"]
+        or caller_only_migration["tools_with_legacy_gates"]
+    ):
+        logger.warning(
+            "Caller-only tool confirmation cutover: %s; policies are preserved "
+            "and must be reconfigured to caller confirmation",
+            caller_only_migration,
+        )
+
+    # Removing the site/team/entrypoint layers must not silently relax an
+    # unstarted execution that froze one of them: the cutover cancels those
+    # rows with binding_changed instead of executing them under tool-only
+    # rules. Duplicate runs are no-ops.
+    from app.core.tool_approval_policy_cutover import (
+        migrate_removed_approval_policy_layers,
+    )
+
+    policy_layer_cutover = await migrate_removed_approval_policy_layers()
+    if policy_layer_cutover["executions_cancelled"]:
+        logger.warning(
+            "Removed approval policy layer cutover cancelled %s unstarted "
+            "execution(s) bound to retired layers",
+            policy_layer_cutover["executions_cancelled"],
+        )
+
+    # One-way cutover of legacy custom database tools. It must run before any
+    # code loads a Tool row (the retired enum value is cleared inside), and
+    # before the legacy secret migration, which otherwise would only see the
+    # old database_config. A failure is fatal: losing a credential silently is
+    # worse than stopping the release.
+    from app.core.database_tool_migration import migrate_custom_database_tools
+
+    database_tool_migration = await migrate_custom_database_tools()
+    if database_tool_migration["tools"]:
+        logger.info(
+            "Legacy database tools migrated to builtin tools: %s",
+            database_tool_migration,
+        )
+    try:
+        from app.core.tool_policy_migration import (
+            apply_tool_connection_constraints,
+        )
+
+        await apply_tool_connection_constraints()
+    except Exception as e:
+        logger.warning(f"Tool connection constraint migration failed: {e}")
+
+    # Fail startup rather than dropping plaintext credentials that cannot be
+    # migrated safely. Migrated non-web_search ToolConfig rows are deleted with
+    # their connection; a global (teamless) row fails closed and must be
+    # assigned to an explicit team with the migration CLI.
+    from app.core.tool_secret_migration import migrate_legacy_tool_secrets
+
+    await migrate_legacy_tool_secrets()
     from app.core.wechat_migration import migrate_wechat_knowledge_schema
 
     await migrate_wechat_knowledge_schema()

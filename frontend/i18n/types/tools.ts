@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T16:46:30.984Z
+// GENERATED — 2026-10-27T04:04:22.670Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -207,6 +207,7 @@ export type ToolsMessages = {
       paramName: string
       paramDescription: string
       required: string
+      variableCompletion: string
       toolNamePlaceholder: string
       urlPlaceholder: string
     }
@@ -247,34 +248,13 @@ export type ToolsMessages = {
       sseUrlPlaceholder: string
       headerNamePlaceholder: string
       httpUrlPlaceholder: string
-    }
-    databaseDialog: {
-      connectionFailed: string
-      connectionSettings: string
-      connectionSuccess: string
-      createTitle: string
-      databaseName: string
-      dbType: string
-      description: string
-      descriptionPlaceholder: string
-      editTitle: string
-      host: string
-      hostRequired: string
-      maxLimit: string
-      paramsMode: string
-      password: string
-      port: string
-      testConnection: string
-      timeout: string
-      url: string
-      urlMode: string
-      urlRequired: string
-      username: string
+      toolsPendingApproval: string
     }
     codeEditor: {
       newTitle: string
       subtitle: string
       run: string
+      connectionRunHint: string
       settings: string
       output: string
       basicInfo: string
@@ -334,8 +314,6 @@ export type ToolsMessages = {
       httpDesc: string
       code: string
       codeDesc: string
-      database: string
-      databaseDesc: string
       mcp: string
       mcpDesc: string
     }
@@ -356,6 +334,285 @@ export type ToolsMessages = {
     success: {
       created: string
       updated: string
+    }
+    mcpCapabilities: {
+      title: string
+      hint: string
+      sampling: string
+      samplingHint: string
+      elicitation: string
+      elicitationHint: string
+      callbackTimeout: string
+      maxSamplingRequests: string
+      maxElicitationRequests: string
+      samplingMaxTokens: string
+      roots: string
+      rootsHint: string
+      addRoot: string
+      noRoots: string
+      rootUriPlaceholder: string
+      rootNamePlaceholder: string
+      removeRoot: string
+      rootsAllowlist: string
+      rootsAllowlistHint: string
+      elicitationHosts: string
+      elicitationHostsHint: string
+      invalidRootUri: string
+      invalidElicitationHost: string
+      rootsRequireAllowlist: string
+      rootOutsideAllowlist: string
+    }
+    connections: {
+      title: string
+      identityNone: string
+      refresh: string
+      manage: string
+      hideManage: string
+      modePersonal: string
+      modeTeam: string
+      modePlaceholder: string
+      automatic: string
+      automaticBadge: string
+      modeAutomaticHint: string
+      modePersonalHint: string
+      modeTeamHint: string
+      modeSelectHint: string
+      selectConnection: string
+      noConnectionsForMode: string
+      loadFailed: string
+      selectionRequired: string
+      defaultBadge: string
+      status: {
+        active: string
+        revoked: string
+        reauth_required: string
+      }
+      manageTitle: string
+      manageHint: string
+      loading: string
+      empty: string
+      scopeOptions: {
+        user: string
+        team: string
+        site: string
+      }
+      setDefault: string
+      oauthAuthorized: string
+      oauthNotConnected: string
+      oauthNeedsReauth: string
+      oauthConnect: string
+      oauthReconnect: string
+      oauthFailed: string
+      revoke: string
+      createTitle: string
+      namePlaceholder: string
+      accountLabelPlaceholder: string
+      connectionMethod: string
+      inputModes: {
+        host: string
+        url: string
+      }
+      fields: {
+        url: string
+        host: string
+        port: string
+        database: string
+        username: string
+        password: string
+        ssl: string
+        timeout: string
+        max_limit: string
+        db: string
+        auth_source: string
+      }
+      sslOptions: {
+        disable: string
+        allow: string
+        prefer: string
+        require: string
+        "verify-ca": string
+        "verify-full": string
+      }
+      secretFieldsHint: string
+      create: string
+      nameRequired: string
+      secretRequired: string
+      createFailed: string
+      updateFailed: string
+      revokeFailed: string
+      oauthSuccess: string
+      oauthErrors: {
+        oauth_provider_error: string
+        oauth_exchange_failed: string
+        oauth_state_invalid: string
+        oauth_expired: string
+        oauth_reauth_required: string
+        oauth_configuration_invalid: string
+        oauth_discovery_failed: string
+        oauth_scope_escalation: string
+        oauth_version_conflict: string
+        oauth_callback_failed: string
+      }
+      oauthClientSecret: string
+      oauthClientSecretPlaceholder: string
+      oauthClientSecretHint: string
+      oauthSaveSecret: string
+      oauthCancelSecret: string
+      oauthDisconnect: string
+      oauthDisconnectFailed: string
+      revokeConfirmTitle: string
+      revokeConfirmDescription: string
+      revokeConfirmAction: string
+      oauthDisconnectConfirmTitle: string
+      oauthDisconnectConfirmDescription: string
+      oauthDisconnectConfirmAction: string
+      cancel: string
+    }
+    policy: {
+      title: string
+      description: string
+      identity: {
+        label: string
+        options: {
+          none: string
+          team_only: string
+          personal_only: string
+          selectable: string
+        }
+        hints: {
+          none: string
+          team_only: string
+          personal_only: string
+          selectable: string
+        }
+      }
+      connectionFields: {
+        title: string
+        hint: string
+        empty: string
+        add: string
+        name: string
+        namePlaceholder: string
+        label: string
+        labelPlaceholder: string
+        required: string
+        secret: string
+        remove: string
+        duplicate: string
+        invalidName: string
+        labelRequired: string
+        nameRequired: string
+      }
+      approval: {
+        defaultDecision: string
+        hint: string
+        allow: string
+        deny: string
+        requireApproval: string
+        callerGate: string
+        callerHint: string
+        legacyTitle: string
+        legacyDescription: string
+        legacyDefaultScope: string
+        legacyKinds: {
+          user: string
+          team_role: string
+        }
+        legacyReset: string
+        legacyResetHint: string
+      }
+      operations: {
+        title: string
+        toolsTitle: string
+        otherTitle: string
+        noDescription: string
+        notDiscovered: string
+        hint: string
+        empty: string
+        inherit: string
+        addOperation: string
+        operationPlaceholder: string
+        invalidOperation: string
+        duplicate: string
+      }
+    }
+    mcpBrowser: {
+      title: string
+      description: string
+      serverInfo: string
+      serverUnknown: string
+      refresh: string
+      loadFailed: string
+      loading: string
+      loadMore: string
+      previewLoading: string
+      apply: string
+      pendingApproval: string
+      binaryResource: string
+      unknownMime: string
+      close: string
+      applyTitle: string
+      applyHint: string
+      targetAgent: string
+      selectAgent: string
+      noAgents: string
+      cancel: string
+      openChat: string
+      draftTooLarge: string
+      draftUnavailable: string
+      unsupported: {
+        resources: string
+        templates: string
+        prompts: string
+      }
+      loadingList: string
+      untrustedPrompt: string
+      draftPromptNotice: string
+      draftResourceNotice: string
+      previewTruncated: string
+      truncated: {
+        list: string
+        maxItems: string
+        maxPages: string
+        cursorLoop: string
+        deadline: string
+        unknown: string
+      }
+      policyGuidance: string
+      tabs: {
+        resources: string
+        templates: string
+        prompts: string
+      }
+      resources: {
+        empty: string
+      }
+      templates: {
+        empty: string
+        expand: string
+        uri: string
+        read: string
+        unexpanded: string
+      }
+      prompts: {
+        empty: string
+        use: string
+        get: string
+      }
+      retryApproval: string
+      monitor: {
+        start: string
+        stop: string
+        connecting: string
+        open: string
+        noAccount: string
+        updates: string
+        closed: string
+        reconnect: string
+        pending: string
+        retry: string
+        failed: string
+      }
     }
   }
 }

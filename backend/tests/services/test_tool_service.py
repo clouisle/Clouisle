@@ -13,16 +13,30 @@ from app.services.tool import ToolExecutor
 
 
 class TestToolExecutor:
+    @staticmethod
+    def _builtin_boundary():
+        async def fake_execute(tool, operation, arguments, context, invoke, **kwargs):
+            return await invoke(arguments, None)
+
+        return (
+            patch(
+                "app.services.tool.get_builtin_definition",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+            patch(
+                "app.services.tool.execute_stored_tool",
+                new=AsyncMock(side_effect=fake_execute),
+            ),
+        )
+
     @pytest.mark.anyio
     async def test_execute_builtin_tool_by_name(self):
         executor = ToolExecutor()
 
+        definition_patch, boundary_patch = self._builtin_boundary()
         with (
-            patch.object(
-                executor,
-                "_get_tool_credentials",
-                new=AsyncMock(return_value={}),
-            ),
+            definition_patch,
+            boundary_patch,
             patch(
                 "app.services.tool.tool_registry.execute",
                 new=AsyncMock(return_value={"now": "2026-04-01 12:00:00"}),
@@ -31,7 +45,8 @@ class TestToolExecutor:
             result = await executor.execute_builtin_tool(
                 tool_name="get_current_time",
                 arguments={"timezone_name": "Asia/Shanghai"},
-                team_id=None,
+                team_id=UUID("00000000-0000-0000-0000-000000000003"),
+                context=MagicMock(),
             )
 
         assert result == {"now": "2026-04-01 12:00:00"}
@@ -47,12 +62,10 @@ class TestToolExecutor:
         conversation_id = UUID("00000000-0000-0000-0000-000000000001")
         workflow_run_id = UUID("00000000-0000-0000-0000-000000000002")
 
+        definition_patch, boundary_patch = self._builtin_boundary()
         with (
-            patch.object(
-                executor,
-                "_get_tool_credentials",
-                new=AsyncMock(return_value={}),
-            ),
+            definition_patch,
+            boundary_patch,
             patch(
                 "app.services.tool.tool_registry.execute",
                 new=AsyncMock(return_value={"ok": True}),
@@ -61,6 +74,8 @@ class TestToolExecutor:
             result = await executor.execute_builtin_tool(
                 tool_name="generate_image",
                 arguments={"prompt": "a cat"},
+                team_id=UUID("00000000-0000-0000-0000-000000000003"),
+                context=MagicMock(),
                 conversation_id=conversation_id,
                 workflow_run_id=workflow_run_id,
             )
@@ -74,22 +89,40 @@ class TestToolExecutor:
             workflow_run_id=workflow_run_id,
         )
 
+    @staticmethod
+    def _stored_boundary():
+        async def fake_execute(tool, operation, arguments, context, invoke):
+            return await invoke(arguments, None)
+
+        return patch(
+            "app.services.tool.execute_stored_tool",
+            new=AsyncMock(side_effect=fake_execute),
+        )
+
     @pytest.mark.anyio
     async def test_execute_dispatches_custom_tools_with_model_enum(self):
         executor = ToolExecutor()
         tool = MagicMock()
         tool.type = ToolType.CUSTOM
         tool.team_id = "team-1"
+        tool.http_config = {}
 
-        with patch.object(
-            executor,
-            "_execute_custom_tool",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as mock_execute_custom:
-            result = await executor.execute(tool=tool, arguments={"x": 1})
+        with (
+            self._stored_boundary(),
+            patch.object(
+                executor,
+                "_execute_custom_tool",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as mock_execute_custom,
+        ):
+            result = await executor.execute(
+                tool=tool, arguments={"x": 1}, context=MagicMock()
+            )
 
         assert result == {"ok": True}
-        mock_execute_custom.assert_awaited_once_with(tool=tool, arguments={"x": 1})
+        mock_execute_custom.assert_awaited_once()
+        assert mock_execute_custom.await_args.args[1] == {"x": 1}
+        assert mock_execute_custom.await_args.args[0].credentials == {}
 
     @pytest.mark.anyio
     async def test_execute_dispatches_mcp_tools_with_plain_string(self):
@@ -97,16 +130,28 @@ class TestToolExecutor:
         tool = MagicMock()
         tool.type = "mcp"
         tool.team_id = None
+        tool.mcp_config = {}
 
-        with patch.object(
-            executor,
-            "_execute_mcp_tool",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as mock_execute_mcp:
-            result = await executor.execute(tool=tool, arguments={"x": 1})
+        with (
+            self._stored_boundary(),
+            patch(
+                "app.services.tool.execute_mcp_tool",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(to_dict=lambda: {"ok": True})
+                ),
+            ) as mock_execute_mcp,
+        ):
+            result = await executor.execute(
+                tool=tool,
+                arguments={"x": 1},
+                context=MagicMock(),
+                operation="op",
+            )
 
         assert result == {"ok": True}
-        mock_execute_mcp.assert_awaited_once_with(tool=tool, arguments={"x": 1})
+        args = mock_execute_mcp.await_args.args
+        assert args[1] == "op"
+        assert args[2] == {"x": 1}
 
     @pytest.mark.anyio
     async def test_execute_custom_http_tool_uses_shared_executor_signature(self):
@@ -176,10 +221,10 @@ class TestToolExecutor:
     async def test_builtin_execution_returns_safe_error(self):
         executor = ToolExecutor()
 
+        definition_patch, boundary_patch = self._builtin_boundary()
         with (
-            patch.object(
-                executor, "_get_tool_credentials", new=AsyncMock(return_value={})
-            ),
+            definition_patch,
+            boundary_patch,
             patch(
                 "app.services.tool.tool_registry.execute",
                 new=AsyncMock(side_effect=RuntimeError("provider failed")),
@@ -189,7 +234,12 @@ class TestToolExecutor:
                 return_value="Tool unavailable",
             ),
         ):
-            result = await executor.execute_builtin_tool("weather", {})
+            result = await executor.execute_builtin_tool(
+                "weather",
+                {},
+                team_id=UUID("00000000-0000-0000-0000-000000000003"),
+                context=MagicMock(),
+            )
 
         assert result == {"success": False, "error": "Tool unavailable"}
 
@@ -206,83 +256,6 @@ class TestToolExecutor:
         tool.custom_type = "unsupported"
         with pytest.raises(ValueError):
             await executor._execute_custom_tool(tool, {})
-
-    @pytest.mark.anyio
-    async def test_custom_database_tool_executes_and_validates(self):
-        executor = ToolExecutor()
-        tool = MagicMock()
-        tool.custom_type = CustomToolType.DATABASE
-        tool.database_config = None
-        with pytest.raises(ValueError):
-            await executor._execute_custom_tool(tool, {})
-
-        tool.database_config = {
-            "db_type": "postgresql",
-            "host": "127.0.0.1",
-            "timeout": 10.0,
-        }
-        with patch(
-            "app.llm.tools.builtin.db_executor.execute_database_tool",
-            new=AsyncMock(return_value={"success": True, "result": [{"id": 1}]}),
-        ) as mock_db_exec:
-            result = await executor._execute_custom_tool(
-                tool, {"action": "query", "sql": "SELECT 1"}
-            )
-
-        assert result["success"] is True
-        assert result["result"] == [{"id": 1}]
-        mock_db_exec.assert_awaited_once_with(
-            tool=tool,
-            arguments={"action": "query", "sql": "SELECT 1"},
-            timeout=10.0,
-        )
-
-    @pytest.mark.anyio
-    async def test_mcp_tool_requires_configuration_and_executes(self):
-        executor = ToolExecutor()
-        tool = MagicMock()
-        tool.name = "calendar"
-        tool.mcp_config = None
-        with pytest.raises(ValueError):
-            await executor._execute_mcp_tool(tool, {})
-
-        tool.mcp_config = {"transport": "stdio", "command": "calendar"}
-        with patch(
-            "app.services.tool.execute_mcp_tool",
-            new=AsyncMock(return_value={"events": []}),
-        ) as mock_execute:
-            result = await executor._execute_mcp_tool(tool, {"date": "2026-04-01"})
-
-        assert result == {"events": []}
-        mock_execute.assert_awaited_once_with(
-            tool_name="calendar",
-            mcp_config=tool.mcp_config,
-            arguments={"date": "2026-04-01"},
-        )
-
-    @pytest.mark.anyio
-    async def test_credentials_prefer_team_config_then_fall_back_to_global(self):
-        executor = ToolExecutor()
-        team_query = MagicMock(first=AsyncMock(return_value=None))
-        global_query = MagicMock(
-            first=AsyncMock(return_value=SimpleNamespace(credentials={"key": "global"}))
-        )
-
-        with patch(
-            "app.services.tool.ToolConfig.filter",
-            side_effect=[team_query, global_query],
-        ) as mock_filter:
-            credentials = await executor._get_tool_credentials("weather", UUID(int=1))
-
-        assert credentials == {"key": "global"}
-        assert mock_filter.call_args_list[0].kwargs == {
-            "tool_name": "weather",
-            "team_id": UUID(int=1),
-        }
-        assert mock_filter.call_args_list[1].kwargs == {
-            "tool_name": "weather",
-            "team_id": None,
-        }
 
     @pytest.mark.anyio
     async def test_execute_rejects_unknown_tool_type(self):

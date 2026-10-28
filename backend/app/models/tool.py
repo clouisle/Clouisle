@@ -19,14 +19,19 @@ class ToolType(str, Enum):
 
     CUSTOM = "custom"  # Custom tool (HTTP API or Code)
     MCP = "mcp"  # MCP Server
+    BUILTIN = "builtin"  # Registry-defined builtin, materialized per team
 
 
 class CustomToolType(str, Enum):
-    """Custom tool execution type"""
+    """Custom tool execution type.
+
+    Database querying is a builtin capability (``postgresql_query``,
+    ``mysql_query``, ``redis_query``, ``mongodb_query``) whose identity lives in
+    a ``ToolConnection``; it is deliberately not a custom tool type.
+    """
 
     HTTP = "http"  # HTTP API call
     CODE = "code"  # Code execution
-    DATABASE = "database"  # Database query execution
 
 
 class ToolCategory(str, Enum):
@@ -94,7 +99,9 @@ class Tool(models.Model):
     )
 
     # Tool type
-    type = fields.CharEnumField(ToolType, description="Tool type (custom or mcp)")
+    type = fields.CharEnumField(
+        ToolType, max_length=20, description="Tool type (custom, mcp, or builtin)"
+    )
 
     # Custom tool configuration (type=custom)
     custom_type = fields.CharEnumField(
@@ -123,9 +130,13 @@ class Tool(models.Model):
     # }
     code_config: dict = fields.JSONField(default=dict, description="Code configuration")  # type: ignore[assignment]
 
-    # Database tool config (custom_type=database)
+    # Legacy column. Database tools are builtin tools whose identity lives in
+    # ToolConnection; the one-way startup migration
+    # (app.core.database_tool_migration) reads this column and clears it.
+    # It stays declared so existing deployments and rollbacks keep working;
+    # no API or execution path reads it after the cutover.
     database_config: dict = fields.JSONField(
-        default=dict, description="Database configuration"
+        default=dict, description="Legacy database tool configuration"
     )  # type: ignore[assignment]
     # MCP Server configuration (type=mcp)
     # {
@@ -155,6 +166,11 @@ class Tool(models.Model):
     # Credentials/secrets (stored encrypted in production)
     # {"api_key": "sk-xxx", "secret": "xxx"}
     credentials: dict = fields.JSONField(default=dict, description="Tool credentials")  # type: ignore[assignment]
+
+    identity_policy = fields.CharField(max_length=20, default="none")
+    connection_fields: list = fields.JSONField(default=list)  # type: ignore[assignment]
+    approval_policy: dict = fields.JSONField(default=dict)  # type: ignore[assignment]
+    definition_version = fields.IntField(default=1)
 
     # Status
     is_enabled = fields.BooleanField(

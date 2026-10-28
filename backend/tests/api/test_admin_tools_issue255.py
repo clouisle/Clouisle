@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.api.v1.admin.endpoints import tools
+from app.llm.tools.mcp_client import McpInvalidRequest
 from app.models.tool import ToolType as DBToolType
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolVisibility as DBToolVisibility
-from app.models.tool_config import ToolConfig
 from app.schemas.response import BusinessError, error
 from app.schemas.tool import (
     CodeExecuteRequest,
@@ -46,6 +46,9 @@ class Query:
         return self
 
     def order_by(self, *_args):
+        return self
+
+    def limit(self, *_args):
         return self
 
     def all(self):
@@ -137,24 +140,12 @@ def db_tool(**overrides):
         "mcp_config": {},
         "credentials": {},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": SimpleNamespace(username="owner"),
-        "created_at": now,
-        "updated_at": now,
-        "save": AsyncMock(),
-        "delete": AsyncMock(),
-    }
-    values.update(overrides)
-    return SimpleNamespace(**values)
-
-
-def config(**overrides):
-    now = datetime.now(UTC)
-    values = {
-        "id": uuid4(),
-        "tool_name": "search",
-        "team_id": uuid4(),
-        "credentials": {"token": "secret"},
         "created_at": now,
         "updated_at": now,
         "save": AsyncMock(),
@@ -243,6 +234,7 @@ async def test_list_and_filter_options_cover_db_metadata(monkeypatch, user):
         team=None,
     )
     monkeypatch.setattr(tools, "get_builtin_tools", lambda _locale: [])
+    monkeypatch.setattr(tools, "get_builtin_tools_for_team", AsyncMock(return_value=[]))
     monkeypatch.setattr(tools.Tool, "all", lambda: Query(items=[first, second]))
     monkeypatch.setattr(
         tools.ToolShare,
@@ -374,7 +366,6 @@ async def test_create_tool_success_and_duplicate(monkeypatch, user):
         custom_type="code",
         parameters=[{"name": "value", "type": "string"}],
         code_config={"language": "python", "code": "return 1"},
-        credentials={"token": "secret"},
     )
     monkeypatch.setattr(
         tools, "_get_team", AsyncMock(return_value=SimpleNamespace(id=team_id))
@@ -388,7 +379,6 @@ async def test_create_tool_success_and_duplicate(monkeypatch, user):
         custom_type=DBCustomToolType.CODE,
         http_config={},
         code_config={"language": "python", "code": "return 1"},
-        credentials={"token": "secret"},
         parameters=[{"name": "value", "type": "string", "required": False}],
     )
     create = AsyncMock(return_value=created)
@@ -398,6 +388,7 @@ async def test_create_tool_success_and_duplicate(monkeypatch, user):
 
     assert response_data(result).name == "runner"
     assert create.await_args.kwargs["created_by"] is user
+    assert create.await_args.kwargs["credentials"] == {}
     assert create.await_args.kwargs["parameters"][0]["name"] == "value"
 
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=created))
@@ -424,7 +415,7 @@ async def test_update_tool_persists_all_fields_and_rejects_duplicate(monkeypatch
         code_config={"language": "python", "code": "return 2"},
         database_config={"db_type": "postgresql", "host": "db"},
         mcp_config={"transport": "http", "url": "https://mcp.test"},
-        credentials={"key": "value"},
+        credentials={},
         is_enabled=False,
     )
 
@@ -433,6 +424,7 @@ async def test_update_tool_persists_all_fields_and_rejects_duplicate(monkeypatch
     assert response_data(result).name == "renamed"
     assert existing.custom_type == DBCustomToolType.CODE
     assert existing.is_enabled is False
+    assert existing.credentials == {}
     existing.save.assert_awaited_once()
 
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=db_tool()))
@@ -487,52 +479,45 @@ async def test_mcp_discovery_maps_results_and_safe_failure(monkeypatch, user):
     assert exc_info.value.msg_key == "mcp_connection_failed"
     assert exc_info.value.__cause__.args == ("offline",)
 
+    monkeypatch.setattr(
+        tools,
+        "list_mcp_tools",
+        AsyncMock(side_effect=McpInvalidRequest("bad url", reason="configuration")),
+    )
+    with pytest.raises(BusinessError) as invalid:
+        await tools.get_mcp_tools(request, user)
+    assert invalid.value.msg_key == "mcp_invalid_request"
+    assert invalid.value.status_code == 400
+
 
 @pytest.mark.asyncio
-async def test_builtin_execution_uses_team_then_global_credentials(monkeypatch, user):
+async def test_builtin_execution_routes_through_unified_boundary(monkeypatch, user):
     team_id = uuid4()
     execute = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: object())
-    monkeypatch.setattr(tools.tool_registry, "execute", execute)
-
-    queries = iter(
-        [
-            Query(first=config(credentials={})),
-            Query(first=config(team_id=None, credentials={"global": "key"})),
-        ]
+    monkeypatch.setattr(
+        tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: next(queries))
+
     result = await tools.test_tool(
         ToolExecuteRequest(name="search", arguments={"q": "x"}), team_id, user
     )
     assert response_data(result).success is True
-    assert execute.await_args.kwargs["credentials"] == {"global": "key"}
+    assert response_data(result).result == {"ok": True}
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["tool_name"] == "search"
+    assert call_kwargs["team_id"] == team_id
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.ADMIN_TEST
+    assert call_kwargs["context"].team_id == team_id
+    assert call_kwargs["context"].interactive is True
 
-    monkeypatch.setattr(
-        ToolConfig,
-        "filter",
-        lambda **_kwargs: Query(first=config(credentials={"team": "key"})),
-    )
-    await tools.test_tool(
-        ToolExecuteRequest(name="search", arguments={}), team_id, user
-    )
-    assert execute.await_args.kwargs["credentials"] == {"team": "key"}
-
-    monkeypatch.setattr(
-        tools.tool_registry,
-        "execute",
-        AsyncMock(side_effect=RuntimeError("secret failure")),
-    )
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query())
-    failed = response_data(
+    with pytest.raises(BusinessError) as exc_info:
         await tools.test_tool(ToolExecuteRequest(name="search"), None, user)
-    )
-    assert failed.success is False
-    assert failed.error
+    assert exc_info.value.msg_key == "team_id_required"
 
 
 @pytest.mark.asyncio
-async def test_custom_execution_not_found_and_mcp_paths(monkeypatch, user):
+async def test_custom_execution_not_found_mcp_paths_and_ambiguity(monkeypatch, user):
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
     with pytest.raises(BusinessError) as exc_info:
@@ -540,47 +525,70 @@ async def test_custom_execution_not_found_and_mcp_paths(monkeypatch, user):
     assert exc_info.value.msg_key == "tool_not_found"
 
     custom = db_tool(
-        type=DBToolType.MCP, custom_type=None, mcp_config={"transport": "stdio"}
+        name="server",
+        type=DBToolType.MCP,
+        custom_type=None,
+        mcp_config={"transport": "stdio"},
     )
-    query = Query(first=custom)
-    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: query)
-    execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, result="ok", error=None)
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(items=[custom]))
+    execute = AsyncMock(return_value={"success": True, "result": "ok", "error": None})
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.tools.ToolExecutor",
+        lambda: SimpleNamespace(execute=execute),
     )
-    monkeypatch.setattr(tools, "execute_mcp_tool", execute)
     request = ToolExecuteRequest(
         name="server", arguments={"__tool_name__": "lookup", "q": "x"}
     )
     result = response_data(await tools.test_tool(request, custom.team_id, user))
     assert result.result == "ok"
-    assert execute.await_args.kwargs["tool_name"] == "lookup"
-    assert execute.await_args.kwargs["arguments"] == {"q": "x"}
-    assert query.filters == [{"team_id": custom.team_id}]
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom
+    assert args_arg == {"q": "x"}
+    assert execute.await_args.kwargs["operation"] == "lookup"
+    assert request.arguments == {"__tool_name__": "lookup", "q": "x"}
 
-    monkeypatch.setattr(
-        tools, "execute_mcp_tool", AsyncMock(side_effect=RuntimeError("offline"))
+    other = db_tool(
+        name="server",
+        type=DBToolType.MCP,
+        custom_type=None,
+        mcp_config={"transport": "stdio"},
     )
-    failed = response_data(
+    monkeypatch.setattr(
+        tools.Tool, "filter", lambda **_kwargs: Query(items=[custom, other])
+    )
+    with pytest.raises(BusinessError) as ambiguous:
         await tools.test_tool(ToolExecuteRequest(name="server"), None, user)
+    assert ambiguous.value.status_code == 400
+
+    execute.side_effect = RuntimeError("offline")
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(items=[custom]))
+    failed = response_data(
+        await tools.test_tool(ToolExecuteRequest(name="server"), custom.team_id, user)
     )
     assert failed.success is False
     assert failed.error
 
 
 @pytest.mark.asyncio
-async def test_http_code_and_unsupported_custom_execution(monkeypatch, user):
+async def test_http_and_code_results_are_shaped(monkeypatch, user):
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
     current = db_tool()
-    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=current))
-    http = AsyncMock(return_value={"success": True, "result": {"ok": True}})
-    monkeypatch.setattr(tools, "execute_http_tool", http)
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(items=[current]))
+    execute = AsyncMock(return_value={"success": True, "result": {"ok": True}})
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.tools.ToolExecutor",
+        lambda: SimpleNamespace(execute=execute),
+    )
     result = response_data(
         await tools.test_tool(
             ToolExecuteRequest(name=current.name, arguments={"x": 1}), None, user
         )
     )
     assert result.result == {"ok": True}
-    http.assert_awaited_once()
+    assert (
+        execute.await_args.kwargs["context"].entrypoint
+        is tools.ExecutionEntrypoint.ADMIN_TEST
+    )
 
     current.custom_type = DBCustomToolType.CODE
     current.http_config = {}
@@ -595,55 +603,26 @@ async def test_http_code_and_unsupported_custom_execution(monkeypatch, user):
         "code": "return 1",
         "limits": {"timeout_seconds": 4},
     }
-    job = SimpleNamespace(limits=SimpleNamespace(timeout_seconds=4.0))
-    monkeypatch.setattr(tools, "compile_code_config_job", Mock(return_value=job))
-    monkeypatch.setattr(
-        tools.sandbox_gateway,
-        "submit_and_wait",
-        AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                result=1,
-                error=None,
-                stdout="done",
-                artifacts=[],
-                metadata=SandboxExecutionMetadata(duration_ms=12, total_ms=12),
-            )
-        ),
-    )
+    execute.return_value = {
+        "success": True,
+        "result": 1,
+        "error": None,
+        "stdout": "done",
+        "artifacts": [],
+    }
     code = response_data(
         await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
     )
     assert code.result == 1
-    assert code.duration_ms == 12
+    assert code.logs == "done"
+    assert code.duration_ms is not None
 
     current.custom_type = None
+    execute.side_effect = ValueError("unsupported custom tool type")
     unsupported = response_data(
         await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
     )
     assert unsupported.success is False
-
-    current.custom_type = DBCustomToolType.DATABASE
-    current.database_config = {"db_type": "postgresql", "host": "127.0.0.1"}
-    monkeypatch.setattr(
-        "app.llm.tools.builtin.db_executor.execute_database_tool",
-        AsyncMock(return_value={"success": True, "ping": 1}),
-    )
-    db_test_resp = response_data(
-        await tools.test_tool(
-            ToolExecuteRequest(name=current.name, arguments={"action": "query"}),
-            None,
-            user,
-        )
-    )
-    assert db_test_resp.success is True
-    assert db_test_resp.result == {"success": True, "ping": 1}
-
-    current.database_config = {}
-    missing_database = response_data(
-        await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
-    )
-    assert missing_database.success is False
 
 
 @pytest.mark.asyncio
@@ -678,73 +657,6 @@ async def test_direct_code_rejects_language_and_uses_sandbox(monkeypatch, user):
     assert result.logs == "log"
     assert result.duration_ms == 7
     submit.assert_awaited_once_with(job, timeout_seconds=8.0)
-
-
-@pytest.mark.asyncio
-async def test_tool_config_list_get_and_auto_create(monkeypatch, user):
-    team_id = uuid4()
-    existing = config(team_id=team_id)
-    monkeypatch.setattr(
-        ToolConfig, "filter", lambda **_kwargs: Query(items=[existing], first=existing)
-    )
-    listed = response_data(await tools.list_tool_configs(team_id, user))
-    assert listed[0]["tool_name"] == "search"
-    found = response_data(await tools.get_tool_config("search", team_id, user))
-    assert found["id"] == existing.id
-
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query())
-    monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: object())
-    create = AsyncMock(return_value=config(team_id=team_id, credentials={}))
-    monkeypatch.setattr(ToolConfig, "create", create)
-    created = response_data(await tools.get_tool_config("search", team_id, user))
-    assert created["team_id"] == team_id
-    create.assert_awaited_once_with(tool_name="search", team_id=team_id, credentials={})
-
-    monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    with pytest.raises(BusinessError) as exc_info:
-        await tools.get_tool_config("missing", team_id, user)
-    assert exc_info.value.msg_key == "tool_config_not_found"
-
-
-@pytest.mark.asyncio
-async def test_tool_config_create_update_delete_and_failures(monkeypatch, user):
-    team_id = uuid4()
-    existing = config(team_id=team_id)
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query())
-    create = AsyncMock(return_value=existing)
-    monkeypatch.setattr(ToolConfig, "create", create)
-    created = response_data(
-        await tools.create_tool_config(
-            {"tool_name": "search", "credentials": {"token": "secret"}}, team_id, user
-        )
-    )
-    assert created["tool_name"] == "search"
-
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query(first=existing))
-    with pytest.raises(BusinessError) as exc_info:
-        await tools.create_tool_config(
-            {"tool_name": "search", "credentials": {}}, team_id, user
-        )
-    assert exc_info.value.msg_key == "tool_config_already_exists"
-
-    updated = response_data(
-        await tools.update_tool_config(
-            "search", {"credentials": {"new": "key"}}, team_id, user
-        )
-    )
-    assert updated["credentials"] == {"new": "key"}
-    existing.save.assert_awaited_once()
-    await tools.delete_tool_config("search", team_id, user)
-    existing.delete.assert_awaited_once()
-
-    monkeypatch.setattr(ToolConfig, "filter", lambda **_kwargs: Query())
-    for operation in (
-        tools.update_tool_config("missing", {"credentials": {}}, team_id, user),
-        tools.delete_tool_config("missing", team_id, user),
-    ):
-        with pytest.raises(BusinessError) as exc_info:
-            await operation
-        assert exc_info.value.msg_key == "tool_config_not_found"
 
 
 @pytest.mark.asyncio
@@ -823,3 +735,26 @@ async def test_share_validation_failures_do_not_persist(monkeypatch, user):
         await tools.share_tool(existing.id, ToolShareInput(team_id=other_team), user)
     assert exc_info.value.msg_key == "private_tool_cannot_be_shared"
     create.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_admin_tool_list_never_duplicates_a_materialized_builtin(
+    monkeypatch, user
+):
+    """The registry entry and its materialized row must list once, not twice."""
+    builtin = db_tool(
+        name="get_current_time",
+        display_name="get_current_time",
+        type=DBToolType.BUILTIN,
+        custom_type=None,
+    )
+    registry_entry = tools.db_tool_to_out(builtin, None)
+    monkeypatch.setattr(
+        tools, "get_builtin_tools_for_team", AsyncMock(return_value=[registry_entry])
+    )
+    monkeypatch.setattr(tools.Tool, "all", lambda: Query(items=[builtin]))
+    monkeypatch.setattr(tools.ToolShare, "filter", lambda **_kwargs: Query(count=0))
+
+    listed = await tools._build_admin_tools(user, uuid4())
+
+    assert [item.id for item in listed] == [builtin.id]

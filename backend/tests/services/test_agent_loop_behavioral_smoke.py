@@ -34,6 +34,7 @@ from app.llm.types import (
     ToolCall,
     Usage,
 )
+from app.llm.types import ToolDefinition, FunctionDefinition
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
 
@@ -356,8 +357,9 @@ async def test_behavioral_smoke_cooperative_stop_partial(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
-    """A streamed call is visible with complete inputs before its result."""
+@pytest.mark.parametrize("tool_name", ["write", "mcp_tasks_create_task"])
+async def test_stream_emits_tool_call_before_tool_execution(monkeypatch, tool_name):
+    """Only complete tool identities are visible before their execution."""
     from app.services import agent_round
 
     monkeypatch.setattr(
@@ -373,6 +375,15 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         nonlocal provider_calls
         provider_calls += 1
         if provider_calls == 1:
+            if tool_name.startswith("mcp_"):
+                for fragment in ("m", "mc", "mcp_", "mcp_tasks_", "mcp_tasks_create_"):
+                    yield ChatStreamChunk(
+                        id="response-1",
+                        model="m",
+                        delta=ChatStreamDelta(
+                            tool_call_starts=[_tool(fragment, call_id)]
+                        ),
+                    )
             yield ChatStreamChunk(
                 id="response-1",
                 model="m",
@@ -380,7 +391,7 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
                     tool_call_starts=[
                         ToolCall(
                             id=call_id,
-                            function=FunctionCall(name="write", arguments="{}"),
+                            function=FunctionCall(name=tool_name, arguments="{}"),
                         )
                     ]
                 ),
@@ -393,7 +404,7 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
                         ToolCall(
                             id=call_id,
                             function=FunctionCall(
-                                name="write",
+                                name=tool_name,
                                 arguments='{"path":"notes.txt","content":"hello"}',
                             ),
                         )
@@ -426,10 +437,11 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         events.append((name, event_payload))
         return f"event: {name}\n"
 
-    async def tool_runner(tool_name, arguments, **_kwargs):
-        assert tool_name == "write"
+    async def tool_runner(name, arguments, **_kwargs):
+        assert name == tool_name
         assert arguments == {"path": "notes.txt", "content": "hello"}
         assert events[0][0] == "tool_call"
+        assert events[0][1]["tool_name"] == tool_name
         assert events[0][1]["arguments"] == {}
         assert events[1][0] == "tool_call"
         assert events[1][1]["arguments"] == arguments
@@ -460,7 +472,8 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         team_chat_stream=provider_stream,
         build_turn=build_turn,
         execute_tool_call=tool_runner,
-        tool_display_names={"write": "Write"},
+        tools=[{"type": "function", "function": {"name": tool_name}}],
+        tool_display_names={tool_name: "Write"},
         formatter=formatter,
     )
 
@@ -477,6 +490,190 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
     ]
     assert events[3][1]["is_error"] is False
     assert loop.result.full_content == "done"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("description", ["Delete the selected event", "", None])
+async def test_approval_pause_captures_only_matching_tool_description(
+    monkeypatch, description
+):
+    from app.services import agent_round
+
+    monkeypatch.setattr(
+        agent_round, "persist_assistant_step", AsyncMock(return_value=2)
+    )
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=3))
+    response = _resp(tool_calls=[_tool("mcp_calendar_delete", "call-1")])
+    pause = {}
+
+    async def team_chat(**_kwargs):
+        return response
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="delete")]
+            )
+        )
+
+    async def tool_runner(tool_name, _arguments, **_kwargs):
+        return ToolInteractionRequest(
+            tool_name=tool_name,
+            arguments={"interaction_kind": "tool_approval", "execution_id": "exec-1"},
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="delete",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        round_id=uuid4(),
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "other", "description": "Wrong operation"},
+            },
+            ToolDefinition(
+                function=FunctionDefinition(
+                    name="mcp_calendar_delete", description=description
+                )
+            ),
+        ],
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=lambda name, payload: name,
+    )
+    loop = AgentLoop(context)
+    _ = [chunk async for chunk in loop.run()]
+    assert loop.result.waiting_for_user
+    assert pause["arguments"].get("tool_description") == (description or None)
+
+
+@pytest.mark.asyncio
+async def test_approval_pause_persists_original_tool_arguments(monkeypatch):
+    """The paused call shows and stores the model's arguments, not the marker."""
+
+    from app.services import agent_round
+
+    persist_step = AsyncMock(return_value=2)
+    monkeypatch.setattr(agent_round, "persist_assistant_step", persist_step)
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=3))
+
+    original = {"order_id": "A-100", "customer": {"id": "c-9"}}
+    pause: dict = {}
+    events: list[tuple[str, dict]] = []
+
+    async def team_chat(**_kwargs):
+        return _resp(
+            tool_calls=[
+                ToolCall(
+                    id="call-cancel",
+                    function=FunctionCall(
+                        name="mcp_orders_cancel",
+                        arguments=json.dumps(original),
+                    ),
+                )
+            ]
+        )
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="cancel")]
+            )
+        )
+
+    async def tool_runner(tool_name, arguments, **_kwargs):
+        # Tools may normalize their input in place; the paused call must not
+        # inherit that mutation.
+        arguments["search_engine"] = "auto"
+        return ToolInteractionRequest(
+            tool_name=tool_name,
+            arguments={
+                "interaction_kind": "tool_approval",
+                "execution_id": "exec-cancel",
+            },
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    def formatter(name: str, payload: dict) -> str:
+        raw = payload.get("sse")
+        if isinstance(raw, str):
+            data = next(
+                line[5:].strip()
+                for line in raw.splitlines()
+                if line.startswith("data:")
+            )
+            events.append((name, json.loads(data)))
+        else:
+            events.append((name, payload))
+        return name
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="cancel",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        round_id=uuid4(),
+        tools=[
+            ToolDefinition(
+                function=FunctionDefinition(
+                    name="mcp_orders_cancel", description="Cancel an order"
+                )
+            )
+        ],
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=formatter,
+    )
+    loop = AgentLoop(context)
+    output = [chunk async for chunk in loop.run()]
+
+    # One complete-input event before execution, one after the pause; both
+    # carry the original call. The interaction marker is never the arguments.
+    assert output == ["tool_call", "tool_call"]
+    assert loop.result.waiting_for_user is True
+    # The durable marker still carries the execution reference.
+    assert pause["arguments"] == {
+        "interaction_kind": "tool_approval",
+        "execution_id": "exec-cancel",
+        "tool_description": "Cancel an order",
+    }
+    # Display/history/persistence keep exactly what the model supplied.
+    assert persist_step.await_args.kwargs["tool_calls"][0]["arguments"] == original
+    assert [name for name, _payload in events] == ["tool_call", "tool_call"]
+    for _name, payload in events:
+        assert payload == {
+            "tool_call_id": "call-cancel",
+            "tool_name": "mcp_orders_cancel",
+            "tool_display_name": "mcp_orders_cancel",
+            "arguments": original,
+        }
 
 
 @pytest.mark.asyncio

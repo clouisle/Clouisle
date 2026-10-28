@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T16:46:30.981Z
+// GENERATED — 2026-10-27T04:04:22.647Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -232,8 +232,9 @@ export type PlatformMessages = {
       }
       noSearchResults: string
       requiresConfig: string
-      webSearchManaged: string
-      webSearchConfigure: string
+      configured: string
+      configureConnections: string
+      manageConnections: string
       parameters: string
       searchEngine: string
       noParameters: string
@@ -259,6 +260,9 @@ export type PlatformMessages = {
       visibilityTeam: string
       confirmDelete: string
       deleteToolConfirm: string
+      mcpBrowser: {
+        open: string
+      }
       filters: {
         all: string
         builtin: string
@@ -318,6 +322,12 @@ export type PlatformMessages = {
         title: string
         description: string
       }
+      connectionDialog: {
+        description: string
+        notRequired: string
+        teamRequired: string
+        definitionUnavailable: string
+      }
       httpDialog: {
         createTitle: string
         editTitle: string
@@ -360,29 +370,6 @@ export type PlatformMessages = {
         queryValuePlaceholder: string
         bodyTemplatePlaceholder: string
       }
-      databaseDialog: {
-        connectionFailed: string
-        connectionSettings: string
-        connectionSuccess: string
-        createTitle: string
-        databaseName: string
-        dbType: string
-        description: string
-        descriptionPlaceholder: string
-        editTitle: string
-        host: string
-        hostRequired: string
-        maxLimit: string
-        paramsMode: string
-        password: string
-        port: string
-        testConnection: string
-        timeout: string
-        url: string
-        urlMode: string
-        urlRequired: string
-        username: string
-      }
       mcpDialog: {
         createTitle: string
         editTitle: string
@@ -420,15 +407,24 @@ export type PlatformMessages = {
         sseUrlPlaceholder: string
         headerNamePlaceholder: string
         httpUrlPlaceholder: string
+        toolsPendingApproval: string
       }
       testPanel: {
         arrayPlaceholder: string
         objectPlaceholder: string
+        pendingApproval: string
+        executionId: string
+        resume: string
+        openApprovals: string
+        resumeFailed: string
+        loadFailed: string
+        selectConnectionBeforeLoad: string
       }
       codeEditor: {
         newTitle: string
         subtitle: string
         run: string
+        connectionRunHint: string
         settings: string
         output: string
         basicInfo: string
@@ -497,6 +493,7 @@ export type PlatformMessages = {
         saveFailed: string
         nameRequired: string
         unknownToolType: string
+        loadToolDetailFailed: string
         cannotDeleteBuiltin: string
         cannotShareBuiltin: string
         noTeamSelected: string
@@ -513,8 +510,6 @@ export type PlatformMessages = {
         httpDesc: string
         code: string
         codeDesc: string
-        database: string
-        databaseDesc: string
         mcp: string
         mcpDesc: string
       }

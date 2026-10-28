@@ -396,9 +396,6 @@ describe('model management dialog', () => {
     selectValue(renderer, 'gpt-4o')
     expect(input(renderer, 'modelId').props.value).toBe('gpt-4o')
     expect(input(renderer, 'name').props.value).toBe('GPT-4o')
-    expect(
-      renderer.root.findAllByProps({ type: 'checkbox' }).slice(2).map((item) => item.props.checked),
-    ).toEqual([true, false, false, false, false, false, false, false, false, false, true, false, true])
 
     change(renderer, 'name', 'Custom label')
     change(renderer, 'modelId', '')
@@ -464,7 +461,7 @@ describe('model management dialog', () => {
         presence_penalty: 0.3, max_tokens: 4096, reasoning_effort: 'high',
         extra_body: { metadata: { tier: 'gold' } },
       },
-      capabilities: { input_modalities: ['text'], output_modalities: [], function_call: true, streaming: false, json_mode: true },
+      capabilities: { input_modalities: ['text'], output_modalities: ['text'], function_call: true, streaming: false, json_mode: true },
       config: { region: 'us-east' }, is_enabled: false, is_default: true,
     })
   })

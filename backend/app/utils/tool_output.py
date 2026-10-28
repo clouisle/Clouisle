@@ -178,6 +178,22 @@ def get_tool_execution_payloads(
     result: Any, tool_name: str | None = None
 ) -> tuple[str, str]:
     """Return the display JSON and the model-facing text for one tool result."""
+    from app.core.i18n import t
+    from app.llm.tools.interaction import ToolInteractionRequest
+
+    if isinstance(result, ToolInteractionRequest):
+        # A pause request is never a tool result: stringifying it would feed the
+        # model a fake success. Callers must park or fail closed explicitly.
+        display = json.dumps(
+            {
+                "error": t("tool_approval_unavailable"),
+                "tool_name": result.tool_name,
+                "success": False,
+            },
+            ensure_ascii=False,
+        )
+        return display, display
+
     # ``ToolExecutionResult`` and the native ``AssetViewResult`` marker both
     # expose these properties. Duck typing keeps the native marker protocol
     # out of this low-level module without changing its behaviour.

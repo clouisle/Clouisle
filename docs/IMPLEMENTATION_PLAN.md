@@ -1,6 +1,124 @@
 # Implementation Plan
 
 ## Active
+
+- **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
+  - [x] 1. Add team-level view of individual tool approval settings
+  - [x] 2. Audit approval decisions and tool approval configuration changes
+  - [x] 3. Verify authorization, API-key approval and workflow boundaries
+  - [x] 4. Update user guidance and changelogs
+
+- **tool-only-api-key-approval** — Completed. See `docs/plan/tool-only-api-key-approval.md`.
+  - [x] 1. Remove site, team and entrypoint policy layers
+  - [x] 2. Support API-key-bound Agent approval and resume
+  - [x] 3. Exclude workflows from tool approval
+  - [x] 4. Update API page, guides and security regression verification
+
+
+- **pr480-browser-qa-fixes** — Completed. See `docs/plan/pr480-browser-qa-fixes.md`.
+  - [x] 1. Fix API approval translation
+  - [x] 2. Correct MCP errors, browsing and policy enforcement
+  - [x] 3. Restore approval policy administration
+  - [x] 4. Fix connection management and destructive-action safeguards
+  - [x] 5. Verify browser workflows, approval and regression tests
+
+- **agent-api-approval-parameters** — Completed. See `docs/plan/agent-api-approval-parameters.md`.
+  - [x] 1. Document Agent API approval interaction and authentication
+  - [x] 2. Correct the approval preview of tool call arguments
+  - [x] 3. Verify behavior, security and documentation
+
+
+- **pr480-review-fixes** — In progress. See `docs/plan/pr480-review-fixes.md`.
+  - [x] 1. Fix chat stream route and policy-layer enforcement
+  - [x] 2. Fix migrations, connection writes, OAuth and MCP budgets
+  - [x] 3. Fix interaction, package import, resume and stop semantics
+  - [x] 4. Fix frontend masking, picker, bounds and reconnect races
+  - [ ] 5. Decide OAuth callback binding and non-interactive gate contract
+
+- **im-chat-run-discovery** — Completed. See `docs/plan/im-chat-run-discovery.md`.
+  - [x] 1. Discover owner-scoped active runs
+  - [x] 2. Recover chat state safely
+  - [x] 3. Verify and document cross-surface recovery
+
+- **im-agent-tool-approval** — Completed. See `docs/plan/im-agent-tool-approval.md`.
+  - [x] 1. Define trusted channel origins and shared approval boundary
+  - [x] 2. Implement Feishu and WeChat confirmation delivery and decisions
+  - [x] 3. Verify authorization, replay, recovery and ask-user regressions
+  - [x] 4. Update channel and deployment documentation
+
+- **multi-tool-approval-resume** — Completed. See `docs/plan/multi-tool-approval-resume.md`.
+  - [x] 1. Preserve and resume unstarted calls across approvals
+  - [x] 2. Verify separate decisions, ordering, and interruption safety
+  - [x] 3. Update operator and user guidance
+
+- **approval-tool-description** — Completed. See `docs/plan/approval-tool-description.md`.
+  - [x] 1. Preserve the called tool's description with the approval pause
+  - [x] 2. Display it in the chat approval panel
+  - [x] 3. Verify waiting, restoration, and missing-description behavior
+
+- **caller-only-tool-confirmation** — Completed. See `docs/plan/caller-only-tool-confirmation.md`.
+  - [x] 1. Define safe legacy-data cutover
+  - [x] 2. Restrict execution and API contracts to caller confirmation
+  - [x] 3. Remove external approver configuration and obsolete surfaces
+  - [x] 4. Verify migration, interactive and non-interactive behavior
+
+- **tool-runtime-coverage** — Completed. See `docs/plan/tool-runtime-coverage.md`.
+  - [x] 1. Investigate and resolve pre-push failures
+  - [x] 2. Cover tool runtime authorization, connections and approvals
+  - [x] 3. Run coverage gates and push
+
+- **user-tool-connections-management** — Completed. See `docs/plan/user-tool-connections-management.md`.
+  - [x] 1. Design document & secondary task registration
+  - [x] 2. User tool connections component & quick creation
+  - [x] 3. SettingsDialog integration & i18n
+  - [x] 4. Component tests & regression verification
+
+- **agent-tool-access-guidance** — Completed. See `docs/plan/agent-tool-access-guidance.md`.
+  - [x] 1. Contextualize tool permission and connection failures
+  - [x] 2. Verify chat error delivery and localization
+
+- **automatic-tool-connections** — Completed. See `docs/plan/automatic-tool-connections.md`.
+  - [x] 1. Runtime current-user selection and identity-bound execution
+  - [x] 2. Automatic/fixed authoring controls and localized guidance
+  - [x] 3. Integration verification and documentation
+
+- **tool-connections-completion** — Completed. See `docs/plan/tool-connections-completion.md`.
+  - [x] 1. HTTP URL templates and variable completion
+  - [x] 2. Secure code-tool connection credentials
+  - [x] 3. Builtin database cutover and saved-resource migration
+  - [x] 4. Integration verification and documentation
+
+- **remove-tool-connection-delegation** — Completed. See `docs/plan/remove-tool-connection-delegation.md`.
+  - [x] 1. Backend grant removal and persisted-binding execution authorization
+  - [x] 2. Frontend delegation cutover and localized hints
+  - [x] 3. Data migration, verification and documentation alignment
+
+- **mcp-chat-approval-display** — Completed. See `docs/plan/mcp-chat-approval-display.md`.
+  - [x] 1. Restore explicit MCP child approvals in Agent chat
+  - [x] 2. Stabilize streamed MCP thought presentation
+  - [x] 3. Verify dispatch, resume and presentation regressions
+
+- **in-chat-tool-approvals** — Completed. See `docs/plan/in-chat-tool-approvals.md`.
+  - [x] 1. Backend direct execution decision endpoint and notification deep-linking
+  - [x] 2. Inline Approve/Reject actions in PendingToolApprovalCard and auto-resume
+  - [x] 3. Remove standalone approvals center page and obsolete navigation links
+  - [x] 4. Automated verification and test suite alignment
+
+- **explicit-agent-tool-approvals** — Completed. See `docs/plan/explicit-agent-tool-approvals.md`.
+  - [x] 1. Agent ToolConfig require_approval schema and execution boundary bypass for workflows
+  - [x] 2. Eliminate heuristic concurrency/read-only approval deduction on builtin tools
+  - [x] 3. Frontend Agent orchestration per-tool confirmation switch and localization
+  - [x] 4. Automated verification and regression test alignment
+
+- **tool-connections-approvals-mcp** — Completed. See `docs/plan/tool-connections-approvals-mcp.md`.
+  - [x] 0. Connection identity, unified approval and MCP protocol design
+  - [x] 1. Connection models, encrypted secrets and migration
+  - [x] 2. Shared identity resolution and execution entrypoint cutover
+  - [x] 3. Unified approvals and durable execution recovery
+  - [x] 4. MCP protocol, OAuth and managed sessions
+  - [x] 5. Bidirectional interactions and unified UI
+  - [x] 6. End-to-end verification and operator documentation
+
 - **network-allowlist-switches** — Completed. See `docs/plan/network-allowlist-switches.md`.
   - [x] 1. Site settings, model endpoints and SSRF
   - [x] 2. Sandbox policy and isolation

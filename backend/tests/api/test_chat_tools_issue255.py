@@ -8,6 +8,24 @@ import pytest
 from app.api.v1.endpoints import chat_tools
 
 
+def _patch_policy_boundary(monkeypatch, user):
+    """Run the real invoke resolver but skip the persistence boundary."""
+    from app.services import builtin_tools, tool_execution
+
+    async def execute(definition, operation, arguments, context, invoke, **kwargs):
+        return await invoke(arguments, None)
+
+    monkeypatch.setattr(tool_execution, "execute_stored_tool", execute)
+    monkeypatch.setattr(
+        builtin_tools,
+        "get_builtin_definition",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4(), name="definition")),
+    )
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
+
+
 class Query:
     def __init__(self, result=None):
         self.result = result
@@ -25,10 +43,14 @@ async def test_memory_tools_require_user_and_dispatch(monkeypatch):
 
     search = AsyncMock(return_value={"items": ["match"]})
     monkeypatch.setattr(MemoryService, "handle_search_memory", search)
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+    _patch_policy_boundary(monkeypatch, user)
     result = await chat_tools.execute_tool_call(
         "search_memory",
         {"query": "topic", "top_k": 3},
-        user=SimpleNamespace(id=uuid4()),
+        user=user,
+        agent=agent,
     )
 
     assert json.loads(result) == {"items": ["match"]}
@@ -37,57 +59,50 @@ async def test_memory_tools_require_user_and_dispatch(monkeypatch):
 
 @pytest.mark.anyio
 async def test_mcp_tools_validate_name_configuration_and_result(monkeypatch):
-    invalid = await chat_tools.execute_tool_call("mcp_invalid", {})
-    assert "error" in json.loads(invalid)
-
-    from app.models.tool import Tool
-    from app.llm.tools import mcp_client
-
-    monkeypatch.setattr(Tool, "filter", lambda **kwargs: Query(None))
-    missing = await chat_tools.execute_tool_call("mcp_server_action", {})
+    missing = await chat_tools.execute_tool_call("mcp_invalid", {})
     assert "error" in json.loads(missing)
 
+    delegated = AsyncMock(return_value={"result": {"ok": True}})
     monkeypatch.setattr(
-        Tool,
-        "filter",
-        lambda **kwargs: Query(SimpleNamespace(mcp_config={"command": "test"})),
+        "app.services.agent_tool_execution.execute_agent_stored_tool", delegated
     )
-    execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, result={"ok": True}, error=None)
-    )
-    monkeypatch.setattr(mcp_client, "execute_mcp_tool", execute)
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+    user = SimpleNamespace(id=uuid4())
     result = await chat_tools.execute_tool_call(
-        "mcp_server_action", {"value": 1}, tool_timeouts={"mcp": 4}
+        "mcp_server_action", {"value": 1}, agent=agent, user=user
     )
 
     assert json.loads(result)["result"] == {"ok": True}
-    assert execute.await_args.kwargs["timeout"] == 4
+    assert delegated.await_args.args == (
+        agent,
+        "mcp_server_action",
+        {"value": 1},
+        user,
+    )
 
 
 @pytest.mark.anyio
 async def test_custom_tool_missing_unsupported_and_code_paths(monkeypatch):
-    from app.models.tool import Tool, CustomToolType
+    from app.schemas.response import BusinessError
 
-    monkeypatch.setattr(Tool, "filter", lambda **kwargs: Query(None))
-    assert "error" in json.loads(
-        await chat_tools.execute_tool_call("custom_missing", {})
-    )
-
+    delegated = AsyncMock(return_value={"success": True, "result": 7})
     monkeypatch.setattr(
-        Tool, "filter", lambda **kwargs: Query(SimpleNamespace(custom_type="unknown"))
+        "app.services.agent_tool_execution.execute_agent_stored_tool", delegated
     )
-    assert "error" in json.loads(
-        await chat_tools.execute_tool_call("custom_unknown", {})
-    )
-
-    code_tool = SimpleNamespace(custom_type=CustomToolType.CODE)
-    monkeypatch.setattr(Tool, "filter", lambda **kwargs: Query(code_tool))
-    execute = AsyncMock(return_value={"success": True, "result": 7})
-    monkeypatch.setattr(chat_tools, "_execute_code_tool", execute)
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+    user = SimpleNamespace(id=uuid4())
     result = await chat_tools.execute_tool_call(
-        "custom_calculate", {"value": 3}, session_id="session"
+        "custom_calculate", {"value": 3}, agent=agent, user=user
     )
     assert json.loads(result)["result"] == 7
+
+    delegated.side_effect = BusinessError(
+        code=404, msg_key="tool_not_found", status_code=404
+    )
+    missing = await chat_tools.execute_tool_call(
+        "custom_missing", {}, agent=agent, user=user
+    )
+    assert "error" in json.loads(missing)
 
 
 @pytest.mark.anyio
@@ -97,6 +112,9 @@ async def test_registered_builtin_executes_and_unknown_tool_fails(monkeypatch):
     def handler(credentials=None):
         return credentials
 
+    team_id = uuid4()
+    agent = SimpleNamespace(id=uuid4(), team_id=team_id, tools_config=[])
+    user = SimpleNamespace(id=uuid4())
     monkeypatch.setattr(
         tool_registry,
         "get_tool",
@@ -104,46 +122,49 @@ async def test_registered_builtin_executes_and_unknown_tool_fails(monkeypatch):
     )
     monkeypatch.setattr(tool_registry, "get_sandbox_tool_class", lambda name: None)
     execute = AsyncMock(return_value={"temperature": 20})
-    monkeypatch.setattr(tool_registry, "execute", execute)
+    monkeypatch.setattr("app.services.tool.ToolExecutor.execute_builtin_tool", execute)
     monkeypatch.setattr(
-        chat_tools,
-        "_get_builtin_tool_credentials",
-        AsyncMock(return_value={"key": "test"}),
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
     )
 
-    result = await chat_tools.execute_tool_call("weather", {"city": "Paris"})
+    result = await chat_tools.execute_tool_call(
+        "weather", {"city": "Paris"}, agent=agent, user=user
+    )
     assert result == {"temperature": 20}
-    assert execute.await_args.kwargs["credentials"] == {"key": "test"}
+    assert execute.await_args.kwargs["team_id"] == team_id
+    assert execute.await_args.kwargs["tool_name"] == "weather"
 
     missing = await chat_tools.execute_tool_call("not_registered", {})
     assert "error" in json.loads(missing)
 
 
-def test_tool_helpers_cover_credentials_and_display():
-    def accepts(credentials=None):
-        return credentials
-
-    assert chat_tools._tool_accepts_credentials(accepts)
-    assert not chat_tools._tool_accepts_credentials(lambda: None)
+def test_tool_helpers_cover_display_and_item_values():
     assert chat_tools._get_item_value({"name": "value"}, "name") == "value"
     assert chat_tools._get_item_value(SimpleNamespace(name="value"), "name") == "value"
 
 
 @pytest.mark.anyio
-async def test_builtin_credentials_prefer_team_then_global(monkeypatch):
-    from app.models.tool_config import ToolConfig
+async def test_builtin_execution_routes_through_unified_boundary(monkeypatch):
+    from app.llm.tools import tool_registry
 
-    team = SimpleNamespace(credentials={"team": "value"})
-    monkeypatch.setattr(ToolConfig, "filter", lambda **kwargs: Query(team))
-    assert await chat_tools._get_builtin_tool_credentials(
-        "weather", SimpleNamespace(team_id=uuid4())
-    ) == {"team": "value"}
-
+    team_id = uuid4()
+    agent = SimpleNamespace(id=uuid4(), team_id=team_id, tools_config=[])
+    user = SimpleNamespace(id=uuid4())
     monkeypatch.setattr(
-        ToolConfig,
-        "filter",
-        lambda **kwargs: Query(SimpleNamespace(credentials={"global": "value"})),
+        tool_registry,
+        "get_tool",
+        lambda _name: SimpleNamespace(handler=lambda credentials=None: None),
     )
-    assert await chat_tools._get_builtin_tool_credentials("weather", None) == {
-        "global": "value"
-    }
+    monkeypatch.setattr(tool_registry, "get_sandbox_tool_class", lambda _name: None)
+    execute = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr("app.services.tool.ToolExecutor.execute_builtin_tool", execute)
+    monkeypatch.setattr(
+        "app.models.user.User.get_or_none", AsyncMock(return_value=user)
+    )
+
+    await chat_tools.execute_tool_call("get_current_time", {}, agent=agent, user=user)
+
+    kwargs = execute.await_args.kwargs
+    assert kwargs["team_id"] == team_id
+    assert kwargs["user"] is user
+    assert kwargs["agent"] is agent

@@ -1028,3 +1028,547 @@ async def test_busy_and_command_messages_do_not_get_receipt_ack(world):
     assert not await IntegrationDelivery.filter(
         receipt_id=queued.id, event_key="received"
     ).exists()
+
+
+async def _wait_for_tool_approval(world, monkeypatch, *, preview_text="confirm"):
+    """Submit one message, park its run on a tool approval, and announce it."""
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    owner = await receipt_for(world, identifier="approval-owner")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    execution_id = uuid4()
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-approval",
+        pending_tool_name="create_issue",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(execution_id),
+        },
+    )
+
+    async def preview(parked, user, origin, origin_id):
+        assert parked.id == run.id
+        assert origin == ExecutionEntrypoint.WECHAT_CHANNEL
+        assert origin_id == world.binding.id
+        return str(execution_id), preview_text
+
+    monkeypatch.setattr(runtime, "approval_preview", preview)
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+    return owner, run, execution_id
+
+
+async def _command_receipt(world, text, identifier):
+    return await WeChatAgentReceipt.create(
+        binding_id=world.binding.id,
+        user_id=world.user.id,
+        agent_id=world.agent.id,
+        message_id=identifier,
+        payload=encrypt_secret(json.dumps(message_payload(text))),
+    )
+
+
+@pytest.mark.asyncio
+async def test_submission_uses_the_wechat_channel_origin(world):
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    await receipt_for(world)
+    await runtime.process_binding(str(world.binding.id))
+
+    _, _, kwargs = world.submission.calls[0]
+    assert kwargs["tool_entrypoint"] == ExecutionEntrypoint.WECHAT_CHANNEL
+    assert kwargs["tool_entrypoint_id"] == str(world.binding.id)
+
+
+@pytest.mark.asyncio
+async def test_waiting_tool_approval_announces_the_preview_once(world, monkeypatch):
+    owner, _, execution_id = await _wait_for_tool_approval(
+        world, monkeypatch, preview_text="Tool confirmation required"
+    )
+
+    event_key = f"approval:{execution_id}"
+    first = await IntegrationDelivery.get(receipt_id=owner.id, event_key=event_key)
+    assert first.payload["text"] == "Tool confirmation required"
+
+    # A recovery pass must not append a second announcement.
+    await runtime.process_binding(str(world.binding.id))
+    await runtime.process_binding(str(world.binding.id))
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=owner.id, event_key=event_key
+        ).count()
+        == 1
+    )
+    assert (await WeChatAgentReceipt.get(id=owner.id)).status == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_long_approval_preview_is_split_on_the_same_event(world, monkeypatch):
+    owner, _, execution_id = await _wait_for_tool_approval(
+        world, monkeypatch, preview_text="x" * 7000
+    )
+
+    rows = await IntegrationDelivery.filter(
+        receipt_id=owner.id, event_key=f"approval:{execution_id}"
+    ).order_by("sequence")
+    assert [row.sequence for row in rows] == [0, 1]
+    assert "".join(row.payload["text"] for row in rows) != ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("verb", "decision", "outcome_key"),
+    [
+        ("/approve", "approve", "channel_approval_approved"),
+        ("/reject", "reject", "channel_approval_rejected"),
+    ],
+)
+async def test_approval_command_decides_and_replies(
+    world, monkeypatch, verb, decision, outcome_key
+):
+    from app.core.i18n import t
+    from app.schemas.tool_approval import ExecutionEntrypoint
+
+    _, run, execution_id = await _wait_for_tool_approval(world, monkeypatch)
+    calls = []
+
+    async def decide(parked, user, origin, origin_id, token, vote, receipt_id):
+        calls.append((parked.id, user.id, origin, origin_id, token, vote, receipt_id))
+
+    monkeypatch.setattr(runtime, "decide_channel_approval", decide)
+    command = await _command_receipt(
+        world, f"{verb} {execution_id}", f"{decision}-command"
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert calls == [
+        (
+            run.id,
+            world.user.id,
+            ExecutionEntrypoint.WECHAT_CHANNEL,
+            world.binding.id,
+            str(execution_id),
+            decision,
+            command.id,
+        )
+    ]
+    consumed = await WeChatAgentReceipt.get(id=command.id)
+    assert consumed.status == "completed"
+    assert consumed.error is None
+    reply = await IntegrationDelivery.get(
+        receipt_id=command.id, event_key="approval_result"
+    )
+    assert reply.payload["text"] == t(outcome_key)
+
+    # A completed decision command is never replayed as a decision.
+    await runtime.process_binding(str(world.binding.id))
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_refused_approval_command_is_consumed_with_explanation(
+    world, monkeypatch
+):
+    from app.core.i18n import t
+    from app.schemas.response import BusinessError
+
+    _, _, _ = await _wait_for_tool_approval(world, monkeypatch)
+    calls = []
+
+    async def decide(*args, **kwargs):
+        calls.append(args)
+        raise BusinessError(
+            code=403, msg_key="channel_approval_invalid", status_code=403
+        )
+
+    monkeypatch.setattr(runtime, "decide_channel_approval", decide)
+    command = await _command_receipt(world, f"/approve {uuid4()}", "bad-token")
+    await runtime.process_binding(str(world.binding.id))
+
+    assert len(calls) == 1
+    consumed = await WeChatAgentReceipt.get(id=command.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_invalid"
+    reply = await IntegrationDelivery.get(
+        receipt_id=command.id, event_key="approval_result"
+    )
+    assert reply.payload["text"] == t("channel_approval_invalid")
+
+    # A recovery pass must not retry the refused command.
+    await runtime.process_binding(str(world.binding.id))
+    assert len(calls) == 1
+    assert (await WeChatAgentReceipt.get(id=command.id)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_approval_command_queued_before_the_preview_cannot_decide(
+    world, monkeypatch
+):
+    from app.core.i18n import t
+
+    owner = await receipt_for(world, identifier="approval-owner")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    execution_id = uuid4()
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-approval",
+        pending_tool_name="create_issue",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(execution_id),
+        },
+    )
+
+    async def preview(parked, user, origin, origin_id):
+        return str(execution_id), "confirm"
+
+    monkeypatch.setattr(runtime, "approval_preview", preview)
+    decided = []
+
+    async def decide(*args, **kwargs):
+        decided.append(args)
+
+    monkeypatch.setattr(runtime, "decide_channel_approval", decide)
+    # This command was observed before the confirmation existed.
+    stale = await WeChatAgentReceipt.create(
+        binding_id=world.binding.id,
+        user_id=world.user.id,
+        agent_id=world.agent.id,
+        message_id="stale-command",
+        payload=encrypt_secret(json.dumps(message_payload(f"/approve {execution_id}"))),
+        created_at=utcnow() - timedelta(minutes=5),
+    )
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert not decided
+    assert await IntegrationDelivery.filter(
+        receipt_id=owner.id, event_key=f"approval:{execution_id}"
+    ).exists()
+    consumed = await WeChatAgentReceipt.get(id=stale.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_invalid"
+    reply = await IntegrationDelivery.get(
+        receipt_id=stale.id, event_key="approval_result"
+    )
+    assert reply.payload["text"] == t("channel_approval_invalid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["yes please", None])
+async def test_non_command_while_approval_waiting_is_explained(
+    world, monkeypatch, text
+):
+    from app.core.i18n import t
+
+    _, run, _ = await _wait_for_tool_approval(world, monkeypatch)
+    decided = []
+
+    async def decide(*args, **kwargs):
+        decided.append(args)
+
+    monkeypatch.setattr(runtime, "decide_channel_approval", decide)
+    payload = (
+        message_payload(text)
+        if text is not None
+        else {
+            "message_id": "media-waiting",
+            "context_token": "ctx-1",
+            "item_list": [{"type": 2, "image_item": {"media": {}}}],
+        }
+    )
+    message = await WeChatAgentReceipt.create(
+        binding_id=world.binding.id,
+        user_id=world.user.id,
+        agent_id=world.agent.id,
+        message_id="plain-waiting",
+        payload=encrypt_secret(json.dumps(payload)),
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert not decided
+    consumed = await WeChatAgentReceipt.get(id=message.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_waiting"
+    notice = await IntegrationDelivery.get(
+        receipt_id=message.id, event_key="approval_waiting"
+    )
+    assert notice.payload["text"] == t("channel_approval_waiting")
+    session = await WeChatAgentSession.get(binding_id=world.binding.id)
+    assert session.pending_answers == {}
+    assert await AgentRun.all().count() == 1
+    assert (await AgentRun.get(id=run.id)).status == AgentRunStatus.WAITING
+
+    # The explanation is not repeated on a recovery pass.
+    await runtime.process_binding(str(world.binding.id))
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=message.id, event_key="approval_waiting"
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_skip_is_not_accepted_for_a_tool_approval(world, monkeypatch):
+    import app.services.agent_run_store as store
+
+    _, run, _ = await _wait_for_tool_approval(world, monkeypatch)
+    skipped = []
+
+    async def fake_submit(*args, **kwargs):
+        skipped.append(kwargs)
+        return SimpleNamespace(id=run.id, status=AgentRunStatus.QUEUED)
+
+    monkeypatch.setattr(store, "submit_user_answers", fake_submit)
+    message = await _command_receipt(world, "/skip", "skip-approval")
+    await runtime.process_binding(str(world.binding.id))
+
+    assert not skipped
+    consumed = await WeChatAgentReceipt.get(id=message.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_waiting"
+    assert (await AgentRun.get(id=run.id)).status == AgentRunStatus.WAITING
+
+
+@pytest.mark.asyncio
+async def test_unknown_waiting_interaction_is_not_answerable(world):
+    from app.core.i18n import t
+
+    owner = await receipt_for(world, identifier="unknown-owner")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-unknown",
+        pending_tool_name="some_tool",
+        pending_tool_input={"questions": []},
+    )
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+    await runtime.process_binding(str(world.binding.id))
+
+    notice = await IntegrationDelivery.get(
+        receipt_id=owner.id, event_key="waiting_unsupported"
+    )
+    assert notice.payload["text"] == t("channel_approval_unsupported")
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=owner.id, event_key="waiting_unsupported"
+        ).count()
+        == 1
+    )
+    assert (await WeChatAgentReceipt.get(id=owner.id)).status == "submitted"
+    assert (await AgentRun.get(id=run.id)).status == AgentRunStatus.WAITING
+
+
+@pytest.mark.asyncio
+async def test_approval_command_is_not_an_ask_user_answer(world):
+    from app.core.i18n import t
+
+    owner = await receipt_for(world, identifier="ask-owner")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-ask",
+        pending_tool_name="ask_user",
+        pending_tool_input={
+            "questions": [{"id": "q1", "question": "Which one?", "required": True}]
+        },
+    )
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    command = await _command_receipt(world, f"/approve {uuid4()}", "ask-command")
+    await runtime.process_binding(str(world.binding.id))
+
+    consumed = await WeChatAgentReceipt.get(id=command.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_invalid"
+    reply = await IntegrationDelivery.get(
+        receipt_id=command.id, event_key="approval_result"
+    )
+    assert reply.payload["text"] == t("channel_approval_invalid")
+    session = await WeChatAgentSession.get(binding_id=world.binding.id)
+    assert session.pending_answers == {}
+
+
+@pytest.mark.asyncio
+async def test_decided_approval_is_dispatched_when_the_worker_already_parked(
+    world, monkeypatch
+):
+    import app.services.agent_run_store as store
+
+    owner = await receipt_for(world, identifier="approval-recovery")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-recovery",
+        pending_tool_name="create_issue",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(uuid4()),
+        },
+    )
+    resumed = SimpleNamespace(
+        id=run.id, status=AgentRunStatus.QUEUED, worker_payload={"run_id": str(run.id)}
+    )
+
+    async def terminal(run_id):
+        assert run_id == run.id
+        return resumed
+
+    monkeypatch.setattr(store, "queue_agent_run_resume_if_approval_terminal", terminal)
+    dispatched = []
+
+    async def dispatch(payload, queued):
+        dispatched.append((payload, queued))
+
+    monkeypatch.setattr("app.services.agent_submission.dispatch_run", dispatch)
+
+    async def preview(*args, **kwargs):
+        raise AssertionError("a decided approval must not be announced")
+
+    monkeypatch.setattr(runtime, "approval_preview", preview)
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert dispatched == [({"run_id": str(run.id)}, resumed)]
+
+
+@pytest.mark.asyncio
+async def test_announcement_failure_keeps_the_receipt_recoverable(world, monkeypatch):
+    owner = await receipt_for(world, identifier="announce-failure")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    execution_id = uuid4()
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-announce",
+        pending_tool_name="create_issue",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(execution_id),
+        },
+    )
+
+    async def preview(parked, user, origin, origin_id):
+        return str(execution_id), "confirm"
+
+    monkeypatch.setattr(runtime, "approval_preview", preview)
+    create_delivery = runtime._create_delivery
+
+    async def fail_announcement(receipt, **kwargs):
+        if kwargs["event_key"].startswith("approval:"):
+            raise RuntimeError("outbox unavailable")
+        await create_delivery(receipt, **kwargs)
+
+    monkeypatch.setattr(runtime, "_create_delivery", fail_announcement)
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert (await WeChatAgentReceipt.get(id=owner.id)).status == "submitted"
+    assert not await IntegrationDelivery.filter(
+        receipt_id=owner.id, event_key=f"approval:{execution_id}"
+    ).exists()
+
+    monkeypatch.setattr(runtime, "_create_delivery", create_delivery)
+    await runtime.process_binding(str(world.binding.id))
+    assert await IntegrationDelivery.filter(
+        receipt_id=owner.id, event_key=f"approval:{execution_id}"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_approval_command_stays_its_own_message(world):
+    """A decision command must never be folded into neighbouring chat text."""
+    from app.services.wechat_receiver import accept_updates
+
+    response = {
+        "msgs": [
+            {**message_payload("hello"), "message_id": "chat-one"},
+            {**message_payload(f"/approve {uuid4()}"), "message_id": "approve-one"},
+        ],
+        "get_updates_buf": "approval-batch",
+    }
+    await accept_updates(world.binding, response)
+
+    rows = await WeChatAgentReceipt.all().order_by("created_at")
+    assert [row.status for row in rows] == ["pending", "pending"]
+    for row in rows:
+        assert "batch_messages" not in json.loads(decrypt_secret(row.payload))
+
+
+@pytest.mark.asyncio
+async def test_waiting_notice_requires_the_session_to_own_the_run(world, monkeypatch):
+    owner = await receipt_for(world, identifier="session-owner")
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    execution_id = uuid4()
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-session",
+        pending_tool_name="create_issue",
+        pending_tool_input={
+            "interaction_kind": "tool_approval",
+            "execution_id": str(execution_id),
+        },
+    )
+    previewed = []
+
+    async def preview(*args, **kwargs):
+        previewed.append(args)
+        return str(execution_id), "confirm"
+
+    monkeypatch.setattr(runtime, "approval_preview", preview)
+    # The session no longer owns the run's conversation: nothing is announced.
+    await WeChatAgentSession.filter(binding_id=world.binding.id).update(
+        conversation_id=None
+    )
+    await WeChatAgentReceipt.filter(id=owner.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    await runtime.process_binding(str(world.binding.id))
+
+    assert not previewed
+    assert not await IntegrationDelivery.filter(
+        receipt_id=owner.id, event_key=f"approval:{execution_id}"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_decision_requires_the_session_to_own_the_run(world, monkeypatch):
+    _, run, execution_id = await _wait_for_tool_approval(world, monkeypatch)
+    calls = []
+
+    async def decide(*args, **kwargs):
+        calls.append(args)
+
+    monkeypatch.setattr(runtime, "decide_channel_approval", decide)
+    await WeChatAgentSession.filter(binding_id=world.binding.id).update(
+        conversation_id=None
+    )
+    command = await _command_receipt(world, f"/approve {execution_id}", "wrong-session")
+    await runtime.process_binding(str(world.binding.id))
+
+    assert not calls
+    consumed = await WeChatAgentReceipt.get(id=command.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "channel_approval_invalid"

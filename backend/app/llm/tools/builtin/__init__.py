@@ -8,11 +8,19 @@ from .time import register_time_tools
 from .calculator import register_calculator_tools
 from .web_search import register_web_search_tools
 from .file_parser import register_file_parser_tools
+from .database import (
+    mongodb_query,
+    mysql_query,
+    postgresql_query,
+    redis_query,
+    register_database_tools,
+)
 from ..bash import register_bash_tool
 from ..sandbox_files import register_sandbox_file_tools
 from .media import register_media_tools
 from .ask_user import register_ask_user_tool
 from .rss import register_rss_tools
+from .file_download import register_file_download_tool
 
 
 def register_all_builtin_tools() -> None:
@@ -21,11 +29,13 @@ def register_all_builtin_tools() -> None:
     register_calculator_tools()
     register_web_search_tools()
     register_file_parser_tools()
+    register_database_tools()
     register_media_tools()
     register_bash_tool()
     register_sandbox_file_tools()
     register_ask_user_tool()
     register_rss_tools()
+    register_file_download_tool()
 
 
 __all__ = [
@@ -39,4 +49,9 @@ __all__ = [
     "register_sandbox_file_tools",
     "register_ask_user_tool",
     "register_rss_tools",
+    "register_file_download_tool",
+    "postgresql_query",
+    "mysql_query",
+    "redis_query",
+    "mongodb_query",
 ]

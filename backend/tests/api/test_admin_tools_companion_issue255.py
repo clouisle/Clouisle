@@ -27,8 +27,21 @@ class _Query:
         self.filters.append((args, kwargs))
         return self
 
+    def limit(self, *_args):
+        return self
+
     async def first(self):
+        if isinstance(self.result, list):
+            return self.result[0] if self.result else None
         return self.result
+
+    def __await__(self):
+        async def resolve():
+            if isinstance(self.result, list):
+                return self.result
+            return [self.result] if self.result is not None else []
+
+        return resolve().__await__()
 
 
 @pytest.fixture
@@ -37,64 +50,102 @@ def admin():
 
 
 @pytest.mark.anyio
-async def test_test_tool_mcp_uses_argument_tool_name_and_returns_executor_result(admin):
+async def test_test_tool_mcp_routes_through_executor_with_copied_arguments(admin):
     request = ToolExecuteRequest(
         name="mcp_alias",
         arguments={"__tool_name__": "server_tool", "city": "Paris"},
     )
     custom_tool = SimpleNamespace(
+        id=uuid4(),
+        name="mcp_alias",
+        team_id=uuid4(),
         type=DBToolType.MCP,
         custom_type=None,
         mcp_config={"transport": "stdio", "command": "server"},
     )
-    executor_result = SimpleNamespace(success=False, result=None, error="remote failed")
+    execute = AsyncMock(
+        return_value={"success": False, "result": None, "error": "remote failed"}
+    )
 
     with (
         patch.object(admin_tools.tool_registry, "get_tool", return_value=None),
-        patch.object(admin_tools.Tool, "filter", return_value=_Query(custom_tool)),
-        patch.object(
-            admin_tools,
-            "execute_mcp_tool",
-            new=AsyncMock(return_value=executor_result),
-        ) as execute_mcp,
+        patch.object(admin_tools.Tool, "filter", return_value=_Query([custom_tool])),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await admin_tools.test_tool(request, current_user=admin)
 
-    execute_mcp.assert_awaited_once_with(
-        mcp_config=custom_tool.mcp_config,
-        tool_name="server_tool",
-        arguments={"city": "Paris"},
-        timeout=60.0,
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom_tool
+    assert args_arg == {"city": "Paris"}
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["operation"] == "server_tool"
+    assert (
+        call_kwargs["context"].entrypoint is admin_tools.ExecutionEntrypoint.ADMIN_TEST
     )
-    assert request.arguments == {"city": "Paris"}
+    assert call_kwargs["context"].interactive is True
+    assert request.arguments == {"__tool_name__": "server_tool", "city": "Paris"}
     assert response["data"].success is False
     assert response["data"].error == "remote failed"
 
 
 @pytest.mark.anyio
-async def test_test_tool_code_without_code_returns_i18n_error_without_sandbox(admin):
+async def test_test_tool_code_without_code_returns_i18n_error_without_executor(admin):
     request = ToolExecuteRequest(name="empty_code", arguments={"x": 1})
     custom_tool = SimpleNamespace(
+        id=uuid4(),
+        name="empty_code",
+        team_id=uuid4(),
         type=DBToolType.CUSTOM,
         custom_type=DBCustomToolType.CODE,
         code_config={"language": "python"},
     )
+    execute = AsyncMock()
 
     with (
         patch.object(admin_tools.tool_registry, "get_tool", return_value=None),
-        patch.object(admin_tools.Tool, "filter", return_value=_Query(custom_tool)),
-        patch.object(admin_tools, "t", return_value="missing code"),
-        patch.object(admin_tools, "compile_code_config_job") as compile_job,
-        patch.object(
-            admin_tools.sandbox_gateway, "submit_and_wait", new=AsyncMock()
-        ) as submit,
+        patch.object(admin_tools.Tool, "filter", return_value=_Query([custom_tool])),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await admin_tools.test_tool(request, current_user=admin)
 
-    compile_job.assert_not_called()
-    submit.assert_not_awaited()
+    execute.assert_not_awaited()
     assert response["data"].success is False
-    assert response["data"].error == "missing code"
+    assert response["data"].error
+
+
+@pytest.mark.anyio
+async def test_test_tool_rejects_ambiguous_custom_name_without_team(admin):
+    first = SimpleNamespace(
+        id=uuid4(),
+        team_id=uuid4(),
+        type=DBToolType.CUSTOM,
+        custom_type=DBCustomToolType.HTTP,
+        http_config={"url": "https://example.test"},
+    )
+    second = SimpleNamespace(
+        id=uuid4(),
+        team_id=uuid4(),
+        type=DBToolType.CUSTOM,
+        custom_type=DBCustomToolType.HTTP,
+        http_config={"url": "https://example.test"},
+    )
+
+    with (
+        patch.object(admin_tools.tool_registry, "get_tool", return_value=None),
+        patch.object(admin_tools.Tool, "filter", return_value=_Query([first, second])),
+    ):
+        with pytest.raises(BusinessError) as exc:
+            await admin_tools.test_tool(
+                ToolExecuteRequest(name="shared"), current_user=admin
+            )
+
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.anyio

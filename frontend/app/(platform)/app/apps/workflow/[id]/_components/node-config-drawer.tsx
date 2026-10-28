@@ -1341,6 +1341,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             onConfigChange={setToolConfig}
             onVariableSearchChange={setVariableSearch}
             onOpenVariablePopoverChange={setOpenVariablePopover}
+            readOnly={readOnly}
           />
         )
 

@@ -23,6 +23,9 @@
     "modelNotConfigured": "Model not configured",
     "modelVisionNotSupported": "The current model does not support vision. Please switch to a vision-enabled model",
     "modelNotFound": "Model not found or not configured. Please check model settings",
-    "modelNotAuthorized": "This model is not authorized for the current team"
+    "modelNotAuthorized": "This model is not authorized for the current team",
+    "requestFailed": "Request failed",
+    "permissionDenied": "You do not have permission to perform this action.",
+    "sessionExpired": "Session expired. Please login again."
   }
 }

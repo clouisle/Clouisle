@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.005Z
+// GENERATED — 2026-10-27T04:04:22.636Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -86,6 +86,9 @@ export type ModelsMessages = {
       audio: string
       video: string
       file: string
+      embedding: string
+      decision: string
+      ranking: string
     }
     supportsFunctionCall: string
     supportsFunctionCallHint: string

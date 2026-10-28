@@ -1,32 +1,36 @@
 """
-Unit Tests for the custom `database` tool.
-
-Covers the db_common guards plus per-database execution through
-execute_database_tool (the single LLM-facing entry point), including the
-tool-config -> driver parameter normalization (config stores `username`,
-drivers require `user`).
+Unit Tests for builtin database query execution.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.llm.tools.builtin.db_common import validate_readonly_sql, sanitize_value
-from app.llm.tools.builtin.db_executor import (
-    execute_database_tool,
-    test_database_connection as run_test_connection,
-)
+from app.llm.tools.builtin.db_executor import execute_database_query
 from app.llm.tools.builtin.mongo_db import (
     _get_mongo_client_and_db,
     _infer_schema_from_docs,
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_database_hosts(monkeypatch):
+    """Driver-level tests must not depend on the ambient SSRF allowlist."""
+
+    async def _allowlist():
+        return []
+
+    monkeypatch.setattr(
+        "app.core.network_security.get_ssrf_allowed_targets", _allowlist
+    )
+    monkeypatch.setattr(
+        "app.core.network_security.validate_database_config", lambda *a, **k: None
+    )
+
+
 def _db_tool(db_type: str, **config):
-    """Fake Tool row carrying the persisted database_config payload."""
-    tool = MagicMock()
-    tool.name = f"{db_type}_tool"
-    tool.database_config = {"db_type": db_type, **config}
-    return tool
+    """Connection-derived database configuration passed to the executor."""
+    return {"db_type": db_type, **config}
 
 
 # ==================== db_common tests ====================
@@ -165,8 +169,8 @@ async def test_execute_postgresql_schema_and_query():
     with patch(
         "asyncpg.connect", new_callable=AsyncMock, return_value=schema_conn
     ) as connect:
-        res_schema = await execute_database_tool(
-            tool=tool,
+        res_schema = await execute_database_query(
+            db_config=tool,
             arguments={"action": "schema", "include_samples": True},
         )
 
@@ -190,8 +194,8 @@ async def test_execute_postgresql_schema_and_query():
     query_conn.fetch = AsyncMock(return_value=[{"id": 1}, {"id": 2}, {"id": 3}])
 
     with patch("asyncpg.connect", new_callable=AsyncMock, return_value=query_conn):
-        res_query = await execute_database_tool(
-            tool=tool,
+        res_query = await execute_database_query(
+            db_config=tool,
             arguments={"action": "query", "sql": "SELECT id FROM products", "limit": 2},
         )
 
@@ -206,19 +210,19 @@ async def test_execute_postgresql_guards_and_edge_cases():
     tool = _db_tool("postgresql", host="localhost", username="app_user")
 
     with patch("asyncpg.connect", new_callable=AsyncMock) as connect:
-        missing_sql = await execute_database_tool(
-            tool=tool, arguments={"action": "query", "sql": "  "}
+        missing_sql = await execute_database_query(
+            db_config=tool, arguments={"action": "query", "sql": "  "}
         )
         assert missing_sql == {"error": "sql_query_required", "success": False}
 
-        bad_action = await execute_database_tool(
-            tool=tool, arguments={"action": "drop-everything"}
+        bad_action = await execute_database_query(
+            db_config=tool, arguments={"action": "drop-everything"}
         )
         assert bad_action["error"] == "unsupported_action: drop-everything"
 
         with pytest.raises(ValueError, match="disallowed_sql"):
-            await execute_database_tool(
-                tool=tool, arguments={"action": "query", "sql": "DROP TABLE users"}
+            await execute_database_query(
+                db_config=tool, arguments={"action": "query", "sql": "DROP TABLE users"}
             )
 
     connect.assert_not_called()
@@ -239,8 +243,8 @@ async def test_execute_postgresql_guards_and_edge_cases():
         [],  # primary keys
     ]
     with patch("asyncpg.connect", new_callable=AsyncMock, return_value=schema_conn):
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "schema", "include_samples": False}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "schema", "include_samples": False}
         )
         assert res["selected_schemas"]["empty_table"]["samples"] is None
 
@@ -254,8 +258,8 @@ async def test_execute_postgresql_guards_and_edge_cases():
     empty_conn.fetch = AsyncMock(return_value=[])
 
     with patch("asyncpg.connect", new_callable=AsyncMock, return_value=empty_conn):
-        res = await execute_database_tool(
-            tool=tool,
+        res = await execute_database_query(
+            db_config=tool,
             arguments={"action": "query", "sql": "SELECT * FROM users LIMIT 10"},
         )
         assert res["rows"] == []
@@ -298,8 +302,8 @@ async def test_execute_mysql_schema_and_query():
     with patch(
         "asyncmy.connect", new_callable=AsyncMock, return_value=schema_conn
     ) as connect:
-        res_schema = await execute_database_tool(
-            tool=tool, arguments={"action": "schema", "include_samples": True}
+        res_schema = await execute_database_query(
+            db_config=tool, arguments={"action": "schema", "include_samples": True}
         )
 
     assert connect.call_args.kwargs["user"] == "ro_user"
@@ -318,8 +322,8 @@ async def test_execute_mysql_schema_and_query():
     query_conn.cursor.return_value = query_cursor
 
     with patch("asyncmy.connect", new_callable=AsyncMock, return_value=query_conn):
-        res_query = await execute_database_tool(
-            tool=tool,
+        res_query = await execute_database_query(
+            db_config=tool,
             arguments={
                 "action": "query",
                 "sql": "SELECT total FROM customers",
@@ -336,11 +340,13 @@ async def test_execute_mysql_schema_and_query():
 async def test_execute_mysql_guards_and_edge_cases():
     tool = _db_tool("mysql", host="localhost", database="test")
 
-    bad_act = await execute_database_tool(tool=tool, arguments={"action": "unknown"})
+    bad_act = await execute_database_query(
+        db_config=tool, arguments={"action": "unknown"}
+    )
     assert bad_act["error"] == "unsupported_action: unknown"
 
-    empty_sql = await execute_database_tool(
-        tool=tool, arguments={"action": "query", "sql": "   "}
+    empty_sql = await execute_database_query(
+        db_config=tool, arguments={"action": "query", "sql": "   "}
     )
     assert empty_sql["error"] == "sql_query_required"
 
@@ -364,8 +370,8 @@ async def test_execute_mysql_guards_and_edge_cases():
     ]
     schema_conn.cursor.return_value = schema_cursor
     with patch("asyncmy.connect", new_callable=AsyncMock, return_value=schema_conn):
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "schema", "include_samples": False}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "schema", "include_samples": False}
         )
         assert res["selected_schemas"]["t1"]["samples"] is None
 
@@ -378,8 +384,9 @@ async def test_execute_mysql_guards_and_edge_cases():
     query_conn.cursor.return_value = query_cursor
 
     with patch("asyncmy.connect", new_callable=AsyncMock, return_value=query_conn):
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "query", "sql": "SELECT * FROM t1 LIMIT 5"}
+        res = await execute_database_query(
+            db_config=tool,
+            arguments={"action": "query", "sql": "SELECT * FROM t1 LIMIT 5"},
         )
         assert res["rows"] == []
         assert res["columns"] == []
@@ -403,40 +410,40 @@ async def test_execute_redis_scan_get_and_command():
         patch("redis.asyncio.Redis", return_value=client) as redis_cls,
         patch("redis.asyncio.from_url", return_value=client) as from_url,
     ):
-        scan = await execute_database_tool(
-            tool=tool, arguments={"action": "scan", "pattern": "user:*"}
+        scan = await execute_database_query(
+            db_config=tool, arguments={"action": "scan", "pattern": "user:*"}
         )
         assert scan["success"] is True
         assert [k["key"] for k in scan["keys"]] == ["user:1", "user:2"]
         assert scan["keys"][0]["type"] == "hash"
 
-        get = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "user:1"}
+        get = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "user:1"}
         )
         assert get["value"] == {"name": "Alice"}
         assert get["ttl_seconds"] == 3600
 
-        allowed = await execute_database_tool(
-            tool=tool,
+        allowed = await execute_database_query(
+            db_config=tool,
             arguments={"action": "command", "key": "user:1", "command": "EXISTS"},
         )
         assert allowed["success"] is True
 
-        write_cmd = await execute_database_tool(
-            tool=tool,
+        write_cmd = await execute_database_query(
+            db_config=tool,
             arguments={"action": "command", "key": "user:1", "command": "SET"},
         )
         assert write_cmd["success"] is False
         assert write_cmd["error"] == "command_not_permitted: SET"
 
-        dangerous = await execute_database_tool(
-            tool=tool,
+        dangerous = await execute_database_query(
+            db_config=tool,
             arguments={"action": "command", "key": "*", "command": "FLUSHALL"},
         )
         assert dangerous["error"] == "dangerous_command_blocked: FLUSHALL"
 
-        missing_key = await execute_database_tool(
-            tool=tool, arguments={"action": "get"}
+        missing_key = await execute_database_query(
+            db_config=tool, arguments={"action": "get"}
         )
         assert missing_key["error"] == "key_required"
 
@@ -457,17 +464,17 @@ async def test_execute_redis_branch_coverage():
     client.type.return_value = "string"
     client.ttl.return_value = 100
 
-    tool = _db_tool("redis")
+    tool = _db_tool("redis", host="redis.internal")
     with patch("redis.asyncio.Redis", return_value=client):
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "scan", "count": 10}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "scan", "count": 10}
         )
         assert res["total_found"] == 2
 
         # 2. Get non-existent key
         client.exists.return_value = 0
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "nonexistent"}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "nonexistent"}
         )
         assert res["exists"] is False
 
@@ -475,47 +482,50 @@ async def test_execute_redis_branch_coverage():
         client.exists.return_value = 1
         client.type.return_value = "string"
         client.get.return_value = "val1"
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "strkey"}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "strkey"}
         )
         assert res["value"] == "val1"
 
         # 4. Get key of type "list"
         client.type.return_value = "list"
         client.lrange.return_value = ["item1", "item2"]
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "listkey"}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "listkey"}
         )
         assert res["value"] == ["item1", "item2"]
 
         # 5. Get key of type "set"
         client.type.return_value = "set"
         client.smembers.return_value = {"s1", "s2"}
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "setkey"}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "setkey"}
         )
         assert sorted(res["value"]) == ["s1", "s2"]
 
         # 6. Get key of type "zset"
         client.type.return_value = "zset"
         client.zrange.return_value = [("z1", 1.0)]
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "get", "key": "zsetkey"}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "get", "key": "zsetkey"}
         )
         assert res["value"] == [["z1", 1.0]]
 
         # 7. Command missing command or key
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "command", "key": "k", "command": ""}
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "command", "key": "k", "command": ""}
         )
         assert res["error"] == "command_and_key_required"
-        res = await execute_database_tool(
-            tool=tool, arguments={"action": "command", "key": "", "command": "PING"}
+        res = await execute_database_query(
+            db_config=tool,
+            arguments={"action": "command", "key": "", "command": "PING"},
         )
         assert res["error"] == "command_and_key_required"
 
         # 8. Unsupported action
-        res = await execute_database_tool(tool=tool, arguments={"action": "bad_act"})
+        res = await execute_database_query(
+            db_config=tool, arguments={"action": "bad_act"}
+        )
         assert res["error"] == "unsupported_action: bad_act"
 
 
@@ -531,7 +541,7 @@ async def test_execute_redis_uses_connection_url():
         patch("redis.asyncio.from_url", return_value=url_client) as from_url,
         patch("redis.asyncio.Redis", return_value=host_client) as redis_cls,
     ):
-        res = await execute_database_tool(tool=tool, arguments={"action": "scan"})
+        res = await execute_database_query(db_config=tool, arguments={"action": "scan"})
 
     assert res["success"] is True
     from_url.assert_called_once_with(
@@ -607,33 +617,33 @@ async def test_execute_mongodb_actions():
     with patch(
         "motor.motor_asyncio.AsyncIOMotorClient", return_value=client
     ) as motor_cls:
-        schema_all = await execute_database_tool(
-            tool=tool, arguments={"action": "schema"}
+        schema_all = await execute_database_query(
+            db_config=tool, arguments={"action": "schema"}
         )
         assert schema_all["collections"] == [
             {"collection": "articles", "estimated_count": 50},
             {"collection": "users", "estimated_count": 50},
         ]
 
-        schema_coll = await execute_database_tool(
-            tool=tool, arguments={"action": "schema", "collection": "articles"}
+        schema_coll = await execute_database_query(
+            db_config=tool, arguments={"action": "schema", "collection": "articles"}
         )
         assert schema_coll["fields_schema"]["title"] == "str"
 
-        found = await execute_database_tool(
-            tool=tool, arguments={"action": "find", "collection": "articles"}
+        found = await execute_database_query(
+            db_config=tool, arguments={"action": "find", "collection": "articles"}
         )
         assert found["count"] == 1
         assert found["results"][0]["title"] == "Article 1"
 
-        counted = await execute_database_tool(
-            tool=tool, arguments={"action": "count", "collection": "articles"}
+        counted = await execute_database_query(
+            db_config=tool, arguments={"action": "count", "collection": "articles"}
         )
         assert counted["count"] == 1
 
         # Aggregate with existing $limit
-        aggregated = await execute_database_tool(
-            tool=tool,
+        aggregated = await execute_database_query(
+            db_config=tool,
             arguments={
                 "action": "aggregate",
                 "collection": "articles",
@@ -642,8 +652,8 @@ async def test_execute_mongodb_actions():
         )
         assert aggregated["success"] is True
 
-        blocked = await execute_database_tool(
-            tool=tool,
+        blocked = await execute_database_query(
+            db_config=tool,
             arguments={
                 "action": "aggregate",
                 "collection": "articles",
@@ -653,75 +663,35 @@ async def test_execute_mongodb_actions():
         assert blocked["error"] == "aggregation_stage_not_permitted: $out"
 
         # Missing collection guards
-        assert (await execute_database_tool(tool=tool, arguments={"action": "find"}))[
-            "error"
-        ] == "collection_required"
-        assert (await execute_database_tool(tool=tool, arguments={"action": "count"}))[
-            "error"
-        ] == "collection_required"
         assert (
-            await execute_database_tool(tool=tool, arguments={"action": "aggregate"})
+            await execute_database_query(db_config=tool, arguments={"action": "find"})
+        )["error"] == "collection_required"
+        assert (
+            await execute_database_query(db_config=tool, arguments={"action": "count"})
+        )["error"] == "collection_required"
+        assert (
+            await execute_database_query(
+                db_config=tool, arguments={"action": "aggregate"}
+            )
         )["error"] == "collection_required"
 
         # Unsupported action
         assert (
-            await execute_database_tool(tool=tool, arguments={"action": "drop_coll"})
+            await execute_database_query(
+                db_config=tool, arguments={"action": "drop_coll"}
+            )
         )["error"] == "unsupported_action: drop_coll"
 
     assert motor_cls.call_args.args[0] == "mongodb://u:p@mongo.internal:27017"
     client.close.assert_called()
 
 
-# ==================== test_database_connection ====================
-@pytest.mark.asyncio
-async def test_database_connection_mongodb_and_unsupported():
-    db = AsyncMock()
-    db.command.return_value = {"ok": 1}
-    client = MagicMock()
-    client.__getitem__.return_value = db
-
-    with (
-        patch(
-            "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
-            return_value=(client, db),
-        ),
-        patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
-        ),
-    ):
-        res = await run_test_connection(
-            {"db_type": "mongodb", "url": "mongodb://localhost:27017"}
-        )
-        assert res["success"] is True
-        assert res["message"] == "MongoDB connection successful"
-    with patch(
-        "app.llm.tools.builtin.db_executor.validate_database_config", return_value=None
-    ):
-        unsupported = await run_test_connection({"db_type": "couchdb"})
-        assert unsupported["success"] is False
-        assert "unsupported_db_type" in unsupported["error"]
-
-    with (
-        patch(
-            "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
-            side_effect=Exception("connection refused"),
-        ),
-        patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
-        ),
-    ):
-        err = await run_test_connection({"db_type": "mongodb", "host": "1.1.1.1"})
-        assert err["success"] is False
-        assert "connection refused" in err["error"]
-
-
 # ==================== dispatch ====================
 @pytest.mark.asyncio
 async def test_execute_database_tool_unsupported_type():
-    res = await execute_database_tool(
-        tool=_db_tool("cassandra", host="localhost"), arguments={"action": "schema"}
+    res = await execute_database_query(
+        db_config=_db_tool("cassandra", host="localhost"),
+        arguments={"action": "schema"},
     )
     assert res == {"error": "unsupported_database_type: cassandra", "success": False}
 
@@ -743,7 +713,7 @@ async def test_execute_postgresql_and_mysql_uses_url():
     with patch(
         "asyncpg.connect", new_callable=AsyncMock, return_value=pg_conn
     ) as pg_connect:
-        res = await execute_database_tool(
+        res = await execute_database_query(
             pg_tool, {"action": "query", "sql": "SELECT 1"}
         )
         assert res["success"] is True
@@ -765,7 +735,7 @@ async def test_execute_postgresql_and_mysql_uses_url():
     with patch(
         "asyncmy.connect", new_callable=AsyncMock, return_value=my_conn
     ) as my_connect:
-        res = await execute_database_tool(
+        res = await execute_database_query(
             my_tool, {"action": "query", "sql": "SELECT 1"}
         )
         assert res["success"] is True
@@ -814,9 +784,9 @@ async def test_pg_and_mysql_schema_empty_samples():
         [],  # primary key
         [],  # s_rows is empty
     ]
-    tool_pg = _db_tool("postgresql")
+    tool_pg = _db_tool("postgresql", host="pg.internal")
     with patch("asyncpg.connect", new_callable=AsyncMock, return_value=pg_conn):
-        res = await execute_database_tool(
+        res = await execute_database_query(
             tool_pg, {"action": "schema", "include_samples": True}
         )
         assert res["selected_schemas"]["empty_table"]["samples"] == []
@@ -841,9 +811,9 @@ async def test_pg_and_mysql_schema_empty_samples():
         [],  # s_rows is empty
     ]
     my_conn.cursor.return_value = my_cursor
-    tool_my = _db_tool("mysql")
+    tool_my = _db_tool("mysql", host="mysql.internal")
     with patch("asyncmy.connect", new_callable=AsyncMock, return_value=my_conn):
-        res = await execute_database_tool(
+        res = await execute_database_query(
             tool_my, {"action": "schema", "include_samples": True}
         )
         assert res["selected_schemas"]["empty_table"]["samples"] == []
@@ -892,8 +862,8 @@ async def test_mysql_schema_samples_quote_table_identifiers():
     conn.cursor.return_value = cursor
 
     with patch("asyncmy.connect", new_callable=AsyncMock, return_value=conn):
-        await execute_database_tool(
-            _db_tool("mysql", database="app"),
+        await execute_database_query(
+            _db_tool("mysql", host="mysql.internal", database="app"),
             {"action": "schema", "include_samples": True},
         )
 

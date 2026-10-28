@@ -48,6 +48,7 @@ class Query:
 async def test_get_conversation_without_messages_skips_version_query(monkeypatch):
     conversation = SimpleNamespace(
         id=uuid4(),
+        agent_id=uuid4(),
         agent=None,
         title=None,
         variables={},
@@ -72,8 +73,13 @@ async def test_get_conversation_without_messages_skips_version_query(monkeypatch
         "model_validate",
         lambda _value: SimpleNamespace(model_dump=lambda: {"id": conversation.id}),
     )
+    from app.models.agent_run import AgentRun
 
-    result = await agents.get_conversation(conversation.id, SimpleNamespace())
+    run_query = Query(None)
+    run_query.order_by = lambda *_args: run_query
+    monkeypatch.setattr(AgentRun, "filter", lambda **_kwargs: run_query)
+
+    result = await agents.get_conversation(conversation.id, SimpleNamespace(id=uuid4()))
 
     assert result["data"]["messages"] == []
     assert result["data"]["agent_name"] is None

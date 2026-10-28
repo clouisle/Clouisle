@@ -26,8 +26,6 @@ from .model_utils import (
 from .tool_utils import get_agent_tools, get_tool_display_names
 from app.api.v1.endpoints.chat_tools import (
     execute_tool_call,
-    execute_http_tool,
-    execute_code_tool,
 )
 from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
@@ -57,8 +55,6 @@ __all__ = [
     "get_agent_tools",
     "get_tool_display_names",
     "execute_tool_call",
-    "execute_http_tool",
-    "execute_code_tool",
     "perform_rag_retrieval",
     "aggregate_rag_contexts",
     "build_rag_prompt",

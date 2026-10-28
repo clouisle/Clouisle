@@ -222,3 +222,26 @@ async def test_submit_marks_queued_run_failed_when_dispatch_raises(world, monkey
         AgentRunStatus.FAILED,
     )
     assert transition.await_args.kwargs["error_code"] == "enqueue_failed"
+
+
+@pytest.mark.asyncio
+async def test_api_key_submission_binds_run_and_payload_identity(world):
+    """The durable run and worker payload both carry the authenticating key."""
+    key = FakeAPIKey(agents=SimpleNamespace(all=_granting_only(world.agent)))
+
+    submission = await agent_submission.submit_chat_run(
+        world.agent.id,
+        ChatRequest(message="hello"),
+        (world.user, key),
+        mode=AgentRunMode.SEND,
+        defer_dispatch=True,
+    )
+
+    run = await AgentRun.get(id=submission.run_id)
+    assert run.api_key_id == key.id
+    payload = run.worker_payload
+    assert payload["api_key_id"] == str(key.id)
+    # Server-derived origin: a client cannot replace it with a different one.
+    assert payload["tool_entrypoint"] == "api_key"
+    assert payload["tool_entrypoint_id"] == str(key.id)
+    assert world.published == []

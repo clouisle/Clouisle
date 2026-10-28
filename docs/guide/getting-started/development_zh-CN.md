@@ -51,6 +51,8 @@ uv run --project backend main.py beat
 uv run --project backend main.py sandbox-worker -c 1
 ```
 
+macOS 的 prefork worker 子进程默认使用 `certifi` CA 证书包，避免 MCP HTTP 客户端调用系统信任服务时触发 Objective-C fork 初始化崩溃。TLS 证书和主机名校验仍然启用。若内网服务使用企业 CA，请在 worker 的进程环境中导出 `SSL_CERT_FILE`，指向同时包含所需公共及企业 CA 的 PEM 证书包，或导出 `SSL_CERT_DIR`；显式配置优先。这两个变量从进程环境读取，不会自动从项目 `.env` 加载。Linux worker 的信任配置不变。修改 CA 配置后请重启 worker。
+
 ## 5. 启动前端
 
 ```bash

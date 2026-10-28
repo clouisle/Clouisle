@@ -92,6 +92,72 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert with_password.REDIS_URL == "redis://:password@redis.test:6380"
 
 
+@pytest.mark.parametrize(
+    ("platform", "ca_file", "ca_dir", "uses_system_trust"),
+    [
+        ("darwin", None, None, False),
+        ("darwin", "explicit.pem", None, False),
+        ("darwin", None, "explicit-ca-dir", False),
+        ("linux", None, None, True),
+    ],
+)
+def test_worker_preserves_explicit_ca_and_avoids_macos_system_trust_after_fork(
+    monkeypatch, platform, ca_file, ca_dir, uses_system_trust
+):
+    from httpx2._config import create_ssl_context
+    import truststore
+
+    module, _ = _load_celery_module(monkeypatch)
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    if ca_file:
+        import certifi
+
+        # A real trusted CA file verifies that the explicit file remains usable.
+        ca_file = certifi.where()
+        monkeypatch.setenv("SSL_CERT_FILE", ca_file)
+    if ca_dir:
+        # An empty CA directory still produces a TLS-verifying context.
+        import tempfile
+
+        ca_dir = tempfile.gettempdir()
+        monkeypatch.setenv("SSL_CERT_DIR", ca_dir)
+
+    _install_worker_boundaries(
+        monkeypatch,
+        SimpleNamespace(init=AsyncMock()),
+        AsyncMock(return_value=SimpleNamespace(set=AsyncMock(return_value=False))),
+        SimpleNamespace(filter=Mock()),
+        Mock(),
+    )
+    loop = asyncio.new_event_loop()
+    monkeypatch.setattr(asyncio, "new_event_loop", lambda: loop)
+    try:
+        module.init_tortoise()
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+    context = create_ssl_context()
+    assert isinstance(context, truststore.SSLContext) is uses_system_trust
+    assert context.check_hostname is True
+    import ssl
+
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    if ca_file:
+        assert module.os.environ["SSL_CERT_FILE"] == ca_file
+    elif ca_dir:
+        assert module.os.environ.get("SSL_CERT_FILE") is None
+        assert module.os.environ["SSL_CERT_DIR"] == ca_dir
+    elif platform == "darwin":
+        import certifi
+
+        assert module.os.environ["SSL_CERT_FILE"] == certifi.where()
+    else:
+        assert module.os.environ.get("SSL_CERT_FILE") is None
+
+
 @pytest.mark.parametrize("redis_result", [False, RuntimeError("redis unavailable")])
 def test_init_tortoise_skips_recovery_without_lock(monkeypatch, redis_result):
     module, app = _load_celery_module(monkeypatch)
