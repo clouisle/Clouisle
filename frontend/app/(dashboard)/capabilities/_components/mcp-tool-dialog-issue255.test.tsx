@@ -161,7 +161,7 @@ describe('McpToolDialog', () => {
 
     await byText(tree, 'create').props.onClick!()
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'mcp_server', display_name: 'MCP Server', description: '- search: Find things\n- plain: No description',
+      name: 'mcp_server', display_name: 'MCP Server', description: 'search: Find things; plain: mcpDialog.noDescription',
       icon: 'M', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['pkg'], env: { TOKEN: 'secret' } },
     }))

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api import deps
 from app.models.user import User
 from app.schemas.response import Response, success
-from app.schemas.tool_approval import PolicySource
+from app.schemas.tool_approval import ExecutionEntrypoint, PolicySource
 from app.schemas.tool_approval_policy import (
     ToolApprovalEntrypointKind,
     ToolApprovalPolicyCreateIn,
@@ -91,6 +91,14 @@ async def get_effective_policy(
     team_id: UUID,
     tool_id: UUID,
     operation: str = Query(min_length=1, max_length=200),
+    entrypoint: ExecutionEntrypoint | None = Query(
+        default=None,
+        description=(
+            "Runtime entrypoint of the previewed call. Omitted means a direct "
+            "tool-test/browse call; pass an interactive agent entrypoint to "
+            "preview the tool's own policy."
+        ),
+    ),
     entrypoint_kind: ToolApprovalEntrypointKind | None = Query(default=None),
     entrypoint_id: UUID | None = Query(default=None),
     entrypoint_interactive: bool = Query(default=True),
@@ -102,6 +110,7 @@ async def get_effective_policy(
         team_id=team_id,
         entrypoint_kind=entrypoint_kind,
         entrypoint_id=entrypoint_id,
+        entrypoint=entrypoint,
         tool_id=tool_id,
         operation=operation,
         entrypoint_interactive=entrypoint_interactive,

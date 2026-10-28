@@ -170,6 +170,9 @@
     "policy": {
       "title": "Approval policies",
       "description": "Mandatory approval layers apply before a tool executes. The server composes site, team and entry point layers; you can edit only rows you own or administer.",
+      "managementLink": "Approval policies",
+      "managementHint": "Manage site, team and entry point approval layers",
+      "accessDenied": "You do not have permission to manage approval policies.",
       "listTitle": "Configured policies",
       "listDescription": "A site denial or approval requirement cannot be relaxed by a lower layer. Version conflicts are reported instead of overwriting another edit.",
       "loading": "Loading approval policies...",
@@ -190,7 +193,7 @@
       "addSite": "Add site policy",
       "addTeam": "Add team policy",
       "addEntrypoint": "Add entry point policy",
-      "noSite": "No site policy configured. Unconfigured tools still require approval by default.",
+      "noSite": "No site policy configured.",
       "noTeam": "No team policy configured for this team.",
       "noEntrypoint": "No entry point policies configured.",
       "edit": "Edit",

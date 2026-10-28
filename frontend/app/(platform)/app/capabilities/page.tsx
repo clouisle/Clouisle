@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -35,6 +35,7 @@ import {
 } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
+import { toolConnectionsApi } from '@/lib/api/tool-connections'
 import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
 import { ToolConnectionDialog } from '@/components/tools/tool-connection-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
@@ -49,6 +50,7 @@ type CapabilityTab = 'tools' | 'skills'
 
 export default function CapabilitiesPage() {
   const t = useTranslations('platform')
+  const tApprovals = useTranslations('approvals')
   const tCommon = useTranslations('common')
   const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
@@ -58,6 +60,7 @@ export default function CapabilitiesPage() {
   const { canPerform } = useCanPerform()
   const canReadTools = canPerform('tool:read')
   const canReadSkills = canPerform('skill:read')
+  const canManageApprovalPolicies = canPerform(['tool:update', 'admin:settings:update'])
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const canCreateTool = canPerform('tool:create')
   const canEditTool = (tool: Tool) =>
@@ -79,6 +82,9 @@ export default function CapabilitiesPage() {
   // Config dialog (for builtin tools)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [configuringTool, setConfiguringTool] = useState<Tool | null>(null)
+  // Builtin name -> whether usable connection state currently exists. Only
+  // tools with a successful lookup appear here; absence means "no evidence".
+  const [configuredBuiltins, setConfiguredBuiltins] = useState<Record<string, boolean>>({})
 
   // HTTP tool dialog
   const [httpDialogOpen, setHttpDialogOpen] = useState(false)
@@ -148,6 +154,39 @@ export default function CapabilitiesPage() {
       // 合并所有类型的工具
       const allTools = [...response.builtin, ...response.custom, ...response.mcp]
       setTools(allTools)
+
+      const connectionAware = allTools.filter(
+        (tool) =>
+          tool.type === 'builtin' &&
+          (tool.requires_config ||
+            (tool.identity_policy && tool.identity_policy !== 'none'))
+      )
+
+      // A builtin only shows "configured" when connection state proves it.
+      // One team-scoped list covers both binding forms a materialized builtin
+      // can have (stable definition id or builtin key); failed lookups leave
+      // no evidence so the card never claims unverified state.
+      try {
+        const connections = await toolConnectionsApi.list(currentTeam.id)
+        const activeConnections = connections.filter(
+          (connection) => connection.status === 'active'
+        )
+        setConfiguredBuiltins(
+          Object.fromEntries(
+            connectionAware.map((tool): [string, boolean] => [
+              tool.name,
+              activeConnections.some(
+                (connection) =>
+                  (tool.id !== undefined && connection.tool_id === tool.id) ||
+                  connection.builtin_tool_key === tool.name
+              ),
+            ])
+          )
+        )
+      } catch (error) {
+        console.error('Failed to load tool connection state:', error)
+        setConfiguredBuiltins({})
+      }
     } catch (error) {
       console.error('Failed to load tools:', error)
     } finally {
@@ -193,6 +232,10 @@ export default function CapabilitiesPage() {
       if (detail.type === 'mcp') {
         setEditingMcpTool(detail)
         setMcpDialogOpen(true)
+      } else if (detail.type === 'builtin') {
+        if (detail.requires_config || (detail.identity_policy && detail.identity_policy !== 'none')) {
+          handleConfigureTool(detail)
+        }
       } else if (detail.type === 'custom') {
         if (detail.custom_type === 'http') {
           setEditingHttpTool(detail)
@@ -214,6 +257,7 @@ export default function CapabilitiesPage() {
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
+      toast.error(t('tools.error.loadToolDetailFailed'))
     }
   }
 
@@ -324,6 +368,17 @@ export default function CapabilitiesPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
           <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
         </div>
+        {canManageApprovalPolicies && (
+          <Button
+            variant="outline"
+            onClick={() => router.push('/app/capabilities/policies')}
+            title={tApprovals('policy.managementHint')}
+            data-testid="capabilities-policies-link"
+          >
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            {tApprovals('policy.managementLink')}
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">
@@ -462,6 +517,9 @@ export default function CapabilitiesPage() {
               canEdit={canEditTool}
               canShare={canShareTool}
               canDelete={canDeleteTool}
+              configuredFor={(tool) =>
+                tool.type === 'builtin' ? configuredBuiltins[tool.name] : undefined
+              }
             />
           )}
         </TabsContent>

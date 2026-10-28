@@ -113,3 +113,32 @@ test('does not display private badge for built-in tools', () => {
   const text = nodes.flatMap((element) => element.props.children).filter((child) => typeof child === 'string')
   expect(text).not.toContain('platform.tools.visibilityPrivate')
 })
+
+const builtinNeedsConfig: Tool = {
+  ...baseTool,
+  name: 'postgresql_query',
+  type: 'builtin',
+  requires_config: true,
+}
+
+test('does not claim a builtin is configured without connection evidence', () => {
+  for (const configured of [undefined, false]) {
+    const tree = ToolCard({ tool: builtinNeedsConfig, canConfigure: true, configured })
+    const nodes = elements(tree)
+    const text = nodes.flatMap((element) => element.props.children).filter((child) => typeof child === 'string')
+
+    expect(text).not.toContain('platform.tools.configured')
+    expect(text).toContain('platform.tools.requiresConfig')
+    expect(text).toContain('platform.tools.configureConnections')
+  }
+})
+
+test('shows configured only when connection state proves it', () => {
+  const tree = ToolCard({ tool: builtinNeedsConfig, canConfigure: true, configured: true })
+  const nodes = elements(tree)
+  const text = nodes.flatMap((element) => element.props.children).filter((child) => typeof child === 'string')
+
+  expect(text).toContain('platform.tools.configured')
+  expect(text).not.toContain('platform.tools.requiresConfig')
+  expect(text).toContain('platform.tools.manageConnections')
+})

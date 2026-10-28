@@ -56,6 +56,11 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
+try:  # mcp >= 1.x: JSON-RPC errors reported by the server.
+    from mcp.shared.exceptions import MCPError as _SdkMcpError
+except ImportError:  # pragma: no cover - the SDK always ships this module
+    _SdkMcpError = None
+
 from app.services.error_messages import (
     exception_to_user_message,
     resolve_user_visible_error,
@@ -87,6 +92,7 @@ __all__ = [
     "McpError",
     "McpInputRequired",
     "McpInputRequiredInfo",
+    "McpInvalidRequest",
     "McpPromptArgument",
     "McpPromptInfo",
     "McpPromptMessage",
@@ -96,6 +102,7 @@ __all__ = [
     "McpResourceTemplateInfo",
     "McpRoot",
     "McpServerCapabilities",
+    "McpServerError",
     "McpTimeout",
     "McpToolInfo",
     "McpToolResult",
@@ -113,6 +120,7 @@ __all__ = [
     "list_mcp_tools",
     "probe_mcp_capabilities",
     "read_mcp_resource",
+    "translate_mcp_error",
 ]
 
 MCP_CLIENT_NAME = "clouisle"
@@ -140,6 +148,9 @@ _SENSITIVE_ELICITATION_FIELD = re.compile(
 )
 _TEXTUAL_CONTENT_TYPES = frozenset({"text"})
 _BINARY_CONTENT_TYPES = frozenset({"image", "audio"})
+# Raw braces are not valid URI characters; a URI that still contains them is
+# an unexpanded RFC 6570 template and must not be sent to the server.
+_URI_TEMPLATE_MARKER = re.compile(r"[{}]")
 
 T = TypeVar("T")
 
@@ -234,6 +245,68 @@ class McpInputRequired(McpError):
             details=info.to_dict(),
         )
         self.info = info
+
+
+class McpInvalidRequest(McpError, ValueError):
+    """The caller supplied a request this adapter cannot send.
+
+    This is a local validation failure (missing configuration, blank URI, an
+    unexpanded URI template), not a transport failure. It subclasses
+    ``ValueError`` so historical callers keep their exception contract while
+    the API can answer with a 400 instead of a misleading 502.
+    """
+
+    code = "invalid_request"
+
+    def __init__(self, message: str, *, reason: str = "request") -> None:
+        super().__init__(message, details={"reason": reason})
+        self.reason = reason
+
+
+class McpServerError(McpError):
+    """The server answered with a JSON-RPC error instead of a result.
+
+    The server was reachable and rejected the request, so this must never be
+    reported as a connection failure. Only the numeric code is retained in
+    ``details``: server-provided text may contain secrets and is never
+    surfaced to API callers.
+    """
+
+    code = "server_error"
+
+    #: JSON-RPC codes that mean the request itself was unacceptable.
+    INVALID_REQUEST_CODES = frozenset({-32700, -32600, -32602, -32002})
+
+    def __init__(self, rpc_code: int, message: str) -> None:
+        super().__init__(message, details={"rpc_code": rpc_code})
+        self.rpc_code = rpc_code
+
+    @property
+    def invalid_request(self) -> bool:
+        return self.rpc_code in self.INVALID_REQUEST_CODES
+
+
+def translate_mcp_error(exc: BaseException) -> McpError | None:
+    """Return the adapter error hidden inside task-group wrappers.
+
+    Transports and the MCP SDK group background failures with anyio/asyncio
+    task groups. A typed failure raised while a session is open (a capability
+    check, a deadline, or a server rejection) can therefore surface as
+    ``ExceptionGroup`` -> ``ExceptionGroup`` -> ``McpError``. Callers mapping
+    protocol failures must inspect the leaves; an outer group is not a
+    connection failure.
+    """
+    if isinstance(exc, McpError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for nested in exc.exceptions:
+            found = translate_mcp_error(nested)
+            if found is not None:
+                return found
+        return None
+    if _SdkMcpError is not None and isinstance(exc, _SdkMcpError):
+        return McpServerError(exc.code, exc.message)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1615,7 +1688,10 @@ class McpClient:
             async with self._connect_http() as streams:
                 yield streams
         else:
-            raise ValueError(f"Unsupported transport: {self.transport}")
+            raise McpInvalidRequest(
+                f"Unsupported transport: {self.transport}",
+                reason="configuration",
+            )
 
     @asynccontextmanager
     async def _connect_stdio(self) -> AsyncIterator[tuple[Any, Any]]:
@@ -1624,7 +1700,10 @@ class McpClient:
         env = self.config.get("env", {})
 
         if not command:
-            raise ValueError("Command is required for stdio transport")
+            raise McpInvalidRequest(
+                "Command is required for stdio transport",
+                reason="configuration",
+            )
 
         server_params = StdioServerParameters(
             command=command,
@@ -1648,7 +1727,10 @@ class McpClient:
         headers = self._http_headers()
 
         if not url:
-            raise ValueError("URL is required for SSE transport")
+            raise McpInvalidRequest(
+                "URL is required for SSE transport",
+                reason="configuration",
+            )
 
         kwargs: dict[str, Any] = {}
         if headers:
@@ -1684,7 +1766,10 @@ class McpClient:
         headers = self._http_headers()
 
         if not url:
-            raise ValueError("URL is required for HTTP transport")
+            raise McpInvalidRequest(
+                "URL is required for HTTP transport",
+                reason="configuration",
+            )
 
         async with AsyncExitStack() as stack:
             http_client = None
@@ -2009,7 +2094,15 @@ class McpClient:
         no local downloads or URI rewriting.
         """
         if not isinstance(uri, str) or not uri.strip():
-            raise ValueError("Resource URI is required")
+            raise McpInvalidRequest(
+                "Resource URI is required",
+                reason="resource_uri",
+            )
+        if _URI_TEMPLATE_MARKER.search(uri):
+            raise McpInvalidRequest(
+                "Resource URI still contains an unexpanded template variable",
+                reason="resource_uri",
+            )
 
         deadline = _Deadline(
             timeout if timeout is not None else self.timeouts.request,
@@ -2060,7 +2153,7 @@ class McpClient:
         before being applied to a conversation.
         """
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Prompt name is required")
+            raise McpInvalidRequest("Prompt name is required")
 
         deadline = _Deadline(
             timeout if timeout is not None else self.timeouts.request,
@@ -2120,7 +2213,7 @@ class McpClient:
     ) -> McpCompletion:
         """Request argument completion for a prompt or resource template."""
         if not isinstance(argument_name, str) or not argument_name:
-            raise ValueError("Completion argument name is required")
+            raise McpInvalidRequest("Completion argument name is required")
 
         deadline = _Deadline(
             timeout if timeout is not None else self.timeouts.request,

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { ApiError } from '@/lib/api/client'
 
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register({ url: 'http://localhost' })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -26,7 +27,7 @@ mock.module('@/components/ui/button', () => ({
 }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children, open = true }: React.PropsWithChildren<{ open?: boolean }>) => open ? <div>{children}</div> : null,
-  DialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DialogContent: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>,
   DialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
   DialogFooter: ({ children }: React.PropsWithChildren) => <footer>{children}</footer>,
   DialogHeader: ({ children }: React.PropsWithChildren) => <header>{children}</header>,
@@ -183,15 +184,15 @@ async function select(element: HTMLSelectElement, value: string) {
   await flush()
 }
 
-async function render(options: { open?: boolean } = {}) {
+async function render(options: { open?: boolean; toolId?: string; onOpenChange?: (open: boolean) => void } = {}) {
   window.localStorage.setItem('access_token', 'test-token')
   await act(async () => {
     renderer = create(
       <McpToolBrowser
-        tool={{ id: 'tool-1', name: 'docs', display_name: 'Docs', identity_policy: 'none', connection_fields: [] } as never}
+        tool={{ id: options.toolId ?? 'tool-1', name: 'docs', display_name: 'Docs', identity_policy: 'none', connection_fields: [] } as never}
         teamId="team-1"
         open={options.open ?? true}
-        onOpenChange={() => {}}
+        onOpenChange={options.onOpenChange ?? (() => {})}
       />
     )
   })
@@ -236,7 +237,7 @@ describe('McpToolBrowser', () => {
     await act(async () => button('mcpBrowser.openChat')!.click())
     const draftKey = Object.keys(window.sessionStorage).find((key) => key.includes('team-1:agent-1'))
     expect(draftKey).toBeTruthy()
-    expect(JSON.parse(window.sessionStorage.getItem(draftKey!)!).text).toContain('Untrusted external context')
+    expect(JSON.parse(window.sessionStorage.getItem(draftKey!)!).text).toContain('tools.mcpBrowser.draftResourceNotice')
     expect(push).toHaveBeenCalledWith('/chat/agent-1?draft=1&team=team-1')
   })
 
@@ -254,6 +255,105 @@ describe('McpToolBrowser', () => {
     expect(button('tools.mcpBrowser.monitor.start')).toBeUndefined()
     expect(document.body.textContent).toContain('Doc')
   })
+
+  test('does not request unsupported capabilities and selects a supported tab', async () => {
+    getCapabilities.mockImplementationOnce(async () => ({
+      status: 'completed', operation: 'list:capabilities', execution_id: null, pending_approval: null,
+      result: { resources: false, resources_subscribe: false, resource_templates: false, prompts: true, server_name: 'Prompts only', server_version: null },
+    }))
+    await render()
+
+    expect(listResources).not.toHaveBeenCalled()
+    expect(listResourceTemplates).not.toHaveBeenCalled()
+    expect(listPrompts).toHaveBeenCalledTimes(1)
+    expect(button('tools.mcpBrowser.tabs.resources')!.disabled).toBe(true)
+    expect(button('tools.mcpBrowser.tabs.prompts')!.disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('tools.mcpBrowser.resources.empty')
+  })
+
+  test('shows an honest unsupported state when no browsing capability exists', async () => {
+    getCapabilities.mockImplementationOnce(async () => ({
+      status: 'completed', operation: 'list:capabilities', execution_id: null, pending_approval: null,
+      result: { resources: false, resources_subscribe: false, resource_templates: false, prompts: false, server_name: 'Empty', server_version: null },
+    }))
+    await render()
+
+    expect(listResources).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('tools.mcpBrowser.unsupported.resources')
+    expect(document.body.textContent).not.toContain('tools.mcpBrowser.resources.empty')
+  })
+
+  test('resets the active tab when the server changes', async () => {
+    await render()
+    await click('tools.mcpBrowser.tabs.templates')
+    expect(listResourceTemplates).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      renderer!.update(
+        <McpToolBrowser
+          tool={{ id: 'tool-2', name: 'other', display_name: 'Other', identity_policy: 'none', connection_fields: [] } as never}
+          teamId="team-1"
+          open
+          onOpenChange={() => {}}
+        />
+      )
+    })
+    await flush()
+
+    expect(getCapabilities).toHaveBeenLastCalledWith('tool-2', expect.anything())
+    expect(listResources).toHaveBeenLastCalledWith('tool-2', expect.anything())
+    expect(listResourceTemplates).toHaveBeenCalledTimes(1)
+    expect(button('Doc')).toBeTruthy()
+  })
+
+  test('shows truncation notices for partial lists and previews', async () => {
+    listResources.mockImplementationOnce(async () => ({
+      status: 'completed', operation: 'list:resources', execution_id: null, pending_approval: null,
+      result: {
+        items: [{ uri: 'doc://a', name: 'Doc', title: 'Doc', description: null, mime_type: 'text/plain', size: 4, annotations: null, meta: null }],
+        pages_fetched: 1, truncated: true, truncation_reason: 'max_items', next_cursor: null, total_items: 3,
+      },
+    }))
+    readResource.mockImplementationOnce(async () => ({
+      status: 'completed', operation: 'read:resource', execution_id: null, pending_approval: null,
+      result: [{ uri: 'doc://a', mime_type: 'text/plain', text: 'x'.repeat(6001), blob: null, meta: null }],
+    }))
+    await render()
+
+    expect(document.body.textContent).toContain('tools.mcpBrowser.truncated.list')
+    await click('Doc')
+    expect(document.body.textContent).toContain('tools.mcpBrowser.previewTruncated')
+  })
+
+  test('shows the localized API error and legacy policy guidance', async () => {
+    getCapabilities.mockRejectedValueOnce(new ApiError(6510, 'This tool needs a caller confirmation policy.'))
+    await render()
+
+    expect(document.body.textContent).toContain('This tool needs a caller confirmation policy.')
+    expect(document.body.textContent).toContain('tools.mcpBrowser.policyGuidance')
+    expect(document.body.textContent).not.toContain('tools.mcpBrowser.loadFailed')
+  })
+
+  test('closes with Escape and stops an active monitor', async () => {
+    const onOpenChange = mock(() => {})
+    await render({ onOpenChange })
+    await click('tools.mcpBrowser.monitor.start')
+    const dialog = renderer!.root.findAll(
+      (node) => node.props.className === 'sm:max-w-4xl max-h-[90vh] overflow-y-auto'
+    )[0]
+    expect(dialog).toBeTruthy()
+
+    await act(async () => {
+      dialog.props.onKeyDownCapture({ key: 'Escape', preventDefault() {}, stopPropagation() {} })
+    })
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(unsubscribeResource).toHaveBeenCalledTimes(1)
+
+    await click('tools.mcpBrowser.close')
+    expect(onOpenChange).toHaveBeenCalledTimes(2)
+  })
+
 
   test('shows loading, reports discovery failure, and recovers on refresh', async () => {
     const capabilitiesRequest = Promise.withResolvers<ApiOutcome>()
@@ -288,12 +388,12 @@ describe('McpToolBrowser', () => {
     expect(button('tools.mcpBrowser.tabs.prompts')!.disabled).toBe(false)
   })
 
-  test('reports a failed resource listing and shows the empty state', async () => {
+  test('reports a failed resource listing without claiming the list is empty', async () => {
     listResources.mockRejectedValueOnce(new Error('listing offline'))
     await render()
 
     expect(document.body.textContent).toContain('tools.mcpBrowser.loadFailed')
-    expect(document.body.textContent).toContain('tools.mcpBrowser.resources.empty')
+    expect(document.body.textContent).not.toContain('tools.mcpBrowser.resources.empty')
   })
 
   test('retries capability discovery that awaits approval', async () => {
@@ -369,11 +469,14 @@ describe('McpToolBrowser', () => {
     await click('tools.mcpBrowser.templates.expand', 0)
     const uriInput = renderer!.root.findByProps({ value: 'doc://{id}' })
     expect((document.querySelector('input') as HTMLInputElement).value).toBe('doc://{id}')
+    expect(document.body.textContent).toContain('tools.mcpBrowser.templates.unexpanded')
+    expect(button('tools.mcpBrowser.templates.read')!.disabled).toBe(true)
     await act(async () => uriInput.props.onChange({ target: { value: '   ' } }))
     await flush()
     expect(button('tools.mcpBrowser.templates.read')!.disabled).toBe(true)
     await act(async () => uriInput.props.onChange({ target: { value: 'doc://edited' } }))
     await flush()
+    expect(document.body.textContent).not.toContain('tools.mcpBrowser.templates.unexpanded')
     await click('tools.mcpBrowser.templates.read')
     expect(readResource).toHaveBeenLastCalledWith('tool-1', 'team-1', 'doc://edited', expect.anything())
   })
@@ -435,6 +538,7 @@ describe('McpToolBrowser', () => {
     expect(document.body.textContent).toContain('user')
     expect(document.body.textContent).toContain('assistant')
     expect(document.body.textContent).toContain('system')
+    expect(document.body.textContent).toContain('tools.mcpBrowser.untrustedPrompt')
     expect(document.body.textContent).not.toContain('Untrusted external context from MCP prompt')
 
     await click('tools.mcpBrowser.apply')
@@ -443,7 +547,7 @@ describe('McpToolBrowser', () => {
     const promptDraftKey = Object.keys(window.sessionStorage).find((key) => key.includes('team-1:agent-1'))
     expect(promptDraftKey).toBeTruthy()
     const promptDraft = JSON.parse(window.sessionStorage.getItem(promptDraftKey!)!).text as string
-    expect(promptDraft).toContain('Untrusted external context from MCP prompt "summarize"')
+    expect(promptDraft).toContain('tools.mcpBrowser.draftPromptNotice')
     expect(promptDraft).toContain('[user] hello world')
     expect(promptDraft).toContain('[assistant] from data')
     expect(push).toHaveBeenCalledWith('/chat/agent-1?draft=1&team=team-1')

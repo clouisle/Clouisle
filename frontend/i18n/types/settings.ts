@@ -21,6 +21,12 @@ export type SettingsMessages = {
       scopeTeam: string
       createdSuccess: string
       revokeSuccess: string
+      revokeConfirmTitle: string
+      revokeConfirmDescription: string
+      revokeConfirmAction: string
+      oauthDisconnectConfirmTitle: string
+      oauthDisconnectConfirmDescription: string
+      oauthDisconnectConfirmAction: string
       setDefaultSuccess: string
       reauthRequired: string
       reconnect: string

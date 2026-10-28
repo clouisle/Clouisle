@@ -111,7 +111,7 @@ describe('McpToolDialog', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: 'mcp_search',
       display_name: 'MCP Search',
-      description: '- search: Searches',
+      description: 'search: Searches',
       icon: '🔎',
       type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'npx', args: ['-y'], env: { NODE_ENV: 'test' } },

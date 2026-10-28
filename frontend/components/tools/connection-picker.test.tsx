@@ -18,6 +18,21 @@ mock.module('lucide-react', () => ({
 mock.module('@/components/ui/badge', () => ({
   Badge: ({ children, ...props }: React.ComponentProps<'span'>) => <span {...props}>{children}</span>,
 }))
+mock.module('@/components/ui/alert-dialog', () => ({
+  AlertDialog: ({ open, children }: React.PropsWithChildren<{ open?: boolean }>) =>
+    open ? <div data-testid="confirm-dialog">{children}</div> : null,
+  AlertDialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogFooter: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
+  AlertDialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
+  AlertDialogAction: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
+  AlertDialogCancel: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
+}))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,
 }))
@@ -312,6 +327,7 @@ describe('ToolConnectionPicker', () => {
 
     const nameInput = renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' })
     const secretInput = renderer!.root.findByProps({ id: 'connection-secret-api_key' })
+    expect(secretInput.props.autoComplete).toBe('new-password')
     await act(async () => nameInput.props.onChange({ target: { value: 'Personal' } }))
     await act(async () => secretInput.props.onChange({ target: { value: 'secret-value' } }))
     await act(async () => button('connections.create')!.click())
@@ -339,6 +355,9 @@ describe('ToolConnectionPicker', () => {
     expect(openSpy).toHaveBeenCalledTimes(2)
 
     await act(async () => button('connections.oauthDisconnect')!.click())
+    await flush()
+    expect(disconnectOAuth).not.toHaveBeenCalled()
+    await act(async () => button('connections.oauthDisconnectConfirmAction')!.click())
     await flush()
     expect(disconnectOAuth).toHaveBeenCalledWith('c1')
   })
@@ -568,9 +587,30 @@ describe('ToolConnectionPicker', () => {
     const revokeButton = document.querySelector('button[title="connections.revoke"]') as HTMLButtonElement
     await act(async () => revokeButton.click())
     await flush()
+    expect(revoke).not.toHaveBeenCalled()
+
+    await act(async () => button('connections.revokeConfirmAction')!.click())
+    await flush()
 
     expect(revoke).toHaveBeenCalledWith('c1')
     expect(alertText()).toBe('connections.revokeFailed')
+  })
+
+  test('confirms before revoking a shared team connection', async () => {
+    await renderPicker()
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    const revokeButton = document.querySelector('button[title="connections.revoke"]') as HTMLButtonElement
+    await act(async () => revokeButton.click())
+    await flush()
+
+    expect(revoke).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('connections.revokeConfirmTitle')
+
+    await act(async () => button('connections.revokeConfirmAction')!.click())
+    await flush()
+    expect(revoke).toHaveBeenCalledWith('c1')
   })
 
   test('reports manager load failures instead of pretending the team has no connections', async () => {

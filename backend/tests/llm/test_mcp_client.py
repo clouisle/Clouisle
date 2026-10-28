@@ -826,6 +826,38 @@ async def test_read_resource_requires_a_uri():
         await mcp.McpClient({}).read_resource("   ")
 
 
+async def test_read_resource_rejects_unexpanded_template_uri():
+    with pytest.raises(mcp.McpInvalidRequest) as error:
+        await mcp.McpClient({}).read_resource("repo://{owner}/{repo}/contents{/path*}")
+
+    assert error.value.reason == "resource_uri"
+
+
+async def test_translate_mcp_error_unwraps_nested_task_groups():
+    from mcp.shared.exceptions import MCPError as SdkMcpError
+
+    unavailable = mcp.McpCapabilityUnavailable("resources")
+    nested = ExceptionGroup(
+        "outer",
+        [ExceptionGroup("inner", [RuntimeError("teardown"), unavailable])],
+    )
+
+    assert mcp.translate_mcp_error(nested) is unavailable
+    assert mcp.translate_mcp_error(RuntimeError("transport")) is None
+    assert mcp.translate_mcp_error(ExceptionGroup("noise", [RuntimeError("x")])) is None
+
+    rejected = ExceptionGroup("session", [SdkMcpError(-32602, "unknown resource uri")])
+    typed = mcp.translate_mcp_error(rejected)
+
+    assert isinstance(typed, mcp.McpServerError)
+    assert typed.rpc_code == -32602
+    assert typed.invalid_request is True
+
+    server_fault = mcp.translate_mcp_error(SdkMcpError(-32603, "boom"))
+    assert isinstance(server_fault, mcp.McpServerError)
+    assert server_fault.invalid_request is False
+
+
 # ---------------------------------------------------------------------------
 # Prompts and completion
 # ---------------------------------------------------------------------------

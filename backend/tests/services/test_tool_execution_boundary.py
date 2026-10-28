@@ -261,8 +261,8 @@ async def test_chat_mcp_child_policy_pauses_before_call_and_resumes_once(monkeyp
         ("workflow", None, False, True, False),
         ("tool_test", None, True, True, False),
         ("admin_test", None, True, True, False),
-        ("api_key", None, False, True, False),
-        ("chat", None, False, True, False),
+        ("api_key", None, False, True, "closed"),
+        ("chat", None, False, True, "closed"),
         ("chat", None, True, False, False),
     ],
 )
@@ -307,6 +307,18 @@ async def test_agent_confirmation_cannot_be_relaxed_by_mcp_child_allow(
         async def invoke(parameters, connection):
             calls.append(parameters)
             return {"result": "read"}
+
+        if expected_wait == "closed":
+            # A non-interactive Agent run cannot satisfy a caller gate, so the
+            # tool policy fails closed instead of being skipped.
+            with pytest.raises(BusinessError) as fail_closed:
+                await execute_stored_tool(tool, "tool:read", {}, context, invoke)
+            assert fail_closed.value.msg_key == (
+                "tool_approval_policy_configuration_required"
+            )
+            assert fail_closed.value.data == {"reason": "approval_audience_unavailable"}
+            assert calls == []
+            return
 
         result = await execute_stored_tool(tool, "tool:read", {}, context, invoke)
         if expected_wait:

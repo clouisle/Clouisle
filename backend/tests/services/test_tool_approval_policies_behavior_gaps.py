@@ -788,3 +788,230 @@ def test_preview_validates_entrypoint_and_computes_editability(run_orm):
         assert mixed.evaluation.decision == ApprovalDecision.DENY
 
     run_orm(scenario)
+
+
+def test_effective_preview_matches_the_actual_entrypoint(run_orm):
+    async def scenario():
+        owner = await _user("owner")
+        team = await _team(owner)
+        tool = await _tool(team)
+        caller_gate = (ApprovalGate(kind=ApprovalGateKind.CALLER),)
+        stored = ToolApprovalPolicy(
+            default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+            gates=caller_gate,
+            operation_overrides={
+                "list:tools": ToolApprovalPolicy(
+                    default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+                    gates=caller_gate,
+                )
+            },
+        )
+        await Tool.filter(id=tool.id).update(
+            type=ToolType.MCP,
+            created_by_id=owner.id,
+            approval_policy=stored.model_dump(mode="json"),
+        )
+        tool = await Tool.get(id=tool.id)
+        await _grant(owner, "tool:update")
+        await _grant(owner, "team:read")
+
+        # Capability browsing is a direct call: the tool's operation default
+        # never gates it, exactly like execute_stored_tool.
+        direct = await get_effective_policy(
+            owner, team_id=team.id, tool_id=tool.id, operation="tool:search"
+        )
+        assert direct.evaluation.decision == ApprovalDecision.ALLOW
+        assert direct.evaluation.gates == ()
+
+        explicit_test = await get_effective_policy(
+            owner,
+            team_id=team.id,
+            tool_id=tool.id,
+            operation="tool:search",
+            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+        )
+        assert explicit_test.evaluation.decision == ApprovalDecision.ALLOW
+
+        # An interactive agent call reaches the same layer the model call does.
+        agent_call = await get_effective_policy(
+            owner,
+            team_id=team.id,
+            tool_id=tool.id,
+            operation="tool:search",
+            entrypoint=ExecutionEntrypoint.CHAT,
+        )
+        assert agent_call.evaluation.decision == ApprovalDecision.REQUIRE_APPROVAL
+
+        # Execution agrees with both previews, not just the API.
+        from app.services.tool_execution import (
+            PendingToolApproval,
+            ToolCallContext,
+            execute_stored_tool,
+        )
+
+        async def invoke(_parameters, _connection):
+            return "ran"
+
+        direct_call = await execute_stored_tool(
+            tool,
+            "tool:search",
+            {},
+            ToolCallContext(
+                actor=owner,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.TOOL_TEST,
+                interactive=True,
+            ),
+            invoke,
+        )
+        assert direct_call == "ran"
+
+        agent_execution = await execute_stored_tool(
+            tool,
+            "tool:search",
+            {},
+            ToolCallContext(
+                actor=owner,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.CHAT,
+                interactive=True,
+            ),
+            invoke,
+        )
+        assert isinstance(agent_execution, PendingToolApproval)
+
+        # A non-interactive Agent entrypoint still applies the tool layer. A
+        # caller gate becomes a configuration error (nobody can approve), so
+        # both preview and execution fail closed instead of skipping policy.
+        non_interactive = await get_effective_policy(
+            owner,
+            team_id=team.id,
+            tool_id=tool.id,
+            operation="tool:search",
+            entrypoint=ExecutionEntrypoint.CHAT,
+            entrypoint_interactive=False,
+        )
+        assert non_interactive.evaluation.decision == ApprovalDecision.REQUIRE_APPROVAL
+        assert (
+            non_interactive.evaluation.configuration_error
+            == "approval_audience_unavailable"
+        )
+        assert non_interactive.evaluation.is_allowed is False
+        with pytest.raises(BusinessError) as fail_closed:
+            await execute_stored_tool(
+                tool,
+                "tool:search",
+                {},
+                ToolCallContext(
+                    actor=owner,
+                    team_id=team.id,
+                    entrypoint=ExecutionEntrypoint.CHAT,
+                    entrypoint_id=str(uuid4()),
+                    interactive=False,
+                ),
+                invoke,
+            )
+        assert fail_closed.value.msg_key == (
+            "tool_approval_policy_configuration_required"
+        )
+        assert fail_closed.value.data == {"reason": "approval_audience_unavailable"}
+
+        # Discovery honours its explicit one-level override.
+        discovery_override = await get_effective_policy(
+            owner, team_id=team.id, tool_id=tool.id, operation="list:tools"
+        )
+        assert (
+            discovery_override.evaluation.decision == ApprovalDecision.REQUIRE_APPROVAL
+        )
+
+        # Content browsing is direct and has no discovery override.
+        ignored_override = await get_effective_policy(
+            owner, team_id=team.id, tool_id=tool.id, operation="read:resource"
+        )
+        assert ignored_override.evaluation.decision == ApprovalDecision.ALLOW
+
+        # A discovery operation with no explicit override stays open.
+        unconfigured_discovery = await get_effective_policy(
+            owner, team_id=team.id, tool_id=tool.id, operation="list:resources"
+        )
+        assert unconfigured_discovery.evaluation.decision == ApprovalDecision.ALLOW
+
+        # Stored layers still tighten every entrypoint, including browsing.
+        await create_policy_definition(
+            owner, _team_payload(team, policy=_policy(ApprovalDecision.DENY))
+        )
+        denied = await get_effective_policy(
+            owner, team_id=team.id, tool_id=tool.id, operation="tool:search"
+        )
+        assert denied.evaluation.decision == ApprovalDecision.DENY
+
+    run_orm(scenario)
+
+
+def test_tool_layer_resolver_keeps_legacy_audiences_fail_closed():
+    from app.services.tool_approval_policies import resolve_tool_layer_policy
+
+    legacy = ToolApprovalPolicy(
+        default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+        gates=(ApprovalGate(kind=ApprovalGateKind.TEAM_ROLE, roles=("member",)),),
+    )
+
+    resolved = resolve_tool_layer_policy(
+        SimpleNamespace(
+            type=ToolType.MCP,
+            approval_policy=legacy.model_dump(mode="json"),
+        ),
+        operation="list:tools",
+        entrypoint=ExecutionEntrypoint.TOOL_TEST,
+    )
+
+    assert resolved.default_decision == ApprovalDecision.REQUIRE_APPROVAL
+    assert resolved.gates
+
+    # Explicit policies apply to every tool type on Agent invocations,
+    # including non-interactive API-key runs (which then fail closed).
+    caller_policy = ToolApprovalPolicy(
+        default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+        gates=(ApprovalGate(kind=ApprovalGateKind.CALLER),),
+    )
+    for tool_type in (ToolType.CUSTOM, ToolType.MCP):
+        custom = resolve_tool_layer_policy(
+            SimpleNamespace(
+                type=tool_type,
+                approval_policy=caller_policy.model_dump(mode="json"),
+            ),
+            operation="tool:search",
+            entrypoint=ExecutionEntrypoint.API_KEY,
+        )
+        assert custom.default_decision == ApprovalDecision.REQUIRE_APPROVAL
+
+    # No explicit policy means no added restriction for Agent calls.
+    unconfigured = resolve_tool_layer_policy(
+        SimpleNamespace(type=ToolType.CUSTOM, approval_policy={}),
+        operation="tool:search",
+        entrypoint=ExecutionEntrypoint.API_KEY,
+    )
+    assert unconfigured.default_decision == ApprovalDecision.ALLOW
+
+
+def test_agent_call_predicate_normalizes_entrypoints_and_run_kinds():
+    from app.schemas.tool_approval import ExecutionRunKind
+    from app.services.tool_approval_policies import is_agent_tool_call
+
+    assert is_agent_tool_call(ExecutionEntrypoint.CHAT) is True
+    assert is_agent_tool_call("chat") is True
+    assert is_agent_tool_call(ExecutionEntrypoint.API_KEY) is True
+    assert is_agent_tool_call(ExecutionEntrypoint.NESTED_AGENT) is True
+    assert is_agent_tool_call(ExecutionEntrypoint.SCHEDULE) is True
+    assert is_agent_tool_call(ExecutionEntrypoint.EMBED) is True
+    assert (
+        is_agent_tool_call(
+            ExecutionEntrypoint.CHAT,
+            run_kind=ExecutionRunKind.WORKFLOW,
+        )
+        is False
+    )
+    assert is_agent_tool_call(ExecutionEntrypoint.CHAT, run_kind="workflow") is False
+    assert is_agent_tool_call(ExecutionEntrypoint.TOOL_TEST) is False
+    assert is_agent_tool_call(ExecutionEntrypoint.WORKFLOW) is False
+    assert is_agent_tool_call(None) is False

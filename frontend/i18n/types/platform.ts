@@ -232,6 +232,9 @@ export type PlatformMessages = {
       }
       noSearchResults: string
       requiresConfig: string
+      configured: string
+      configureConnections: string
+      manageConnections: string
       parameters: string
       searchEngine: string
       noParameters: string
@@ -490,6 +493,7 @@ export type PlatformMessages = {
         saveFailed: string
         nameRequired: string
         unknownToolType: string
+        loadToolDetailFailed: string
         cannotDeleteBuiltin: string
         cannotShareBuiltin: string
         noTeamSelected: string

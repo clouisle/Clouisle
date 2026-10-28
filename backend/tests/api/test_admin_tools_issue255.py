@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.api.v1.admin.endpoints import tools
+from app.llm.tools.mcp_client import McpInvalidRequest
 from app.models.tool import ToolType as DBToolType
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolVisibility as DBToolVisibility
@@ -477,6 +478,16 @@ async def test_mcp_discovery_maps_results_and_safe_failure(monkeypatch, user):
         await tools.get_mcp_tools(request, user)
     assert exc_info.value.msg_key == "mcp_connection_failed"
     assert exc_info.value.__cause__.args == ("offline",)
+
+    monkeypatch.setattr(
+        tools,
+        "list_mcp_tools",
+        AsyncMock(side_effect=McpInvalidRequest("bad url", reason="configuration")),
+    )
+    with pytest.raises(BusinessError) as invalid:
+        await tools.get_mcp_tools(request, user)
+    assert invalid.value.msg_key == "mcp_invalid_request"
+    assert invalid.value.status_code == 400
 
 
 @pytest.mark.asyncio

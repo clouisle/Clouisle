@@ -372,10 +372,13 @@ export function McpToolDialog({
     try {
       const mcpConfig = { ...buildMcpConfig(), ...mcpCapabilitiesConfig(mcpCapabilities) }
 
-      // 生成工具描述
+      // Generate a readable single-line summary; raw markdown bullets are
+      // truncated to garbage in the tool card.
       let toolsDescription = ''
       if (mcpTools.length > 0) {
-        toolsDescription = mcpTools.map(t => `- ${t.name}: ${t.description || 'No description'}`).join('\n')
+        toolsDescription = mcpTools
+          .map(tool => `${tool.name}: ${(tool.description || t('mcpDialog.noDescription')).replace(/\s+/g, ' ').trim()}`)
+          .join('; ')
       }
 
       const data: ToolCreateInput | ToolUpdateInput = {

@@ -317,7 +317,7 @@ async def test_agent_caller_switch_still_requires_caller_confirmation():
 
 
 @pytest.mark.asyncio
-async def test_noninteractive_caller_policy_keeps_no_confirmation_contract():
+async def test_noninteractive_agent_caller_policy_fails_closed():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -348,8 +348,13 @@ async def test_noninteractive_caller_policy_keeps_no_confirmation_contract():
             interactive=False,
             entrypoint_id=str(uuid4()),
         )
-        assert await execute_stored_tool(tool, "run", {"x": 1}, context, invoke) == "ok"
-        assert calls == [{"x": 1}]
+        with pytest.raises(BusinessError) as fail_closed:
+            await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
+        assert fail_closed.value.msg_key == (
+            "tool_approval_policy_configuration_required"
+        )
+        assert fail_closed.value.data == {"reason": "approval_audience_unavailable"}
+        assert calls == []
     finally:
         await Tortoise.close_connections()
 

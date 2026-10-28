@@ -1792,7 +1792,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "MCP server requires additional input; this request cannot continue",
         "zh": "MCP 服务器需要额外输入，当前请求无法继续",
     },
+    "mcp_invalid_request": {
+        "en": "The MCP request is invalid or incomplete",
+        "zh": "MCP 请求无效或不完整",
+    },
+    "mcp_invalid_resource_uri": {
+        "en": "The MCP resource URI is invalid or still contains an unexpanded template variable",
+        "zh": "MCP 资源 URI 无效或仍包含未替换的模板变量",
+    },
     "mcp_request_timeout": {"en": "MCP request timed out", "zh": "MCP 请求超时"},
+    "mcp_server_error": {
+        "en": "MCP server rejected the request",
+        "zh": "MCP 服务器拒绝了请求",
+    },
     "mcp_tool_execution_failed": {
         "en": "MCP tool execution failed",
         "zh": "MCP 工具执行失败",

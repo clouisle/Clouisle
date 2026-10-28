@@ -28,6 +28,7 @@ from app.api.v1.endpoints.tools import (
 from app.core.i18n import t
 from app.llm.tools import tool_registry
 from app.llm.tools.mcp_client import list_mcp_tools
+from app.services.mcp_errors import map_mcp_error
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool_approval import ExecutionEntrypoint
 from app.models.tool import (
@@ -242,6 +243,9 @@ async def get_mcp_tools(
         )
     except Exception as exc:
         logger.exception("Failed to list MCP tools: %s", exc)
+        mapped = map_mcp_error(exc)
+        if mapped is not None:
+            raise mapped from exc
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="mcp_connection_failed",

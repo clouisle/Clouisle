@@ -7,6 +7,8 @@ const createTool = mock()
 const updateTool = mock()
 const deleteTool = mock()
 const getMyTeams = mock(() => Promise.resolve([]))
+type ConnectionState = { id: string; status: string; tool_id?: string | null; builtin_tool_key?: string | null }
+const listConnections = mock((): Promise<ConnectionState[]> => Promise.resolve([]))
 const replace = mock()
 const push = mock()
 const toastError = mock()
@@ -78,9 +80,12 @@ mock.module('@/lib/api', () => ({
   teamsApi: { getMyTeams },
   isPresetToolCategory: () => false,
 }))
+mock.module('@/lib/api/tool-connections', () => ({
+  toolConnectionsApi: { list: listConnections },
+}))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1', role: 'member' } }) }))
 mock.module('@/hooks/use-require-team', () => ({ useRequireTeam: mock() }))
-mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (code: string) => permissions.has(code) }) }))
+mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (code: string | string[]) => { const codes = Array.isArray(code) ? code : [code]; return codes.some((item) => permissions.has(item)) } }) }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user: { id: 'user-1', is_superuser: false } }) }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
@@ -169,6 +174,8 @@ beforeEach(() => {
   deleteTool.mockReset()
   getMyTeams.mockReset()
   getMyTeams.mockResolvedValue([])
+  listConnections.mockReset()
+  listConnections.mockResolvedValue([])
   replace.mockReset()
   push.mockReset()
   toastError.mockReset()
@@ -198,6 +205,21 @@ describe('CapabilitiesPage', () => {
 
     ;(find(tree, (node) => node.type === 'tabs' && node.props.value === 'all').props.onValueChange as (value: string) => void)('mcp')
     expect(findAll(render(), (node) => node.type === 'article')).toHaveLength(0)
+  })
+
+  test('exposes approval policy management to authorized tool editors', async () => {
+    permissions = new Set(['tool:read', 'tool:update', 'skill:read'])
+    hooks = []
+    let tree = render()
+    const link = find(tree, (node) => node.props['data-testid'] === 'capabilities-policies-link')
+    expect(link.props.children).toBeDefined()
+    ;(link.props.onClick as () => void)()
+    expect(push).toHaveBeenCalledWith('/app/capabilities/policies')
+
+    permissions = new Set(['tool:read', 'skill:read'])
+    hooks = []
+    tree = render()
+    expect(findAll(tree, (node) => node.props['data-testid'] === 'capabilities-policies-link')).toHaveLength(0)
   })
 
   test('honors read and execute permissions while routing tab changes', async () => {
@@ -263,6 +285,28 @@ describe('CapabilitiesPage', () => {
     expect(deleteTool).toHaveBeenCalledWith('custom-1')
   })
 
+  test('opens the connection manager for a builtin detail and reports detail load failures', async () => {
+    const materialized = { ...builtin, id: 'builtin-1', requires_config: true, identity_policy: 'selectable' }
+    list.mockResolvedValue({ builtin: [materialized], custom: [custom], mcp: [] })
+    getById.mockResolvedValueOnce(materialized)
+    render()
+    await settle()
+
+    const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
+    await (clock.props.onEdit as (tool: typeof materialized) => Promise<void>)(materialized)
+    expect(getById).toHaveBeenCalledWith('builtin-1')
+    const dialog = find(render(), (node) => node.type === 'connection-dialog')
+    expect(dialog.props.tool.name).toBe('clock')
+
+    const originalError = console.error
+    console.error = mock()
+    getById.mockRejectedValueOnce(new Error('detail unavailable'))
+    const weather = find(render(), (node) => node.type === 'article' && node.props.children === 'Weather')
+    await (weather.props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
+    expect(toastError).toHaveBeenCalledWith('tools.error.loadToolDetailFailed')
+    console.error = originalError
+  })
+
   test('creates tools and opens the builtin connection manager for guarded actions', async () => {
     const configurable = { ...builtin, requires_config: true, config_fields: ['API_KEY'] }
     list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
@@ -275,6 +319,7 @@ describe('CapabilitiesPage', () => {
     expect(replace).toHaveBeenCalledWith('/app/capabilities', { scroll: false })
     await (find(tree, (node) => node.type === 'http-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'http' })
     expect(createTool).toHaveBeenCalledWith('team-1', { name: 'http' })
+    await settle()
 
     const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
     await (clock.props.onEdit as (tool: typeof configurable) => Promise<void>)(configurable)
@@ -287,6 +332,69 @@ describe('CapabilitiesPage', () => {
     ;(clock.props.onShare as (tool: typeof configurable) => void)(configurable)
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotDeleteBuiltin')
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotShareBuiltin')
+  })
+
+  test('marks a builtin configured only when connection state confirms it', async () => {
+    const configurable = { ...builtin, requires_config: true }
+    list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
+
+    render()
+    await settle()
+    await settle()
+    let tree = render()
+    let card = find(tree, (node) => node.type === 'article')
+    expect(listConnections).toHaveBeenCalledWith('team-1')
+    expect(card.props.configured).toBe(false)
+
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'active', tool_id: null, builtin_tool_key: 'clock' },
+    ])
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBe(true)
+
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'reauth_required', tool_id: null, builtin_tool_key: 'clock' },
+    ])
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBe(false)
+
+    const originalError = console.error
+    console.error = mock()
+    listConnections.mockRejectedValue(new Error('offline'))
+    hooks = []
+    render()
+    await settle()
+    await settle()
+    tree = render()
+    card = find(tree, (node) => node.type === 'article')
+    expect(card.props.configured).toBeUndefined()
+    console.error = originalError
+  })
+
+  test('matches a builtin connection bound to its materialized definition id', async () => {
+    const materialized = { ...builtin, id: 'builtin-1', requires_config: true }
+    list.mockResolvedValue({ builtin: [materialized], custom: [], mcp: [] })
+    listConnections.mockResolvedValue([
+      { id: 'connection-1', status: 'active', tool_id: 'builtin-1', builtin_tool_key: null },
+    ])
+
+    render()
+    await settle()
+    await settle()
+    const card = find(render(), (node) => node.type === 'article')
+
+    expect(listConnections).toHaveBeenCalledWith('team-1')
+    expect(card.props.configured).toBe(true)
   })
 
   test('does not expose site search configuration on the team capabilities page', async () => {
@@ -326,6 +434,7 @@ describe('CapabilitiesPage', () => {
     ;(findAll(tree, (node) => node.type === 'menuitem')[2].props.onClick as () => void)()
     await (find(render(), (node) => node.type === 'mcp-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ name: 'new-mcp' })
     expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new-mcp' })
+    await settle()
 
     await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
     expect(push).toHaveBeenCalledWith('/app/capabilities/code?id=custom-1')

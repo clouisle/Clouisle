@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.models.tool import Tool, ToolType
+from app.models.tool import Tool
 from app.models.tool_approval import (
     ExecutionEntrypoint,
     ExecutionRunKind,
@@ -276,16 +276,11 @@ async def execute_stored_tool(
     # with a snapshot that still names external approvers.
     _reject_legacy_external_gates(tool, policy=policy, execution=execution)
     resolved, binding = await resolve_tool_connection(tool, context, operation)
-    is_agent_call = (
-        context.entrypoint
-        in {
-            ExecutionEntrypoint.CHAT,
-            ExecutionEntrypoint.AGENT_RUN,
-            ExecutionEntrypoint.FEISHU_CHANNEL,
-            ExecutionEntrypoint.WECHAT_CHANNEL,
-        }
-        and context.run_kind != ExecutionRunKind.WORKFLOW
-        and context.interactive
+    from app.services import tool_approval_policies
+
+    is_agent_call = tool_approval_policies.is_agent_tool_call(
+        context.entrypoint,
+        run_kind=context.run_kind,
     )
     from app.schemas.tool_approval import (
         ApprovalDecision,
@@ -306,8 +301,10 @@ async def execute_stored_tool(
                 msg_key="tool_approval_policy_configuration_required",
                 status_code=409,
             ) from exc
-    elif is_agent_call and tool.type == ToolType.MCP and tool.approval_policy:
-        # MCP child policies are explicit configuration, not a discovery gate.
+    elif is_agent_call and tool.approval_policy:
+        # Stored tool policies are explicit configuration, not a discovery
+        # gate. They apply to interactive and non-interactive Agent runs; a
+        # caller gate that cannot be satisfied fails closed during evaluation.
         try:
             effective_policy = tool_approvals.normalize_tool_approval_policy(
                 tool.approval_policy
@@ -321,8 +318,6 @@ async def execute_stored_tool(
 
     layers: list[PolicyLayer] = []
     if execution is None:
-        from app.services import tool_approval_policies
-
         # Stored site/team/entrypoint layers participate in every execution, so
         # a configured deny or required approval can never be preview-only.
         # Layers only tighten; the approval service appends the tool layer.

@@ -45,6 +45,7 @@ from app.schemas.tool_approval import (
     ApprovalDecision,
     ApprovalGate,
     ExecutionEntrypoint,
+    ExecutionRunKind,
     ExternalApprovalAudienceError,
     PolicyEvaluation,
     PolicyLayer,
@@ -80,6 +81,81 @@ _ENTRYPOINT_KIND_BY_SOURCE: dict[str, ToolApprovalEntrypointKind] = {
     ExecutionEntrypoint.API_KEY.value: ToolApprovalEntrypointKind.API_KEY,
     ExecutionEntrypoint.EMBED.value: ToolApprovalEntrypointKind.API_KEY,
 }
+
+#: Entrypoints that invoke a model-driven agent tool call. Interactivity does
+#: not matter here: a non-interactive agent run (API key, schedule, channel,
+#: embed, nested agent) must still apply the tool's explicit policy. If that
+#: policy needs caller confirmation, evaluation fails closed because nobody can
+#: approve it. Direct calls (capability browsing, tool test) and workflow
+#: entrypoints are governed by the stored site/team/entrypoint layers plus any
+#: explicit per-operation policy.
+_AGENT_CALL_ENTRYPOINT_VALUES: frozenset[str] = frozenset(
+    {
+        ExecutionEntrypoint.CHAT.value,
+        ExecutionEntrypoint.AGENT_RUN.value,
+        ExecutionEntrypoint.NESTED_AGENT.value,
+        ExecutionEntrypoint.API_KEY.value,
+        ExecutionEntrypoint.SCHEDULE.value,
+        ExecutionEntrypoint.CHANNEL.value,
+        ExecutionEntrypoint.EMBED.value,
+        ExecutionEntrypoint.FEISHU_CHANNEL.value,
+        ExecutionEntrypoint.WECHAT_CHANNEL.value,
+    }
+)
+
+#: Metadata discovery operations. A direct browser honours only an explicit
+#: one-level ``list:`` override, never the tool's operation default.
+DISCOVERY_OPERATION_PREFIX = "list:"
+
+
+def _entrypoint_value(entrypoint: ExecutionEntrypoint | str | None) -> str | None:
+    return None if entrypoint is None else str(getattr(entrypoint, "value", entrypoint))
+
+
+def _run_kind_value(run_kind: ExecutionRunKind | str | None) -> str | None:
+    return None if run_kind is None else str(getattr(run_kind, "value", run_kind))
+
+
+def is_agent_tool_call(
+    entrypoint: ExecutionEntrypoint | str | None,
+    *,
+    run_kind: ExecutionRunKind | str | None = None,
+) -> bool:
+    """Whether an Agent tool call owns this invocation, interactive or not."""
+    if _run_kind_value(run_kind) == ExecutionRunKind.WORKFLOW.value:
+        return False
+    return _entrypoint_value(entrypoint) in _AGENT_CALL_ENTRYPOINT_VALUES
+
+
+def resolve_tool_layer_policy(
+    tool: Tool,
+    *,
+    operation: str,
+    entrypoint: ExecutionEntrypoint | str | None,
+    run_kind: ExecutionRunKind | str | None = None,
+) -> ToolApprovalPolicy:
+    """The tool-owned policy layer for one concrete call.
+
+    Mirrors ``execute_stored_tool``: an Agent invocation applies the stored
+    tool policy whenever one was explicitly configured, even when the run is
+    non-interactive (a caller gate then fails closed instead of being skipped).
+    A direct call only observes an explicit one-level ``list:`` discovery
+    override; everything else adds no restriction. A legacy external audience
+    is always returned so previews keep showing the configuration error
+    instead of an allowed decision.
+    """
+    base = normalize_tool_approval_policy(tool.approval_policy)
+    try:
+        assert_caller_only_approval_policy(base)
+    except ExternalApprovalAudienceError:
+        return base
+    if bool(tool.approval_policy) and is_agent_tool_call(entrypoint, run_kind=run_kind):
+        return base
+    if operation.startswith(DISCOVERY_OPERATION_PREFIX):
+        override = base.operation_overrides.get(operation)
+        if override is not None:
+            return override.model_copy(update={"operation_overrides": {}})
+    return ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
 
 
 # ---------------------------------------------------------------------------
@@ -943,14 +1019,22 @@ async def get_effective_policy(
     team_id: UUID,
     entrypoint_kind: ToolApprovalEntrypointKind | None = None,
     entrypoint_id: UUID | None = None,
+    entrypoint: ExecutionEntrypoint | None = None,
     tool_id: UUID,
     operation: str,
     entrypoint_interactive: bool = True,
 ) -> EffectivePolicyView:
     """Compose the effective policy for an editor preview.
 
-    The tool's own policy is included last, exactly as ``create_execution``
-    composes it, so the preview matches the execution-time decision.
+    The preview mirrors ``execute_stored_tool`` for the *actual* entrypoint:
+    every Agent invocation applies an explicitly configured tool policy, even
+    when it is non-interactive (a caller gate then surfaces a configuration
+    error because nobody can approve it). Direct calls (capability browsing,
+    tool test) observe just an explicit one-level discovery override.
+    ``entrypoint`` is the runtime entrypoint; when it is omitted an agent
+    entrypoint kind implies an agent call and everything else is a direct
+    call. Stored site/team/entrypoint layers are always composed, so a
+    configured deny or required approval can never be preview-only.
     """
     if (entrypoint_kind is None) != (entrypoint_id is None):
         raise _scope_invalid()
@@ -968,10 +1052,20 @@ async def get_effective_policy(
         entrypoint_id=entrypoint_id,
         tool_id=tool.id,
     )
+    if entrypoint is not None:
+        tool_entrypoint = entrypoint
+    elif entrypoint_kind is ToolApprovalEntrypointKind.AGENT:
+        tool_entrypoint = ExecutionEntrypoint.CHAT
+    else:
+        tool_entrypoint = ExecutionEntrypoint.TOOL_TEST
     tool_layer = PolicyLayer(
         source=PolicySource.TOOL,
         label="tool",
-        policy=normalize_tool_approval_policy(tool.approval_policy),
+        policy=resolve_tool_layer_policy(
+            tool,
+            operation=operation,
+            entrypoint=tool_entrypoint,
+        ),
     )
     evaluation = evaluate_policy(
         [*binding.layers, tool_layer],
@@ -1017,10 +1111,12 @@ __all__ = [
     "delete_policy_definition",
     "entrypoint_kind_for",
     "get_effective_policy",
+    "is_agent_tool_call",
     "list_policy_definitions",
     "load_effective_policy_binding",
     "load_effective_policy_layers",
     "merge_tool_approval_policies",
     "policy_definition_hash",
+    "resolve_tool_layer_policy",
     "update_policy_definition",
 ]

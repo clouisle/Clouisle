@@ -29,6 +29,7 @@ from app.models.tool_approval import ExecutionEntrypoint
 from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
 from app.llm.tools.mcp_client import list_mcp_tools
 from app.services.error_messages import resolve_user_visible_error
+from app.services.mcp_errors import map_mcp_error
 from app.services.audit_log import AuditLogService
 from app.services.tool import ToolExecutor
 from app.services.tool_execution import (
@@ -923,11 +924,14 @@ async def get_mcp_tools(
         )
     except Exception as e:
         logger.exception("Failed to list MCP tools: %s", e)
+        mapped = map_mcp_error(e)
+        if mapped is not None:
+            raise mapped from e
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="mcp_connection_failed",
             status_code=500,
-        )
+        ) from e
 
 
 @router.post("", response_model=Response[ToolDetailOut])

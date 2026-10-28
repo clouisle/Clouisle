@@ -1,6 +1,14 @@
 # Implementation Plan
 
 ## Active
+
+- **pr480-browser-qa-fixes** — Completed. See `docs/plan/pr480-browser-qa-fixes.md`.
+  - [x] 1. Fix API approval translation
+  - [x] 2. Correct MCP errors, browsing and policy enforcement
+  - [x] 3. Restore approval policy administration
+  - [x] 4. Fix connection management and destructive-action safeguards
+  - [x] 5. Verify browser workflows, approval and regression tests
+
 - **agent-api-approval-parameters** — Completed. See `docs/plan/agent-api-approval-parameters.md`.
   - [x] 1. Document Agent API approval interaction and authentication
   - [x] 2. Correct the approval preview of tool call arguments

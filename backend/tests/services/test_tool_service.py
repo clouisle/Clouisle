@@ -15,7 +15,7 @@ from app.services.tool import ToolExecutor
 class TestToolExecutor:
     @staticmethod
     def _builtin_boundary():
-        async def fake_execute(tool, operation, arguments, context, invoke):
+        async def fake_execute(tool, operation, arguments, context, invoke, **kwargs):
             return await invoke(arguments, None)
 
         return (

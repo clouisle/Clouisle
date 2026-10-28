@@ -745,10 +745,10 @@ async def _execution_actor(team: Team) -> User:
 def test_changed_tool_policy_invalidates_approval_before_invocation(run_orm):
     """An approved call is bound to the policy that produced it.
 
-    Approval only applies to interactive Agent chat, and for an MCP child the
-    tool's own explicit policy (including an operation override) is part of the
-    evaluation. Editing that policy after approval must cancel the execution
-    instead of running the previously approved side effect.
+    Approval applies to every Agent invocation (interactive or not), and an
+    explicitly configured tool policy (including an operation override) is part
+    of the evaluation. Editing that policy after approval must cancel the
+    execution instead of running the previously approved side effect.
     """
 
     async def scenario():

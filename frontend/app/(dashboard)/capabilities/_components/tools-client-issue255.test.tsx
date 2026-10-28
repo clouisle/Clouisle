@@ -294,6 +294,7 @@ describe('ToolsClient issue #255 coverage', () => {
     api.getById.mockImplementationOnce(async () => { throw new Error('detail failed') })
     await click(container, 'common.edit', 1)
     expect(consoleError).toHaveBeenCalledWith('Failed to load tool detail:', expect.any(Error))
+    expect(errorToast).toHaveBeenCalledWith('tools.error.loadToolDetailFailed')
   })
 
   it('opens the connection manager for builtins instead of plaintext config', async () => {
@@ -302,6 +303,18 @@ describe('ToolsClient issue #255 coverage', () => {
     const dialog = container.querySelector('[data-dialog="connection"]')
     expect(dialog?.getAttribute('data-open')).toBe('true')
     expect(dialog?.getAttribute('data-team')).toBe('team-1')
+  })
+
+  it('opens the connection manager when editing a persisted builtin definition', async () => {
+    const persistedBuiltin = { ...tools[0], id: 'builtin-1' }
+    api.listPage.mockImplementation(async () => ({ ...page(), items: [persistedBuiltin] }))
+    api.getById.mockImplementation(async () => persistedBuiltin)
+    const container = await render()
+
+    await click(container, 'common.edit')
+
+    expect(api.getById).toHaveBeenCalledWith('builtin-1')
+    expect(container.querySelector('[data-dialog="connection"]')?.getAttribute('data-open')).toBe('true')
   })
 
   it('runs action callbacks, dialogs, toggles, duplicate, export and their API failure branches', async () => {

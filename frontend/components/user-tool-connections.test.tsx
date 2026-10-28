@@ -40,6 +40,36 @@ mock.module('lucide-react', () => ({
 mock.module('@/components/tools/tool-icons', () => ({
   renderToolIcon: () => <span data-testid="tool-icon" />,
 }))
+mock.module('@/components/ui/alert-dialog', () => {
+  const CloseContext = React.createContext<((open: boolean) => void) | undefined>(undefined)
+  return {
+    AlertDialog: ({ open, onOpenChange, children }: React.PropsWithChildren<{
+      open?: boolean
+      onOpenChange?: (open: boolean) => void
+    }>) =>
+      open ? (
+        <CloseContext.Provider value={onOpenChange}>
+          <div data-testid="confirm-dialog">{children}</div>
+        </CloseContext.Provider>
+      ) : null,
+    AlertDialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+    AlertDialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+    AlertDialogFooter: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+    AlertDialogTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
+    AlertDialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
+    AlertDialogAction: ({ children, ...props }: React.ComponentProps<'button'>) => (
+      <button {...props}>{children}</button>
+    ),
+    AlertDialogCancel: ({ children, ...props }: React.ComponentProps<'button'>) => {
+      const onOpenChange = React.useContext(CloseContext)
+      return (
+        <button {...props} onClick={() => onOpenChange?.(false)}>
+          {children}
+        </button>
+      )
+    },
+  }
+})
 mock.module('@/components/ui/badge', () => ({
   Badge: ({ children, ...props }: React.ComponentProps<'span'>) => <span {...props}>{children}</span>,
 }))
@@ -309,6 +339,14 @@ async function openCreateForm(renderer: ReactTestRenderer) {
   })
 }
 
+async function confirmPendingAction(renderer: ReactTestRenderer, label: string) {
+  const confirmButton = findButton(renderer, label)
+  expect(confirmButton).toBeDefined()
+  await act(async () => {
+    confirmButton!.props.onClick()
+  })
+}
+
 async function selectTool(renderer: ReactTestRenderer, value: string) {
   const select = renderer.root
     .findAllByProps({ 'data-testid': 'tool-select' })
@@ -421,9 +459,27 @@ describe('UserToolConnections', () => {
     await act(async () => {
       deleteBtn!.props.onClick()
     })
+    expect(revokeMock).not.toHaveBeenCalled()
+
+    await confirmPendingAction(renderer, 'settings.connections.revokeConfirmAction')
 
     expect(revokeMock).toHaveBeenCalledWith('conn-1')
     expect(toastSuccess).toHaveBeenCalledWith('settings.connections.revokeSuccess')
+  })
+
+  test('keeps the connection when revocation is cancelled', async () => {
+    const renderer = await render()
+    const deleteBtn = renderer.root.findAllByType('button').find(
+      (b) => b.props.title === 'tools.connections.revoke'
+    )
+    expect(deleteBtn).toBeDefined()
+
+    await act(async () => {
+      deleteBtn!.props.onClick()
+    })
+    await confirmPendingAction(renderer, 'common.cancel')
+
+    expect(revokeMock).not.toHaveBeenCalled()
   })
 
   test('supports launching OAuth for reconnect', async () => {
@@ -643,6 +699,9 @@ describe('UserToolConnections', () => {
     await act(async () => {
       disconnectBtn.props.onClick()
     })
+    expect(disconnectOAuthMock).not.toHaveBeenCalled()
+
+    await confirmPendingAction(renderer, 'settings.connections.oauthDisconnectConfirmAction')
 
     expect(disconnectOAuthMock).toHaveBeenCalledWith('conn-1')
     expect(toastSuccess).toHaveBeenCalled()
@@ -725,6 +784,7 @@ describe('UserToolConnections', () => {
     await act(async () => {
       revokeButton!.props.onClick()
     })
+    await confirmPendingAction(renderer, 'settings.connections.revokeConfirmAction')
 
     expect(revokeMock).toHaveBeenCalledWith('conn-1')
     expect(toastError).toHaveBeenCalledWith('tools.connections.revokeFailed')
@@ -742,6 +802,7 @@ describe('UserToolConnections', () => {
     await act(async () => {
       disconnectButton!.props.onClick()
     })
+    await confirmPendingAction(renderer, 'settings.connections.oauthDisconnectConfirmAction')
 
     expect(disconnectOAuthMock).toHaveBeenCalledWith('conn-1')
     expect(toastError).toHaveBeenCalledWith('tools.connections.oauthDisconnectFailed')
@@ -792,6 +853,17 @@ describe('UserToolConnections', () => {
     expect(renderer.root.findAllByType('button').filter((button) =>
       buttonText(button).includes('tools.connections.oauthDisconnect')
     )).toHaveLength(1)
+  })
+
+  test('keeps browsers from autofilling credential fields', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'tool-mcp-1')
+
+    const secretInput = renderer.root
+      .findAllByType('input')
+      .find((item) => item.props.id === 'field-github_token')
+    expect(secretInput?.props.autoComplete).toBe('new-password')
   })
 
   test('resets name and credentials when the selected tool changes', async () => {

@@ -1401,8 +1401,17 @@ msgstr "MCP 响应内容超过大小限制"
 msgid "mcp_input_required"
 msgstr "MCP 服务器需要额外输入，当前请求无法继续"
 
+msgid "mcp_invalid_request"
+msgstr "MCP 请求无效或不完整"
+
+msgid "mcp_invalid_resource_uri"
+msgstr "MCP 资源 URI 无效或仍包含未替换的模板变量"
+
 msgid "mcp_request_timeout"
 msgstr "MCP 请求超时"
+
+msgid "mcp_server_error"
+msgstr "MCP 服务器拒绝了请求"
 
 msgid "mcp_tool_invalid_type"
 msgstr "该工具不是 MCP 服务器定义"

@@ -172,6 +172,9 @@ export type ApprovalsMessages = {
     policy: {
       title: string
       description: string
+      managementLink: string
+      managementHint: string
+      accessDenied: string
       listTitle: string
       listDescription: string
       loading: string

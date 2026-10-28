@@ -11,6 +11,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Approval-policy administration is available from capabilities, including explicit deny; non-interactive Agent calls fail closed when caller confirmation is required.
+- MCP browsing distinguishes unsupported capabilities and invalid resource templates, resets server state, labels untrusted prompt content and reports truncated results.
+- Tool-connection revocation and OAuth disconnect require confirmation, configured badges reflect active connections, and administrators can open builtin connection management.
+- The Agent API approval preview explanation renders its execution ID placeholder correctly.
 - Tool confirmations configured through site/team/entrypoint policies now apply to real executions instead of only appearing in the policy preview; an Agent's explicit confirmation can no longer be relaxed by a tool operation override.
 - Restored `POST /agents/{id}/chat/stream` (the helper was registered as a route ahead of the authenticated wrapper), so chat streaming and the in-chat approval card work again.
 - Tool-connection startup constraints and the retired grant cleanup now actually run on PostgreSQL; skill approval versions fit the stored integer column; private database-tool credentials migrate to a personal scope.

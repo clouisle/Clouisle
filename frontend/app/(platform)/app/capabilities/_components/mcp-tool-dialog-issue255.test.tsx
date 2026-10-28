@@ -178,7 +178,7 @@ describe('McpToolDialog issue #255 coverage', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: 'docs_server',
       display_name: 'Docs Server',
-      description: '- search: Search docs',
+      description: 'search: Search docs',
       type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: [], env: {} },
     }))

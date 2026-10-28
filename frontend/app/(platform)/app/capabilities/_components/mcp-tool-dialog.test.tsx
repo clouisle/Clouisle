@@ -190,7 +190,7 @@ describe('MCP tool dialog', () => {
     expect(selectedTeam).toHaveBeenCalledWith('team-1')
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: 'weather_server', display_name: 'Weather server',
-      description: '- forecast: Gets forecast\n- alerts: No description',
+      description: 'forecast: Gets forecast; alerts: mcpDialog.noDescription',
       icon: 'https://images.test/icon.png', category: 'data', visibility: 'private', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['--yes'], env: { TOKEN: 'fake-secret' } },
       identity_policy: 'none',
@@ -240,7 +240,7 @@ describe('MCP tool dialog', () => {
 
     await click(button(renderer, 'create'))
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      description: '- search: Searches records',
+      description: 'search: Searches records',
       mcp_config: { transport: 'sse', url: 'https://mcp.test/events', headers: { Authorization: 'Bearer token' } },
     }))
   })

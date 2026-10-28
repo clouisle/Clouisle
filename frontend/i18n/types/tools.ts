@@ -460,6 +460,13 @@ export type ToolsMessages = {
       oauthCancelSecret: string
       oauthDisconnect: string
       oauthDisconnectFailed: string
+      revokeConfirmTitle: string
+      revokeConfirmDescription: string
+      revokeConfirmAction: string
+      oauthDisconnectConfirmTitle: string
+      oauthDisconnectConfirmDescription: string
+      oauthDisconnectConfirmAction: string
+      cancel: string
     }
     policy: {
       title: string
@@ -497,11 +504,6 @@ export type ToolsMessages = {
         nameRequired: string
       }
       approval: {
-        switchLabel: string
-        switchHint: string
-        blockedTitle: string
-        blockedHint: string
-        replaceBlocked: string
         defaultDecision: string
         hint: string
         allow: string
@@ -558,6 +560,25 @@ export type ToolsMessages = {
       openChat: string
       draftTooLarge: string
       draftUnavailable: string
+      unsupported: {
+        resources: string
+        templates: string
+        prompts: string
+      }
+      loadingList: string
+      untrustedPrompt: string
+      draftPromptNotice: string
+      draftResourceNotice: string
+      previewTruncated: string
+      truncated: {
+        list: string
+        maxItems: string
+        maxPages: string
+        cursorLoop: string
+        deadline: string
+        unknown: string
+      }
+      policyGuidance: string
       tabs: {
         resources: string
         templates: string
@@ -571,6 +592,7 @@ export type ToolsMessages = {
         expand: string
         uri: string
         read: string
+        unexpanded: string
       }
       prompts: {
         empty: string

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { PackageOpen, Wrench } from 'lucide-react'
+import { PackageOpen, ShieldCheck, Wrench } from 'lucide-react'
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
+import { useCanPerform } from '@/components/permission-guard'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminSkillsPanel, ToolsClient } from './_components'
 
@@ -13,8 +15,11 @@ type CapabilityTab = 'tools' | 'skills'
 
 export default function CapabilitiesPage() {
   const t = useTranslations('platform.tools')
+  const tApprovals = useTranslations('approvals')
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { canPerform } = useCanPerform()
+  const canManageApprovalPolicies = canPerform(['tool:update', 'admin:settings:update'])
   const [activeTab, setActiveTab] = useState<CapabilityTab>('tools')
 
   useEffect(() => {
@@ -32,9 +37,22 @@ export default function CapabilitiesPage() {
       <div className="flex h-full flex-col">
         <Header />
         <div className="flex flex-1 flex-col gap-4 overflow-auto p-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('description')}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{t('description')}</p>
+          </div>
+          {canManageApprovalPolicies && (
+            <Button
+              variant="outline"
+              onClick={() => router.push('/capabilities/policies')}
+              title={tApprovals('policy.managementHint')}
+              data-testid="admin-capabilities-policies-link"
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              {tApprovals('policy.managementLink')}
+            </Button>
+          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">

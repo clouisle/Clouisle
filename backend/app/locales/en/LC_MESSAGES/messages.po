@@ -1400,8 +1400,17 @@ msgstr "MCP response exceeds the content size limit"
 msgid "mcp_input_required"
 msgstr "MCP server requires additional input; this request cannot continue"
 
+msgid "mcp_invalid_request"
+msgstr "The MCP request is invalid or incomplete"
+
+msgid "mcp_invalid_resource_uri"
+msgstr "The MCP resource URI is invalid or still contains an unexpanded template variable"
+
 msgid "mcp_request_timeout"
 msgstr "MCP request timed out"
+
+msgid "mcp_server_error"
+msgstr "MCP server rejected the request"
 
 msgid "mcp_tool_invalid_type"
 msgstr "The tool is not an MCP server definition"

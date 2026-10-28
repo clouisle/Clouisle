@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from contextlib import AsyncExitStack
 from typing import Any
 from uuid import UUID
@@ -45,19 +46,14 @@ from app.api import deps
 from app.llm.tools.mcp_client import (
     DEFAULT_MAX_ITEMS,
     DEFAULT_MAX_PAGES,
-    McpCapabilityUnavailable,
     McpCompletionReference,
-    McpContentTooLarge,
     McpContentLimits,
     McpEnumeration,
     McpEnumerationLimits,
-    McpError,
-    McpInputRequired,
     McpPromptInfo,
     McpResourceInfo,
     McpResourceTemplateInfo,
     McpServerCapabilities,
-    McpTimeout,
     McpTimeouts,
     McpToolInfo,
     complete_mcp_argument,
@@ -69,12 +65,13 @@ from app.llm.tools.mcp_client import (
     get_mcp_prompt,
     probe_mcp_capabilities,
     read_mcp_resource,
+    translate_mcp_error,
 )
 from app.models.tool import Tool, ToolType
 from app.models.tool_approval import ExecutionEntrypoint
 from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
-from app.schemas.tool_approval import ApprovalDecision, ToolApprovalPolicy
+from app.schemas.tool_approval import ToolApprovalPolicy
 from app.schemas.tool_mcp import (
     McpCapabilitiesOut,
     McpCompletionIn,
@@ -96,6 +93,7 @@ from app.schemas.tool_mcp import (
     McpToolOut,
     McpToolResultOut,
 )
+from app.services.mcp_errors import map_mcp_error
 from app.services.mcp_interactions import (
     mcp_call_timeout_seconds,
     run_with_mcp_callbacks,
@@ -105,10 +103,8 @@ from app.services.mcp_subscriptions import (
     open_subscription,
 )
 from app.services.tool import build_mcp_config
-from app.services.tool_approvals import (
-    PolicyConfigurationError,
-    normalize_tool_approval_policy,
-)
+from app.services.tool_approval_policies import resolve_tool_layer_policy
+from app.services.tool_approvals import PolicyConfigurationError
 from app.services.tool_connections import ResolvedConnection
 from app.services.tool_execution import (
     PendingToolApproval,
@@ -146,6 +142,10 @@ OP_RESOURCE_SUBSCRIBE = "subscribe:resource"
 OP_COMPLETION_PROMPT = "complete:prompt"
 OP_COMPLETION_RESOURCE_TEMPLATE = "complete:resource_template"
 OP_LIST_PREFIX = "list:"
+
+# Raw braces never appear in a concrete URI; their presence means the caller
+# pasted an unexpanded RFC 6570 resource template.
+_URI_TEMPLATE_MARKER = re.compile(r"[{}]")
 
 
 # ============ Loading & authorization ============
@@ -190,6 +190,21 @@ async def _load_mcp_tool(tool_id: UUID, context: ToolCallContext) -> Tool:
     return tool
 
 
+def _validate_resource_uri(uri: str) -> str:
+    """Reject empty or unexpanded-template URIs before any execution row.
+
+    The adapter repeats this check at the protocol boundary; doing it here
+    turns a user input mistake into a localized 400 instead of a 502.
+    """
+    if not uri.strip() or _URI_TEMPLATE_MARKER.search(uri):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="mcp_invalid_resource_uri",
+            status_code=400,
+        )
+    return uri
+
+
 def _call_context(
     team_id: UUID,
     user: User,
@@ -218,43 +233,19 @@ def _mcp_business_error(
 ) -> BusinessError:
     if isinstance(exc, BusinessError):
         return exc
+    # Task-group teardown wraps typed failures in ExceptionGroup; classify the
+    # nested cause, never the wrapper, or an unsupported capability reads as a
+    # connection failure.
+    typed = translate_mcp_error(exc)
     logger.warning(
         "MCP operation %s failed for tool %s (%s)",
         operation,
         tool.id,
-        type(exc).__name__,
+        type(typed if typed is not None else exc).__name__,
     )
-    if isinstance(exc, McpCapabilityUnavailable):
-        return BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="mcp_capability_unavailable",
-            status_code=409,
-            capability=exc.capability,
-        )
-    if isinstance(exc, McpTimeout):
-        return BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="mcp_request_timeout",
-            status_code=504,
-        )
-    if isinstance(exc, McpContentTooLarge):
-        return BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="mcp_content_too_large",
-            status_code=413,
-        )
-    if isinstance(exc, McpInputRequired):
-        return BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="mcp_input_required",
-            status_code=409,
-        )
-    if isinstance(exc, McpError):
-        return BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="mcp_connection_failed",
-            status_code=502,
-        )
+    mapped = map_mcp_error(exc, operation=operation)
+    if mapped is not None:
+        return mapped
     return BusinessError(
         code=ResponseCode.INTERNAL_ERROR,
         msg_key="mcp_connection_failed",
@@ -390,18 +381,17 @@ def _metadata_policy(tool: Tool, operation: str) -> ToolApprovalPolicy:
     A malformed stored policy is rejected instead of silently ignored.
     """
     try:
-        base = normalize_tool_approval_policy(tool.approval_policy)
+        return resolve_tool_layer_policy(
+            tool,
+            operation=operation,
+            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+        )
     except PolicyConfigurationError as exc:
         raise BusinessError(
             code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
             msg_key="tool_approval_policy_configuration_required",
             status_code=409,
         ) from exc
-    override = base.operation_overrides.get(operation)
-    if override is not None:
-        # Exactly one level: a nested same-operation override is not chased.
-        return override.model_copy(update={"operation_overrides": {}})
-    return ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
 
 
 async def _execute_metadata(
@@ -797,8 +787,9 @@ async def read_mcp_resource_contents(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    uri = _validate_resource_uri(payload.uri)
     operation = OP_RESOURCE_READ
-    parameters = {"uri": payload.uri}
+    parameters = {"uri": uri}
 
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
@@ -876,6 +867,7 @@ async def subscribe_mcp_resource(
         execution_id=execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    uri = _validate_resource_uri(uri)
     operation = OP_RESOURCE_SUBSCRIBE
     parameters = {"uri": uri}
     stack = AsyncExitStack()

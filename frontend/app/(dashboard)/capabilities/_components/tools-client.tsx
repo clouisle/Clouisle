@@ -374,6 +374,12 @@ export function ToolsClient() {
             if (detail.type === 'mcp') {
                 setEditingMcpTool(detail)
                 setMcpDialogOpen(true)
+            } else if (detail.type === 'builtin') {
+                if (detail.name === 'web_search') {
+                    setWebSearchDialogOpen(true)
+                } else {
+                    handleConfigureTool(detail)
+                }
             } else if (detail.type === 'custom') {
                 if (detail.custom_type === 'http') {
                     setEditingHttpTool(detail)
@@ -394,6 +400,7 @@ export function ToolsClient() {
             }
         } catch (error) {
             console.error('Failed to load tool detail:', error)
+            toast.error(t('error.loadToolDetailFailed'))
         }
     }
 

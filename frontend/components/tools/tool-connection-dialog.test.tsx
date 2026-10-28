@@ -15,6 +15,22 @@ mock.module('next-intl', () => ({
     values ? `${namespace}.${key}|${Object.values(values).join(',')}` : `${namespace}.${key}`,
 }))
 
+mock.module('@/components/ui/alert-dialog', () => ({
+  AlertDialog: ({ open, children }: React.PropsWithChildren<{ open?: boolean }>) =>
+    open ? <div data-testid="confirm-dialog">{children}</div> : null,
+  AlertDialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogFooter: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
+  AlertDialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
+  AlertDialogAction: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
+  AlertDialogCancel: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
+}))
+
 const listForTool = mock(async (): Promise<ToolConnection[]> => [])
 const list = mock(async (): Promise<ToolConnection[]> => [])
 const createForTool = mock(async (): Promise<ToolConnection> => connection)
@@ -452,6 +468,10 @@ describe('ToolConnectionDialog', () => {
     await renderDialog()
 
     await clickElement(document.querySelector('button[title="tools.connections.revoke"]')!)
+    expect(revoke).not.toHaveBeenCalled()
+    expect(pageText()).toContain('tools.connections.revokeConfirmTitle')
+
+    await clickButton('tools.connections.revokeConfirmAction')
 
     expect(revoke).toHaveBeenCalledWith('connection-1')
     expect(onChanged).toHaveBeenCalledTimes(1)

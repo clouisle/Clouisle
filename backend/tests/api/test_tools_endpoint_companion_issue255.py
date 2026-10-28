@@ -5,6 +5,11 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import tools
+from app.llm.tools.mcp_client import (
+    McpCapabilityUnavailable,
+    McpInvalidRequest,
+    McpServerError,
+)
 from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import (
@@ -359,6 +364,51 @@ async def test_mcp_list_success_and_failure(monkeypatch, user):
             current_user=user,
         )
     assert exc.value.msg_key == "mcp_connection_failed"
+
+    monkeypatch.setattr(
+        tools,
+        "list_mcp_tools",
+        AsyncMock(side_effect=McpInvalidRequest("missing url", reason="configuration")),
+    )
+    with pytest.raises(BusinessError) as invalid:
+        await tools.get_mcp_tools(
+            McpToolsListRequest(mcp_config=McpConfigSchema(transport="http")),
+            current_user=user,
+        )
+    assert invalid.value.msg_key == "mcp_invalid_request"
+    assert invalid.value.status_code == 400
+
+    monkeypatch.setattr(
+        tools,
+        "list_mcp_tools",
+        AsyncMock(
+            side_effect=ExceptionGroup("session", [McpCapabilityUnavailable("tools")])
+        ),
+    )
+    with pytest.raises(BusinessError) as unsupported:
+        await tools.get_mcp_tools(
+            McpToolsListRequest(
+                mcp_config=McpConfigSchema(transport="http", url="https://mcp.test")
+            ),
+            current_user=user,
+        )
+    assert unsupported.value.msg_key == "mcp_capability_unavailable"
+    assert unsupported.value.status_code == 409
+
+    monkeypatch.setattr(
+        tools,
+        "list_mcp_tools",
+        AsyncMock(side_effect=McpServerError(-32603, "upstream failure")),
+    )
+    with pytest.raises(BusinessError) as server_error:
+        await tools.get_mcp_tools(
+            McpToolsListRequest(
+                mcp_config=McpConfigSchema(transport="http", url="https://mcp.test")
+            ),
+            current_user=user,
+        )
+    assert server_error.value.msg_key == "mcp_server_error"
+    assert server_error.value.status_code == 502
 
 
 @pytest.mark.anyio

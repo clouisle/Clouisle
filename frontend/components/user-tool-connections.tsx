@@ -16,6 +16,16 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
@@ -68,6 +78,9 @@ export function UserToolConnections() {
   const [oauthStarting, setOauthStarting] = React.useState<string | null>(null)
   const [clientSecretFor, setClientSecretFor] = React.useState<string | null>(null)
   const [clientSecretValue, setClientSecretValue] = React.useState('')
+  const [pendingAction, setPendingAction] = React.useState<
+    { kind: 'revoke' | 'disconnect'; connection: ToolConnection } | null
+  >(null)
 
   const teamId = currentTeam?.id
 
@@ -264,6 +277,17 @@ export function UserToolConnections() {
       toast.error(tTools('oauthDisconnectFailed'))
     } finally {
       setOauthStarting(null)
+    }
+  }
+
+  const handleConfirmPendingAction = async () => {
+    const action = pendingAction
+    setPendingAction(null)
+    if (!action) return
+    if (action.kind === 'revoke') {
+      await handleRevoke(action.connection)
+    } else {
+      await handleDisconnectOAuth(action.connection)
     }
   }
 
@@ -520,6 +544,11 @@ export function UserToolConnections() {
                               <Input
                                 id={`field-${field.name}`}
                                 type={field.input_type ?? (field.secret ? 'password' : 'text')}
+                                autoComplete={
+                                  field.secret || field.input_type === 'password'
+                                    ? 'new-password'
+                                    : 'off'
+                                }
                                 value={fieldValue}
                                 placeholder={fieldLabel}
                                 className="h-8 text-xs font-mono"
@@ -746,7 +775,7 @@ export function UserToolConnections() {
                           size="sm"
                           className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                           disabled={oauthStarting === connection.id}
-                          onClick={() => void handleDisconnectOAuth(connection)}
+                          onClick={() => setPendingAction({ kind: 'disconnect', connection })}
                         >
                           {tTools('oauthDisconnect')}
                         </Button>
@@ -775,7 +804,7 @@ export function UserToolConnections() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         title={tTools('revoke')}
-                        onClick={() => void handleRevoke(connection)}
+                        onClick={() => setPendingAction({ kind: 'revoke', connection })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -793,6 +822,7 @@ export function UserToolConnections() {
                       <Input
                         id={`client-secret-${connection.id}`}
                         type="password"
+                        autoComplete="new-password"
                         value={clientSecretValue}
                         placeholder={tTools('oauthClientSecretPlaceholder')}
                         className="h-7 text-xs font-mono"
@@ -832,6 +862,36 @@ export function UserToolConnections() {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAction(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction?.kind === 'disconnect'
+                ? t('oauthDisconnectConfirmTitle')
+                : t('revokeConfirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.kind === 'disconnect'
+                ? t('oauthDisconnectConfirmDescription')
+                : t('revokeConfirmDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void handleConfirmPendingAction()}>
+              {pendingAction?.kind === 'disconnect'
+                ? t('oauthDisconnectConfirmAction')
+                : t('revokeConfirmAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

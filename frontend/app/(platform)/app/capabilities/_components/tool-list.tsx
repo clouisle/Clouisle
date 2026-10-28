@@ -21,6 +21,7 @@ interface ToolListProps {
   canEdit?: (tool: Tool) => boolean
   canShare?: (tool: Tool) => boolean
   canDelete?: (tool: Tool) => boolean
+  configuredFor?: (tool: Tool) => boolean | undefined
 }
 
 type FilterType = 'all' | ToolType
@@ -38,6 +39,7 @@ export function ToolList({
   canEdit,
   canShare,
   canDelete,
+  configuredFor,
 }: ToolListProps) {
   const t = useTranslations('platform.tools')
   const [search, setSearch] = useState('')
@@ -150,6 +152,7 @@ export function ToolList({
                     canEdit={canEdit?.(tool) ?? false}
                     canShare={canShare?.(tool) ?? false}
                     canDelete={canDelete?.(tool) ?? false}
+                    configured={configuredFor?.(tool)}
                   />
                 ))}
               </div>

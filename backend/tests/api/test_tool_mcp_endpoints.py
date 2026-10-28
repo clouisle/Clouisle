@@ -31,6 +31,7 @@ from app.llm.tools.mcp_client import (
     McpError,
     McpInputRequired,
     McpInputRequiredInfo,
+    McpInvalidRequest,
     McpPromptArgument,
     McpPromptInfo,
     McpPromptMessage,
@@ -38,6 +39,7 @@ from app.llm.tools.mcp_client import (
     McpResourceContents,
     McpResourceTemplateInfo,
     McpServerCapabilities,
+    McpServerError,
     McpTimeout,
     McpToolInfo,
     McpToolResult,
@@ -556,11 +558,28 @@ async def test_all_metadata_routes_surface_their_item_shapes(mcp_app, monkeypatc
 
 
 def test_protocol_error_mapping_covers_every_failure_class():
+    from mcp.shared.exceptions import MCPError as SdkMcpError
+
     tool = SimpleNamespace(id=uuid4())
+    grouped_unavailable = ExceptionGroup(
+        "task group",
+        [
+            ExceptionGroup(
+                "session teardown",
+                [McpCapabilityUnavailable("prompts")],
+            )
+        ],
+    )
 
     cases = [
         (
             McpCapabilityUnavailable("resources"),
+            "mcp_capability_unavailable",
+            409,
+            1002,
+        ),
+        (
+            grouped_unavailable,
             "mcp_capability_unavailable",
             409,
             1002,
@@ -580,6 +599,36 @@ def test_protocol_error_mapping_covers_every_failure_class():
             409,
             1002,
         ),
+        (
+            McpInvalidRequest("bad uri", reason="resource_uri"),
+            "mcp_invalid_resource_uri",
+            400,
+            1002,
+        ),
+        (
+            McpInvalidRequest("missing url", reason="configuration"),
+            "mcp_invalid_request",
+            400,
+            1002,
+        ),
+        (
+            McpServerError(-32602, "invalid params"),
+            "mcp_invalid_request",
+            400,
+            1002,
+        ),
+        (
+            McpServerError(-32603, "server exploded"),
+            "mcp_server_error",
+            502,
+            1003,
+        ),
+        (
+            ExceptionGroup("task group", [SdkMcpError(-32602, "unknown resource")]),
+            "mcp_invalid_request",
+            400,
+            1002,
+        ),
         (McpError("transport"), "mcp_connection_failed", 502, 1003),
         (RuntimeError("boom"), "mcp_connection_failed", 502, 1003),
     ]
@@ -589,6 +638,14 @@ def test_protocol_error_mapping_covers_every_failure_class():
         assert mapped.msg_key == msg_key
         assert mapped.status_code == status
         assert int(mapped.code) == code
+
+    rejected_read = tool_mcp._mcp_business_error(
+        McpServerError(-32602, "unknown resource"),
+        operation=tool_mcp.OP_RESOURCE_READ,
+        tool=tool,
+    )
+    assert rejected_read.msg_key == "mcp_invalid_resource_uri"
+    assert rejected_read.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -611,6 +668,86 @@ async def test_protocol_failures_become_business_errors(mcp_app, monkeypatch):
     )
     assert response.status_code == 504
     assert response.json()["code"] == 1003
+
+
+@pytest.mark.asyncio
+async def test_grouped_capability_and_server_errors_keep_their_identity(
+    mcp_app, monkeypatch
+):
+    from mcp.shared.exceptions import MCPError as SdkMcpError
+
+    team = await _team("grouped-errors", mcp_app.actor)
+    tool = await _tool(team)
+
+    # Session teardown wraps a capability check in nested task groups; that is
+    # an unsupported capability, never a connection failure.
+    unavailable = AsyncMock(
+        side_effect=ExceptionGroup(
+            "session",
+            [
+                ExceptionGroup(
+                    "inner",
+                    [McpCapabilityUnavailable("resources")],
+                )
+            ],
+        )
+    )
+    monkeypatch.setattr(tool_mcp, "enumerate_mcp_resources", unavailable)
+    response = await mcp_app.client.get(
+        f"/tools/{tool.id}/mcp/resources", params={"team_id": str(team.id)}
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == 1002
+    assert "resources" in response.json()["msg"]
+
+    # A server that rejects the request was reached successfully; the response
+    # must not claim the connection failed.
+    rejected = AsyncMock(
+        side_effect=ExceptionGroup("session", [SdkMcpError(-32603, "upstream failure")])
+    )
+    monkeypatch.setattr(tool_mcp, "read_mcp_resource", rejected)
+    response = await mcp_app.client.post(
+        f"/tools/{tool.id}/mcp/resources/read",
+        params={"team_id": str(team.id)},
+        json={"uri": "file:///ok.txt"},
+    )
+    assert response.status_code == 502
+    assert response.json()["code"] == 1003
+    assert "connect" not in response.json()["msg"].lower()
+
+    invalid = AsyncMock(
+        side_effect=ExceptionGroup(
+            "session", [SdkMcpError(-32602, "unknown resource uri")]
+        )
+    )
+    monkeypatch.setattr(tool_mcp, "read_mcp_resource", invalid)
+    response = await mcp_app.client.post(
+        f"/tools/{tool.id}/mcp/resources/read",
+        params={"team_id": str(team.id)},
+        json={"uri": "repo://{owner}/x"},
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == 1002
+
+
+@pytest.mark.asyncio
+async def test_unexpanded_resource_uri_fails_before_contacting_the_server(
+    mcp_app, monkeypatch
+):
+    team = await _team("unexpanded-uri", mcp_app.actor)
+    tool = await _tool(team)
+    read_mock = AsyncMock()
+    monkeypatch.setattr(tool_mcp, "read_mcp_resource", read_mock)
+
+    response = await mcp_app.client.post(
+        f"/tools/{tool.id}/mcp/resources/read",
+        params={"team_id": str(team.id)},
+        json={"uri": "repo://{owner}/{repo}/contents{/path*}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == 1002
+    read_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

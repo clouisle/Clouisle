@@ -16,11 +16,6 @@ mock.module('@/components/ui/label', () => ({
 mock.module('@/components/ui/field', () => ({
   FieldError: ({ children }: React.PropsWithChildren) => (children ? <span role="alert">{children}</span> : null),
 }))
-mock.module('@/components/ui/switch', () => ({
-  Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange: (checked: boolean) => void; id: string }) => (
-    <button type="button" role="switch" aria-checked={checked} onClick={() => onCheckedChange(!checked)} {...props} />
-  ),
-}))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children, value, onValueChange, disabled }: React.PropsWithChildren<{ value?: string; onValueChange: (value: string) => void; disabled?: boolean }>) => (
     <select value={value ?? ''} disabled={disabled} onChange={(event) => onValueChange(event.target.value)}>{children}</select>
@@ -141,6 +136,12 @@ function selects(): HTMLSelectElement[] {
   return Array.from(document.querySelectorAll('select'))
 }
 
+function decisionSelect(): HTMLSelectElement {
+  return selects().find((item) =>
+    Array.from(item.options).map((option) => option.value).join(',') === 'allow,deny,require_approval'
+  )!
+}
+
 function button(text: string): HTMLButtonElement {
   return Array.from(document.querySelectorAll('button')).find((item) => item.textContent === text)!
 }
@@ -178,7 +179,7 @@ describe('ToolPolicyEditor', () => {
     expect(latest?.connectionFields[0].secret).toBe(false)
   })
 
-  test('keeps caller confirmation while switching decisions and normalizes non-approval decisions', async () => {
+  test('writes the selected decision and keeps caller confirmation only for approval', async () => {
     await render(undefined, {
       default_decision: 'require_approval',
       gates: [CALLER_GATE],
@@ -187,25 +188,51 @@ describe('ToolPolicyEditor', () => {
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
 
-    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
+    const select = decisionSelect()
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      'allow',
+      'deny',
+      'require_approval',
+    ])
+
+    await change(select, 'allow')
     expect(latest?.approvalPolicy.default_decision).toBe('allow')
-    expect(latest?.approvalPolicy.gates).toHaveLength(1)
+    expect(latest?.approvalPolicy.gates).toEqual([])
 
-    const normalized = normalizeToolApprovalPolicy(latest!.approvalPolicy)
-    expect(normalized.default_decision).toBe('allow')
-    expect(normalized.gates).toEqual([])
+    await change(select, 'deny')
+    expect(latest?.approvalPolicy.default_decision).toBe('deny')
+    expect(latest?.approvalPolicy.gates).toEqual([])
+    expect(normalizeToolApprovalPolicy(latest!.approvalPolicy)).toEqual({
+      default_decision: 'deny',
+      gates: [],
+      operation_overrides: {},
+    })
 
-    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
+    await change(select, 'require_approval')
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
   })
 
-  test('preserves a saved deny policy until explicitly replaced', async () => {
+  test('allows creating a deny policy from a loaded allow policy', async () => {
+    await render(undefined, { default_decision: 'allow', gates: [], operation_overrides: {} })
+    await change(decisionSelect(), 'deny')
+    expect(latest?.approvalPolicy).toEqual({
+      default_decision: 'deny',
+      gates: [],
+      operation_overrides: {},
+    })
+  })
+
+  test('loads a saved deny policy without converting it', async () => {
     await render(undefined, { default_decision: 'deny', gates: [], operation_overrides: {} })
-    expect(alerts()).toContain('approval.blockedTitle')
-    expect(document.getElementById('tool-approval-default')).toBeNull()
-    expect(latest?.approvalPolicy.default_decision).toBe('deny')
-    await act(async () => button('approval.replaceBlocked').click())
+    const select = decisionSelect()
+    expect(select.value).toBe('deny')
+    expect(latest?.approvalPolicy).toEqual({
+      default_decision: 'deny',
+      gates: [],
+      operation_overrides: {},
+    })
+    await change(select, 'require_approval')
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
   })
@@ -256,7 +283,7 @@ describe('ToolPolicyEditor', () => {
     })
     expect(document.querySelector('details')).toBeNull()
     const deniedRow = selects().find(item => item.value === 'deny')!
-    expect(deniedRow.querySelector('option[value="deny"]')?.disabled).toBe(true)
+    expect(deniedRow.querySelector('option[value="deny"]')?.disabled).toBe(false)
     expect(latest?.approvalPolicy.operation_overrides['tool:removed'].default_decision).toBe('deny')
     const description = document.querySelector('p[data-slot="tooltip-trigger"]') as HTMLElement
     expect(description.textContent).toBe('Search project records')
@@ -437,7 +464,7 @@ describe('ToolPolicyEditor', () => {
     expect(document.body.textContent).not.toContain('connectionFields.add')
     expect(document.body.textContent).toContain('operations.title')
 
-    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
+    await change(decisionSelect(), 'require_approval')
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
     expect(document.body.textContent).toContain('approval.callerGate')
