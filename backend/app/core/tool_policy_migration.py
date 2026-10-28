@@ -17,6 +17,25 @@ async def migrate_tool_policy_schema() -> None:
             ADD COLUMN IF NOT EXISTS definition_version INTEGER NOT NULL DEFAULT 1
         """,
     )
+    # Older schemas inferred VARCHAR(12) before IM origins were introduced.
+    # Widening is backward-compatible and preserves existing execution rows.
+    await execute_startup_migration_query(
+        connection,
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'tool_executions'
+                  AND column_name = 'entrypoint'
+                  AND character_maximum_length < 32
+            ) THEN
+                ALTER TABLE tool_executions ALTER COLUMN entrypoint TYPE VARCHAR(32);
+            END IF;
+        END $$;
+        """,
+    )
 
 
 # PostgreSQL cannot express these invariants in Tortoise Meta, so they are

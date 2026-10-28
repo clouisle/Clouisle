@@ -101,7 +101,9 @@ class ToolExecution(models.Model):
 
     # Call context.
     entrypoint = fields.CharEnumField(
-        ExecutionEntrypoint, description="Entrypoint kind that requested execution"
+        ExecutionEntrypoint,
+        max_length=32,
+        description="Entrypoint kind that requested execution",
     )
     entrypoint_id = fields.CharField(
         max_length=200, null=True, description="Stable entrypoint identifier"
