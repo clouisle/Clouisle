@@ -203,6 +203,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         messages={messages}
         isStreaming={isStreaming}
         isLoading={isLoading}
+        isWaiting={runStatus === 'waiting'}
         loadingLabel={runStatus === 'queued' ? tMessage('runStatusQueued') : runStatus === 'waiting' ? tMessage('runStatusWaiting') : runStatus === 'stopping' ? tMessage('runStatusStopping') : undefined}
         hideToolCalls={agent.hide_tool_calls}
         hideMessageActions={agent.hide_message_actions}

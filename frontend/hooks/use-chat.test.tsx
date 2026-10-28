@@ -260,6 +260,18 @@ describe('useChat', () => {
       await Promise.resolve()
       hook = rerender(options)
       expect(hook.pendingToolApproval?.executionId).toBe('execution-1')
+      const assistantId = '11111111-1111-4111-8111-111111111111'
+      const userId = '22222222-2222-4222-8222-222222222222'
+      hook.setMessages([
+        { id: userId, role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+        { id: assistantId, role: 'assistant', parts: [{ type: 'text', text: 'waiting' }] },
+      ])
+      hook = rerender(options)
+      await hook.regenerate(assistantId)
+      await hook.editMessage(userId, 'changed')
+      await hook.switchVersion(assistantId, 0)
+      expect(chatStream).not.toHaveBeenCalled()
+      expect(hook.messages[1].id).toBe(assistantId)
 
       hook.setConversationId('conversation-2')
       hook = rerender(options)

@@ -167,6 +167,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           messages={messages}
           isStreaming={isStreaming}
           isLoading={runLoading}
+          isWaiting={runStatus === 'waiting'}
           loadingLabel={runStatus === 'queued' || runStatus === 'waiting' || runStatus === 'stopping' ? runStatusLabel ?? undefined : undefined}
           hideToolCalls={Boolean(metadata.hide_tool_calls)}
           hideMessageActions={Boolean(metadata.hide_message_actions)}

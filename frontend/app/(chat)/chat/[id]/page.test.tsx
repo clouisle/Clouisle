@@ -541,6 +541,8 @@ describe('PublicChatPage', () => {
 
     expect(chatContainerProps.loadingLabel).toBe('runStatusWaiting')
     expect(chatInputProps.disabled).toBe(true)
+    expect(chatInputProps.isLoading).toBe(true)
+    expect(chatContainerProps.isStreaming).toBe(true)
     expect(output()).not.toContain('runStatusWaiting')
   })
 

@@ -101,6 +101,7 @@ export interface AgentChatSurfaceProps {
   messages: ChatMessage[]
   isStreaming?: boolean
   isLoading?: boolean
+  isWaiting?: boolean
   loadingLabel?: string
   autoScroll?: boolean
   renderPart?: (part: MessagePart, index: number) => React.ReactNode
@@ -201,6 +202,7 @@ export function AgentChatSurface({
   messages,
   isStreaming = false,
   isLoading = false,
+  isWaiting = false,
   loadingLabel,
   autoScroll = true,
   renderPart,
@@ -312,7 +314,7 @@ export function AgentChatSurface({
     <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
       <ChatContainer
         messages={messages}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming || isWaiting}
         isLoading={isLoading}
         loadingLabel={loadingLabel}
         autoScroll={autoScroll}
@@ -366,7 +368,7 @@ export function AgentChatSurface({
           onStop={onStop}
           placeholder={placeholder}
           disabled={inputDisabled || Boolean(pendingToolApproval)}
-          isLoading={isLoading}
+          isLoading={isLoading || isWaiting}
           isStreaming={isStreaming}
           allowAttachments={allowAttachments}
           enableFileUpload={enableFileUpload}

@@ -943,7 +943,7 @@ export default function PublicChatPage({
         onStop={stop}
         placeholder={t('typePlaceholder')}
         disabled={runStatus === 'waiting'}
-        isLoading={chatLoading}
+        isLoading={chatLoading || runStatus === 'waiting'}
         isStreaming={isStreaming}
         allowAttachments={agent.enable_attachments && (agent.input_modalities ?? []).some((modality) => ['image', 'audio', 'video'].includes(modality))}
         enableFileUpload={agent.enable_attachments}
@@ -1265,7 +1265,7 @@ export default function PublicChatPage({
             /* Messages using ChatContainer */
             <ChatContainer
               messages={messages}
-              isStreaming={isStreaming}
+              isStreaming={isStreaming || runStatus === 'waiting'}
               isLoading={chatLoading}
               loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : runStatus === 'waiting' ? tChatMessage('runStatusWaiting') : runStatus === 'stopping' ? tChatMessage('runStatusStopping') : undefined}
               hideToolCalls={agent.hide_tool_calls}

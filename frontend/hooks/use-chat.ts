@@ -1499,7 +1499,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [disconnectLocalSubscription, initialMessages, resetStreamingState, setConversationId, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId])
 
   const switchVersion = useCallback(async (messageId: string, versionIndex: number) => {
-    if (statusRef.current !== 'idle') return
+    if (statusRef.current !== 'idle' || isReconnectableRunStatus(runStatusRef.current)) return
     const message = messagesRef.current.find((item) => item.id === messageId)
     if (!message) return
     try {
@@ -1513,7 +1513,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [agentId, api, reloadConversationMessages])
 
   const editMessage = useCallback(async (messageId: string, content: string) => {
-    if (statusRef.current !== 'idle' || !isValidUUID(messageId)) return
+    if (statusRef.current !== 'idle' || isReconnectableRunStatus(runStatusRef.current) || !isValidUUID(messageId)) return
     const targetIndex = messagesRef.current.findIndex((message) => message.id === messageId)
     if (targetIndex < 0 || messagesRef.current[targetIndex].role !== 'user') return
 
@@ -1563,7 +1563,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [agentId, api, consumeStream, setCurrentStatus, syncStreamingState])
 
   const regenerate = useCallback(async (messageId: string) => {
-    if (statusRef.current !== 'idle') return
+    if (statusRef.current !== 'idle' || isReconnectableRunStatus(runStatusRef.current)) return
     const messageIndex = messagesRef.current.findIndex((message) => message.id === messageId)
     if (messageIndex < 0 || messagesRef.current[messageIndex].role !== 'assistant') return
 

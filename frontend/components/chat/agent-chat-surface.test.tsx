@@ -145,6 +145,15 @@ describe('AgentChatSurface', () => {
     })
     expect(variableFormProps).toHaveLength(0)
   })
+  test('keeps the run active while approval or ask_user is waiting', () => {
+    renderSurface({ isWaiting: true, inputDisabled: true, onStop: mock() })
+    expect(chatContainerProps[0].isStreaming).toBe(true)
+    expect(chatInputProps[0]).toMatchObject({ isLoading: true, isStreaming: false, disabled: true })
+
+    renderSurface({ isWaiting: false })
+    expect(chatContainerProps[0].isStreaming).toBe(false)
+    expect(chatInputProps[0].isLoading).toBe(false)
+  })
   test('shows the approval pause instead of an ask_user answer and disables the composer', () => {
     const onRefreshRun = mock(() => undefined)
     renderSurface({
