@@ -249,7 +249,7 @@ describe('useChat', () => {
     getRunStatus.mockResolvedValue({
       id: 'run-1', status: 'waiting', pending_tool_call_id: 'call-1',
       pending_tool_name: 'tool:delete',
-      pending_tool_input: { interaction_kind: 'tool_approval', execution_id: 'execution-1' },
+      pending_tool_input: { interaction_kind: 'tool_approval', execution_id: 'execution-1', tool_description: 'Delete the selected event' },
     })
     getRunEvents.mockResolvedValue([])
     const options = { agentId: 'agent-1', conversationId: 'conversation-1' }
@@ -275,6 +275,7 @@ describe('useChat', () => {
       await Promise.resolve()
       hook = rerender(options)
       expect(hook.pendingToolApproval?.executionId).toBe('execution-1')
+      expect(hook.pendingToolApproval?.toolDescription).toBe('Delete the selected event')
       expect(stopRun).not.toHaveBeenCalled()
     } finally {
       hook.reset()

@@ -71,6 +71,7 @@ describe('PendingToolApprovalCard', () => {
         <PendingToolApprovalCard
           executionId="execution-1"
           toolName="mcp_calendar_delete_event"
+          toolDescription="Deletes the selected calendar event."
           onRefreshRun={onRefreshRun}
         />
       )
@@ -81,6 +82,7 @@ describe('PendingToolApprovalCard', () => {
     expect(getExecution).toHaveBeenCalledWith('execution-1', { silent: true })
     const text = JSON.stringify(renderer.toJSON())
     expect(text).toContain('delete_event')
+    expect(text).toContain('Deletes the selected calendar event.')
     expect(text).toContain('work@example.com')
     expect(text).toContain('***REDACTED***')
     expect(text.match(/delete_event/g)).toHaveLength(1)

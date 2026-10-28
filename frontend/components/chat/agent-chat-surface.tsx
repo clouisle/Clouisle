@@ -340,6 +340,7 @@ export function AgentChatSurface({
             key={pendingToolApproval.executionId}
             executionId={pendingToolApproval.executionId}
             toolName={pendingToolApproval.toolName}
+            toolDescription={pendingToolApproval.toolDescription}
             onRefreshRun={onRefreshRun}
           />
         ) : hasPendingAskUser ? (

@@ -964,6 +964,7 @@ export default function PublicChatPage({
           key={pendingToolApproval.executionId}
           executionId={pendingToolApproval.executionId}
           toolName={pendingToolApproval.toolName}
+          toolDescription={pendingToolApproval.toolDescription}
           onRefreshRun={reconnect}
         />
       ) : hasPendingAskUser ? pendingAskUserPanel : (pendingInstructionsPanel || variablePanel)}

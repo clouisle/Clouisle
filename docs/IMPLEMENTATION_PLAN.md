@@ -2,6 +2,11 @@
 
 ## Active
 
+- **approval-tool-description** — Completed. See `docs/plan/approval-tool-description.md`.
+  - [x] 1. Preserve the called tool's description with the approval pause
+  - [x] 2. Display it in the chat approval panel
+  - [x] 3. Verify waiting, restoration, and missing-description behavior
+
 - **caller-only-tool-confirmation** — Completed. See `docs/plan/caller-only-tool-confirmation.md`.
   - [x] 1. Define safe legacy-data cutover
   - [x] 2. Restrict execution and API contracts to caller confirmation

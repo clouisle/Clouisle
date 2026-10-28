@@ -23,6 +23,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 - Simplified the chat tool-confirmation card with plain-language choices, one status, and optional redacted action details.
 - Aligned the confirmation panel with the composer parameters panel and cleared the previous conversation's pending confirmation when switching chats; returning to the conversation restores its pending approval.
+- Chat confirmations show the called tool's description when available, including MCP child-tool descriptions; existing pending confirmations without a captured description remain actionable.
 
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 

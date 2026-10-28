@@ -492,6 +492,75 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch, tool_na
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("description", ["Delete the selected event", "", None])
+async def test_approval_pause_captures_only_matching_tool_description(
+    monkeypatch, description
+):
+    from app.services import agent_round
+
+    monkeypatch.setattr(
+        agent_round, "persist_assistant_step", AsyncMock(return_value=2)
+    )
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=3))
+    response = _resp(tool_calls=[_tool("mcp_calendar_delete", "call-1")])
+    pause = {}
+
+    async def team_chat(**_kwargs):
+        return response
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="delete")]
+            )
+        )
+
+    async def tool_runner(tool_name, _arguments, **_kwargs):
+        return ToolInteractionRequest(
+            tool_name=tool_name,
+            arguments={"interaction_kind": "tool_approval", "execution_id": "exec-1"},
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="delete",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        round_id=uuid4(),
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "other", "description": "Wrong operation"},
+            },
+            {
+                "type": "function",
+                "function": {"name": "mcp_calendar_delete", "description": description},
+            },
+        ],
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=lambda name, payload: name,
+    )
+    loop = AgentLoop(context)
+    _ = [chunk async for chunk in loop.run()]
+    assert loop.result.waiting_for_user
+    assert pause["arguments"].get("tool_description") == (description or None)
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_pauses_after_persisting_ask_user_call(monkeypatch):
     """An ask_user call persists its assistant step and waits non-terminally."""
     from app.services import agent_round

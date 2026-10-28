@@ -481,6 +481,26 @@ class AgentLoop:
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
+                if tool_result.arguments.get("interaction_kind") == "tool_approval":
+                    for tool in ctx.tools or []:
+                        function = (
+                            tool.get("function", {}) if isinstance(tool, dict) else {}
+                        )
+                        if (
+                            not isinstance(function, dict)
+                            or function.get("name") != tool_name
+                        ):
+                            continue
+                        description = function.get("description")
+                        if isinstance(description, str) and description.strip():
+                            tool_result = ToolInteractionRequest(
+                                tool_name=tool_name,
+                                arguments={
+                                    **tool_result.arguments,
+                                    "tool_description": description.strip(),
+                                },
+                            )
+                        break
                 metric_status = "waiting"
                 call_sse = build_tool_call_sse_event(
                     tool_call_id=tc.id,

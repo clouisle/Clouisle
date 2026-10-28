@@ -13,6 +13,7 @@ export interface PendingToolApproval {
   executionId: string
   toolCallId: string | null
   toolName: string | null
+  toolDescription?: string | null
 }
 
 /**
@@ -38,6 +39,7 @@ export function getPendingToolApproval(
     executionId,
     toolCallId: status.pending_tool_call_id ?? null,
     toolName: status.pending_tool_name ?? null,
+    toolDescription: typeof input.tool_description === 'string' ? input.tool_description.trim() || null : null,
   }
 }
 

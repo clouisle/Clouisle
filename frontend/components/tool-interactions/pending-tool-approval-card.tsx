@@ -14,6 +14,7 @@ export interface PendingToolApprovalCardProps {
   executionId: string
   /** Original model-facing tool name from the run state (display fallback). */
   toolName?: string | null
+  toolDescription?: string | null
   /** Re-read the owning run status so a resumed stream is picked up. */
   onRefreshRun?: () => void | Promise<void>
   className?: string
@@ -42,6 +43,7 @@ function statusBadgeVariant(
 export function PendingToolApprovalCard({
   executionId,
   toolName,
+  toolDescription,
   onRefreshRun,
   className,
   compact = false,
@@ -154,6 +156,9 @@ export function PendingToolApprovalCard({
             <div className="min-w-0">
               <p className="text-sm font-medium">{tChat('approvalTitle')}</p>
               <p className="mt-0.5 break-all text-xs text-muted-foreground">{displayName}</p>
+              {toolDescription?.trim() && (
+                <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-xs text-foreground/80">{toolDescription}</p>
+              )}
             </div>
           </div>
           {status && (

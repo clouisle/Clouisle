@@ -16,13 +16,24 @@ describe('getPendingToolApproval', () => {
         pending_tool_input: {
           interaction_kind: 'tool_approval',
           execution_id: 'execution-1',
+          tool_description: 'Deletes the selected calendar event.',
         },
       })
     ).toEqual({
       executionId: 'execution-1',
       toolCallId: 'call-1',
       toolName: 'mcp_calendar_delete_event',
+      toolDescription: 'Deletes the selected calendar event.',
     })
+  })
+
+  test('does not invent a description for older or invalid approval payloads', () => {
+    for (const description of [undefined, '', '  ', 42]) {
+      expect(getPendingToolApproval({
+        status: 'waiting',
+        pending_tool_input: { interaction_kind: 'tool_approval', execution_id: 'execution-1', tool_description: description },
+      })?.toolDescription).toBeNull()
+    }
   })
 
   test('ignores non-waiting states, ask_user pauses and missing execution ids', () => {
