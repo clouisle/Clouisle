@@ -981,6 +981,9 @@ async def test_get_conversation_builds_versions_and_agent_details(monkeypatch):
         "build_message_round_payloads",
         AsyncMock(return_value=[{"id": root_id}, {"id": child_id}]),
     )
+    from app.models.agent_run import AgentRun
+
+    monkeypatch.setattr(AgentRun, "filter", lambda **_kwargs: Query(None))
 
     result = await agents.get_conversation(conv.id, current_user)
 

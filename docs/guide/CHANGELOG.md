@@ -30,6 +30,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Feishu and WeChat Agent chat support caller-only tool confirmations through `/approve <execution UUID>` and `/reject <execution UUID>`; `ask_user` remains a separate answer flow. Upgrade API and all Agent/channel workers together; finish or stop waiting IM approvals before rollback.
 - Authenticated Feishu and WeChat Agent chat now resolves the caller's personal tool connection automatically; team accounts still require an explicit binding.
 - Fixed IM tool executions failing before confirmation on databases created before Feishu and WeChat origins were added. Restart the API to widen the existing execution entrypoint column before running IM tools.
+- Opening a conversation in Chat now recovers an active IM run and its pending tool confirmation without relying on browser-local run history.
 
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 

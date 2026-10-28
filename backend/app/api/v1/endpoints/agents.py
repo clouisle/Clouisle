@@ -1250,6 +1250,25 @@ async def get_conversation(
     related_agent = conversation.agent
     conv_data["agent_name"] = related_agent.name if related_agent else None
     conv_data["agent_icon"] = related_agent.icon if related_agent else None
+    from app.models.agent_run import AgentRun, AgentRunStatus
+
+    active_run = (
+        await AgentRun.filter(
+            conversation_id=conversation.id,
+            agent_id=conversation.agent_id,
+            user_id=current_user.id,
+            status__in=[
+                AgentRunStatus.QUEUED,
+                AgentRunStatus.RUNNING,
+                AgentRunStatus.STOPPING,
+                AgentRunStatus.COMPLETING,
+                AgentRunStatus.WAITING,
+            ],
+        )
+        .order_by("-submitted_at")
+        .first()
+    )
+    conv_data["active_run_id"] = active_run.id if active_run else None
     conv_data["messages"] = messages_out
 
     return success(data=conv_data)

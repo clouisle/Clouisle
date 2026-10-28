@@ -669,6 +669,45 @@ describe('useChat failure and lifecycle actions', () => {
     await sending
   })
 
+  it('discovers an IM approval without a browser run snapshot', async () => {
+    const never = deferred<Response>()
+    streamRun.mockReturnValue({ stream: never.promise, abort: mock() })
+    getConversation.mockResolvedValue({ messages: [], active_run_id: 'im-run' })
+    getRunStatus.mockResolvedValue({
+      id: 'im-run', status: 'waiting', pending_tool_call_id: 'call-1',
+      pending_tool_name: 'web_search',
+      pending_tool_input: { interaction_kind: 'tool_approval', execution_id: 'execution-1' },
+    })
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    try {
+      runEffects()
+      await waitFor(() => result.pendingToolApproval?.executionId === 'execution-1')
+      expect(result.runStatus).toBe('waiting')
+      expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'im-run')
+    } finally {
+      result.reset()
+      unmount()
+    }
+  })
+
+  it('ignores a discovered run after switching conversations', async () => {
+    const discovery = deferred<{ messages: ChatMessage[]; active_run_id?: string }>()
+    getConversation.mockReturnValueOnce(discovery.promise)
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    runEffects()
+    result.setConversationId('conversation-2')
+    await flush()
+    runEffects()
+    discovery.resolve({ messages: [], active_run_id: 'old-run' })
+    await flush()
+    expect(getRunStatus).not.toHaveBeenCalledWith('agent-1', 'old-run')
+    expect(result.pendingToolApproval).toBeNull()
+    result.reset()
+    unmount()
+  })
+
   it('rebuilds an in-flight assistant message from persisted parts on reconnect', async () => {
     const parts: MessagePart[] = [
       { type: 'user-instruction', content: 'earlier steer' },

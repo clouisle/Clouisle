@@ -35,7 +35,7 @@ export const defaultChatAdapter: ChatPageAdapter = {
   getConversations: (agentId, params) => publicAgentsApi.getConversations(agentId, params),
   getConversation: async (id) => {
     const data = await publicAgentsApi.getConversation(id)
-    return { messages: convertBackendMessages(data.messages as BackendMessage[]) }
+    return { messages: convertBackendMessages(data.messages as BackendMessage[]), activeRunId: data.active_run_id }
   },
   deleteConversation: (id) => publicAgentsApi.deleteConversation(id),
   updateConversation: async (id, data) => { await publicAgentsApi.updateConversation(id, data) },

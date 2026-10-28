@@ -2,6 +2,11 @@
 
 ## Active
 
+- **im-chat-run-discovery** — Completed. See `docs/plan/im-chat-run-discovery.md`.
+  - [x] 1. Discover owner-scoped active runs
+  - [x] 2. Recover chat state safely
+  - [x] 3. Verify and document cross-surface recovery
+
 - **im-agent-tool-approval** — Completed. See `docs/plan/im-agent-tool-approval.md`.
   - [x] 1. Define trusted channel origins and shared approval boundary
   - [x] 2. Implement Feishu and WeChat confirmation delivery and decisions

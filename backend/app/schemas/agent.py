@@ -803,6 +803,7 @@ class EditMessageRequest(BaseModel):
 class ConversationWithMessages(ConversationOut):
     """Conversation with messages"""
 
+    active_run_id: UUID | None = None
     messages: list[MessageOut] = []
 
 

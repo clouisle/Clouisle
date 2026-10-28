@@ -194,7 +194,7 @@ async def test_agent_conversation_list_skips_empty_optional_filters(monkeypatch)
 @pytest.mark.asyncio
 async def test_get_conversation_defaults_version_count_for_childless_root(monkeypatch):
     current_user = user()
-    conversation = SimpleNamespace(id=uuid4(), agent=None)
+    conversation = SimpleNamespace(id=uuid4(), agent=None, agent_id=uuid4())
     message = SimpleNamespace(
         id=uuid4(), parent_id=None, round_id=None, is_round_canonical=True
     )
@@ -219,6 +219,9 @@ async def test_get_conversation_defaults_version_count_for_childless_root(monkey
         "model_validate",
         Mock(return_value=SimpleNamespace(model_dump=lambda: {})),
     )
+    from app.models.agent_run import AgentRun
+
+    monkeypatch.setattr(AgentRun, "filter", lambda **_kwargs: Query(None))
 
     result = await user_agents.get_conversation(conversation.id, current_user)
     assert result["data"]["messages"][0]["version_count"] == 1

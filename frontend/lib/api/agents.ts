@@ -492,6 +492,7 @@ export interface MessageVersion {
 }
 
 export interface ConversationWithMessages extends Conversation {
+  active_run_id?: string | null
   messages: Message[]
 }
 

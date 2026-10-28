@@ -91,7 +91,7 @@ export type { ChatImageContent, ChatFileContent, ChatFileUrl }
  */
 export interface ChatStreamApi {
   chatStream(agentId: string, request: ChatRequest): { stream: Promise<Response>; abort: () => void }
-  getConversation(conversationId: string): Promise<{ messages: ChatMessage[] }>
+  getConversation(conversationId: string): Promise<{ messages: ChatMessage[]; activeRunId?: string | null }>
   editMessageStream(agentId: string, messageId: string, content: string): { stream: Promise<Response>; abort: () => void }
   regenerateStream(agentId: string, messageId: string, variables: Record<string, unknown>): { stream: Promise<Response>; abort: () => void }
   getMessageVersions(agentId: string, messageId: string): Promise<MessageVersion[]>
@@ -120,7 +120,7 @@ const defaultChatApi: ChatStreamApi = {
     : undefined,
   getConversation: async (conversationId) => {
     const data = await agentsApi.getConversation(conversationId)
-    return { messages: convertBackendMessages(data.messages as BackendMessage[]) }
+    return { messages: convertBackendMessages(data.messages as BackendMessage[]), activeRunId: data.active_run_id }
   },
   editMessageStream: (agentId, messageId, content) => agentsApi.editMessageStream(agentId, messageId, content),
   regenerateStream: (agentId, messageId, variables) => agentsApi.regenerateStream(agentId, messageId, variables),
@@ -1022,10 +1022,19 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     const currentRunId = activeRunConversationRef.current === targetConversationId
       ? runIdRef.current
       : null
-    const stored = currentRunId
+    let stored = currentRunId
       ? { runId: currentRunId, lastSequence: lastSequenceRef.current }
       : getStoredRunSnapshot(agentId, targetConversationId)
-    if (!stored) return
+    if (!stored) {
+      try {
+        const conversation = await api.getConversation(targetConversationId)
+        if (reconnectGenerationRef.current !== generation || conversationIdRef.current !== targetConversationId) return
+        if (!conversation.activeRunId) return
+        stored = { runId: conversation.activeRunId, lastSequence: 0 }
+      } catch {
+        return
+      }
+    }
 
     // If a live session is already active and streaming for this exact run,
     // don't create a duplicate placeholder.  This happens when the
@@ -1105,6 +1114,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }
   }, [
     agentId,
+    api,
     clearStoredRunSnapshot,
     disconnectLocalSubscription,
     ensureSession,
