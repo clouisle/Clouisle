@@ -97,6 +97,53 @@ const LEGACY_CITATION_PROTOCOL_MARKER_REGEX = /\ue200cite\ue202[^\ue200]*\ue200/
 const LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX = /\ue200(?:cite(?:\ue202[^\ue200]*)?)?$/
 const CITATION_HREF_PREFIX = '#clouisle-citation='
 
+interface CompressionEventInfo {
+  stage: string | null
+  actions: string[]
+  beforeTokens: number | null
+  afterTokens: number | null
+  summarySourceTokens: number | null
+  summaryResultTokens: number | null
+  summarySavedTokens: number | null
+  summaryTurns: number | null
+  inputBudget: number | null
+  utilizationBefore: number | null
+  utilizationAfter: number | null
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/**
+ * Read the compression_end payload safely.
+ *
+ * Only metadata is read; message content is never part of an SSE compression
+ * event, so diagnostics built from this helper cannot leak conversation text.
+ */
+function getCompressionEventInfo(part: TaskPart): CompressionEventInfo | null {
+  if (part.taskType !== 'compression' || !part.info || typeof part.info !== 'object') {
+    return null
+  }
+  const info = part.info as Record<string, unknown>
+  const actions = Array.isArray(info.actions)
+    ? info.actions.filter((action): action is string => typeof action === 'string')
+    : []
+  return {
+    stage: typeof info.stage === 'string' ? info.stage : null,
+    actions,
+    beforeTokens: readFiniteNumber(info.before_tokens),
+    afterTokens: readFiniteNumber(info.after_tokens),
+    summarySourceTokens: readFiniteNumber(info.summary_source_tokens),
+    summaryResultTokens: readFiniteNumber(info.summary_result_tokens),
+    summarySavedTokens: readFiniteNumber(info.summary_saved_tokens),
+    summaryTurns: readFiniteNumber(info.summary_turns),
+    inputBudget: readFiniteNumber(info.input_budget),
+    utilizationBefore: readFiniteNumber(info.utilization_before),
+    utilizationAfter: readFiniteNumber(info.utilization_after),
+  }
+}
+
 function stripCitationMarkers(text: string) {
   if (!text || (!text.includes('[[') && !text.includes('\ue200'))) {
     return text || ''
@@ -1238,38 +1285,60 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         return tTask('searchingKnowledge')
       }
       if (taskPart.taskType === 'compression') {
-        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
-        const beforeTokens = typeof info?.before_tokens === 'number' ? info.before_tokens : null
-        const afterTokens = typeof info?.after_tokens === 'number' ? info.after_tokens : null
-        const summarySourceTokens = typeof info?.summary_source_tokens === 'number' && info.summary_source_tokens > 0
-          ? info.summary_source_tokens
+        const compression = getCompressionEventInfo(taskPart)
+        const summarySourceTokens = compression !== null
+          && compression.summarySourceTokens !== null
+          && compression.summarySourceTokens > 0
+          ? compression.summarySourceTokens
           : null
-        const summaryResultTokens = typeof info?.summary_result_tokens === 'number' && info.summary_result_tokens > 0
-          ? info.summary_result_tokens
+        const summaryResultTokens = compression !== null
+          && compression.summaryResultTokens !== null
+          && compression.summaryResultTokens > 0
+          ? compression.summaryResultTokens
           : null
-        const summarySavedTokens = typeof info?.summary_saved_tokens === 'number'
-          ? info.summary_saved_tokens
-          : null
-        const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
         const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
-        const displayBeforeTokens = summarySourceTokens ?? beforeTokens
-        const displayAfterTokens = summaryResultTokens ?? afterTokens
-        const displaySavedTokens = summarySavedTokens ?? (
+        const displayBeforeTokens = summarySourceTokens ?? compression?.beforeTokens ?? null
+        const displayAfterTokens = summaryResultTokens ?? compression?.afterTokens ?? null
+        const displaySavedTokens = compression?.summarySavedTokens ?? (
           displayBeforeTokens !== null && displayAfterTokens !== null
             ? Math.max(displayBeforeTokens - displayAfterTokens, 0)
             : 0
         )
+        const summaryTurns = compression?.summaryTurns ?? null
+        const actions = compression?.actions ?? []
+        const summarized = actions.includes('context_summary') || hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)
+        const compactedToolResults = actions.includes('tool_result_compacted') || compression?.stage === 'micro'
 
         if (taskPart.state === 'completed' && displayBeforeTokens !== null && displayAfterTokens !== null) {
-          if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
+          const counts = {
+            before: displayBeforeTokens,
+            after: displayAfterTokens,
+            saved: displaySavedTokens,
+          }
+          if (compression?.stage === 'fallback' || actions.includes('summary_fallback')) {
+            return tTask('compressionWithoutSummary', counts)
+          }
+          if (summarized && compactedToolResults) {
+            return tTask('compressionCombined', counts)
+          }
+          if (compactedToolResults) {
+            return tTask('toolResultsCompacted', counts)
+          }
+          if (summarized) {
             return tTask('compressionCompletedSummary', {
-              before: displayBeforeTokens,
-              after: displayAfterTokens,
-              saved: displaySavedTokens,
+              ...counts,
               count: summaryTurns ?? 0,
             })
           }
-          return tTask('compressionCompleted', { before: displayBeforeTokens, after: displayAfterTokens })
+          return tTask('compressionCompleted', counts)
+        }
+        if (taskPart.state !== 'completed') {
+          if (compression?.stage === 'micro') {
+            return tTask('compactingToolResults')
+          }
+          if (compression?.stage === 'fallback') {
+            return tTask('condensingContext')
+          }
         }
         return tTask('compressingContext')
       }
@@ -1367,13 +1436,37 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               </ChainOfThoughtStep>
             )
           } else if (part.taskType === 'compression') {
+            const compression = getCompressionEventInfo(part)
+            const budget = compression?.inputBudget ?? null
+            const utilizationBefore = compression?.utilizationBefore ?? null
+            const utilizationAfter = compression?.utilizationAfter ?? null
+            const beforePercent = utilizationBefore === null ? null : Math.max(0, Math.round(utilizationBefore * 100))
+            const afterPercent = utilizationAfter === null ? null : Math.max(0, Math.round(utilizationAfter * 100))
+            const showFallbackHint = part.state === 'completed'
+              && compression !== null
+              && (compression.stage === 'fallback' || compression.actions.includes('summary_fallback'))
             steps.push(
               <ChainOfThoughtStep
                 key={`compression-${index}`}
                 icon={Timer}
                 label={getTaskTitle(part)}
                 status={getStepStatus(part.state)}
-              />
+              >
+                {part.state === 'completed' && budget !== null && beforePercent !== null && afterPercent !== null && (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                    {tTask('compressionBudget', {
+                      budget,
+                      before: beforePercent,
+                      after: afterPercent,
+                    })}
+                  </p>
+                )}
+                {showFallbackHint && (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                    {tTask('compressionWithoutSummaryHint')}
+                  </p>
+                )}
+              </ChainOfThoughtStep>
             )
           } else if (part.taskType === 'generating') {
             steps.push(

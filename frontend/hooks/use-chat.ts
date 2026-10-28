@@ -2075,13 +2075,18 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
   return state
 }
 
-function appendTimelineTask(segments: ContentSegment[], taskType: TaskPart['taskType']) {
+function appendTimelineTask(
+  segments: ContentSegment[],
+  taskType: TaskPart['taskType'],
+  info?: TaskPart['info']
+) {
   segments.push({
     type: 'task',
     task: {
       type: 'task',
       taskType,
       state: 'running',
+      ...(info === undefined ? {} : { info }),
     },
   })
 }
@@ -2345,10 +2350,14 @@ function applyAssistantStreamEvent(
       return true
     }
 
-    case 'compression_start':
+    case 'compression_start': {
       state.taskState.compression = 'running'
-      appendTimelineTask(state.segments, 'compression')
+      const startInfo = event.data && typeof event.data === 'object' && Object.keys(event.data).length > 0
+        ? event.data as unknown as Record<string, unknown>
+        : undefined
+      appendTimelineTask(state.segments, 'compression', startInfo)
       return true
+    }
 
     case 'compression_end':
       state.taskState.compression = 'completed'

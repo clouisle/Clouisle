@@ -1119,6 +1119,101 @@ describe('message behavior', () => {
     expect(html).toContain('Done thinking')
   })
 
+  test('renders stage and action aware compression states', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-actions',
+        role: 'assistant',
+        parts: [
+          { type: 'task', taskType: 'compression', state: 'running', info: { stage: 'micro' } },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'micro',
+              actions: ['tool_result_compacted'],
+              before_tokens: 1200,
+              after_tokens: 400,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary', 'tool_result_compacted'],
+              before_tokens: 900,
+              after_tokens: 300,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary'],
+              summary_turns: 2,
+              summary_source_tokens: 800,
+              summary_result_tokens: 200,
+              summary_saved_tokens: 600,
+            },
+          },
+        ],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).toContain('chat.task.compactingToolResults')
+    expect(html).toContain('chat.task.toolResultsCompacted before=1200 after=400 saved=800')
+    expect(html).toContain('chat.task.compressionCombined before=900 after=300 saved=600')
+    expect(html).toContain('chat.task.compressionCompletedSummary before=800 after=200 saved=600 count=2')
+  })
+
+  test('shows budget diagnostics and fallback guidance only for applicable events', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-diagnostics',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary'],
+              before_tokens: 20000,
+              after_tokens: 6000,
+              input_budget: 24000,
+              utilization_before: 0.74,
+              utilization_after: 0.21,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'fallback',
+              actions: ['summary_fallback'],
+              before_tokens: 500,
+              after_tokens: 200,
+            },
+          },
+        ],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).toContain('chat.task.compressionBudget budget=24000 before=74 after=21')
+    expect(html).toContain('chat.task.compressionWithoutSummary before=500 after=200 saved=300')
+    expect(html).toContain('chat.task.compressionWithoutSummaryHint')
+    expect(html.match(/chat\.task\.compressionBudget/g)).toHaveLength(1)
+  })
+
   test('renders media URLs, fallbacks, string results, and artifact metadata without file cards', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'media-variants',

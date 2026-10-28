@@ -333,6 +333,16 @@
         "autoExtract": "Auto Extract Memories",
         "autoExtractHint": "Automatically extract and save important information from conversations"
       },
+      "compression": {
+        "title": "Context Compression",
+        "tooltip": "Keep long conversations within the model input budget",
+        "description": "When enabled, the agent summarizes older history and compacts completed tool results before each model call. Original messages and tool records are kept, so compression only changes what the model sees.",
+        "summaryMaxTokens": "Summary Token Budget",
+        "summaryMaxTokensHint": "Target size of the generated history summary (128–8000 tokens). Larger summaries keep more detail but leave less room for the conversation.",
+        "tokens": "tokens",
+        "emitEvents": "Show compression progress",
+        "emitEventsHint": "Send compression start and end events to the chat stream so users can see when context was reduced. Turn off to compress silently."
+      },
       "imageGeneration": {
         "title": "Image Generation",
         "tooltip": "Allow the agent to call image generation models",
@@ -473,8 +483,8 @@
         "toolCall": "Tool call with tool_call_id, tool_name, tool_display_name, and arguments. arguments always contains the original model-supplied arguments for this call, including when it pauses for approval",
         "toolResult": "Tool result with the matching tool_call_id, result, and is_error",
         "mediaResult": "Media payload emitted for a media.image or media.video tool result",
-        "compressionStart": "Context compression started before a model call",
-        "compressionEnd": "Context compression finished with token-budget metadata",
+        "compressionStart": "Context compression started before a model call; stage is macro or micro",
+        "compressionEnd": "Context compression finished with token-budget metadata. stage is macro, micro, or fallback; actions may include context_summary, tool_result_compacted, and summary_fallback",
         "outputTruncated": "Output was truncated due to max output token limit",
         "iterationCapReached": "The round hit the maximum tool-call iterations and ended with a terminal notice",
         "messageEnd": "Message ended with usage, timing, version_number, and version_count",

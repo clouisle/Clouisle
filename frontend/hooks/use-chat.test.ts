@@ -1500,6 +1500,27 @@ describe('useChat', () => {
     await editing
   })
 
+  it('retains compression stage metadata when the stream fails', async () => {
+    const onError = mock()
+    options = { agentId: 'agent-1', onError }
+    renderHookHarness()
+    streamEvents = [
+      { event: 'compression_start', data: { stage: 'micro', trigger: 'context_limit' } },
+      { event: 'error', data: { code: 6103, msg: 'quota exhausted', quota_type: 'output' } },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    await result.sendMessage('question')
+
+    expect(onError).toHaveBeenCalledWith({ code: 6103, message: 'quota exhausted', quotaType: 'output' })
+    expect(result.messages[1].parts).toContainEqual(expect.objectContaining({
+      type: 'task',
+      taskType: 'compression',
+      state: 'error',
+      info: { stage: 'micro', trigger: 'context_limit' },
+    }))
+  })
+
   it('preserves the edit-stream error code across the history reload', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'
     const onError = mock()

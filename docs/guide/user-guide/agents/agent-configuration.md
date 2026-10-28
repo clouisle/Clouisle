@@ -250,7 +250,17 @@ Configure tools as a JSON list of `{type, name/tool_id/server_id/skill_id, confi
 
 ### Context Compression
 
-Long conversations are kept within the model's context window automatically. The `context_compression_config` controls compaction behavior (micro compaction of reasoning/tool results, macro summary compaction, preflight token budget guard, retry on context-length errors, and session memory). These defaults work out of the box; advanced users can tune them via the API.
+Long conversations are kept within the model's context window automatically. In the Agent editor, **Context Compression** controls:
+
+- **Enabled**: summarize older history and compact completed tool results before each model call. Disabling it keeps the previous behavior of sending the full history (the model call may then fail when the history exceeds its window).
+- **Summary Token Budget** (`summary_max_tokens`, 128–8000): target size of the generated history summary. Larger summaries preserve more detail but leave less room for the current round.
+- **Show compression progress** (`emit_sse_events`): emit `compression_start` / `compression_end` events. When off, compression still happens but stays silent in chat and the SSE stream.
+
+Compression never rewrites stored messages or tool records; it only changes the view sent to the model for that request. When older history is summarized or completed tool output is compacted, chat shows a short progress step with token counts, and the SSE `compression_end` event reports `stage` (`macro`, `micro`, or `fallback`) and `actions` (`context_summary`, `tool_result_compacted`, `summary_fallback`).
+
+If the summarizer is unavailable, compression falls back to omitting summarized history while keeping current instructions and the recent tail, and the chat step states that earlier history was omitted. If even the protected content (system prompt, current turn, tool definitions, retained recent exchanges) cannot fit, the run fails with an explicit error instead of dropping your instructions.
+
+The same settings are available through the API as `context_compression_config`; defaults are enabled with a 1000-token summary budget and progress events on.
 
 ### Image / Video Generation
 

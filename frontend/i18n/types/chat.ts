@@ -8,8 +8,15 @@ export type ChatMessages = {
       thinking: string
       generating: string
       compressingContext: string
+      compactingToolResults: string
+      condensingContext: string
       compressionCompleted: string
       compressionCompletedSummary: string
+      compressionCombined: string
+      toolResultsCompacted: string
+      compressionWithoutSummary: string
+      compressionWithoutSummaryHint: string
+      compressionBudget: string
       executingTools: string
       toolsExecuted: string
     }

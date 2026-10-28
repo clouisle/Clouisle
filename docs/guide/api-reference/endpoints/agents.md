@@ -299,7 +299,7 @@ POST /api/v1/agents
 | `enable_user_input_request` | boolean | No | Enable the model-callable `ask_user` tool (default: false) |
 | `enable_memory` | boolean | No | Enable memory across conversations (default: false) |
 | `memory_config` | object | No | Memory configuration |
-| `context_compression_config` | object | No | Context compression configuration |
+| `context_compression_config` | object | No | Context compression settings: `enabled` (default true), `summary_max_tokens` (128–8000, default 1000), `emit_sse_events` (default true) |
 | `enable_image_generation` | boolean | No | Enable image generation tool (default: false) |
 | `image_generation_config` | object | No | Image generation configuration |
 | `enable_video_generation` | boolean | No | Enable video generation tool (default: false) |

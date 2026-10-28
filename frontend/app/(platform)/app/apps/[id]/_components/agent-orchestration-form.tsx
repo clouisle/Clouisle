@@ -13,6 +13,7 @@ import {
   Brain,
   ImageIcon,
   Clapperboard,
+  MessageSquare,
 } from 'lucide-react'
 import {
   teamModelsApi,
@@ -28,6 +29,7 @@ import {
   type PromptGenerateContext,
   type ImageGenerationConfig,
   type VideoGenerationConfig,
+  type ContextCompressionConfig,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -146,6 +148,12 @@ const DEFAULT_VIDEO_GENERATION_CONFIG: VideoGenerationConfig = {
 
 const DEFAULT_MEDIA_MODEL_VALUE = '__default__'
 
+const DEFAULT_CONTEXT_COMPRESSION_CONFIG: ContextCompressionConfig = {
+  enabled: true,
+  summary_max_tokens: 1000,
+  emit_sse_events: true,
+}
+
 function getMediaModelOptionLabel(teamModel: TeamModel) {
   return teamModel?.model?.name ?? ''
 }
@@ -230,6 +238,10 @@ export function AgentOrchestrationForm({
     }
   )
   const [ragMode, setRagMode] = React.useState<RAGMode>(agent.knowledge_bases.length > 0 ? agent.rag_mode || 'agentic' : 'off')
+  const [compressionConfig, setCompressionConfig] = React.useState<ContextCompressionConfig>({
+    ...DEFAULT_CONTEXT_COMPRESSION_CONFIG,
+    ...(agent.context_compression_config || {}),
+  })
 
   // Sync state with agent prop when it changes
   React.useEffect(() => {
@@ -270,6 +282,10 @@ export function AgentOrchestrationForm({
       }
     )
     setRagMode(agent.knowledge_bases.length > 0 ? agent.rag_mode || 'agentic' : 'off')
+    setCompressionConfig({
+      ...DEFAULT_CONTEXT_COMPRESSION_CONFIG,
+      ...(agent.context_compression_config || {}),
+    })
   }, [agent])
 
   // Collapsed states
@@ -279,6 +295,7 @@ export function AgentOrchestrationForm({
   const [attachmentsCollapsed, setAttachmentsCollapsed] = React.useState(true)
   const [userInputCollapsed, setUserInputCollapsed] = React.useState(true)
   const [memoryCollapsed, setMemoryCollapsed] = React.useState(true)
+  const [compressionCollapsed, setCompressionCollapsed] = React.useState(true)
   const [imageGenerationCollapsed, setImageGenerationCollapsed] = React.useState(true)
   const [videoGenerationCollapsed, setVideoGenerationCollapsed] = React.useState(true)
 
@@ -340,9 +357,10 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
       attachment_config: enableAttachments ? attachmentConfig : null,
+      context_compression_config: compressionConfig,
       rag_mode: effectiveRagMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, effectiveRagMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, compressionConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, effectiveRagMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -774,6 +792,96 @@ export function AgentOrchestrationForm({
                     setMemoryConfig({
                       ...memoryConfig,
                       auto_extract: checked,
+                    })
+                  }}
+                  disabled={!canUpdate}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </ConfigCard>
+
+      {/* Context Compression Section */}
+      <ConfigCard
+        data-testid="agent-compression-section"
+        icon={MessageSquare}
+        iconColor="text-amber-500"
+        title={t('compression.title')}
+        tooltip={t('compression.tooltip')}
+        action={
+          canUpdate ? (
+            <Switch
+              checked={compressionConfig.enabled}
+              onCheckedChange={(checked) => {
+                setCompressionConfig({
+                  ...compressionConfig,
+                  enabled: checked,
+                })
+              }}
+              disabled={!canUpdate}
+            />
+          ) : null
+        }
+        collapsed={compressionCollapsed}
+        onToggle={() => setCompressionCollapsed(!compressionCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('compression.description')}
+          </p>
+
+          {compressionConfig.enabled && canUpdate && (
+            <div className="space-y-4 pt-2 border-t">
+              {/* Summary token budget */}
+              <div className="space-y-2">
+                <Label className="text-xs">{t('compression.summaryMaxTokens')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={compressionConfig.summary_max_tokens}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value, 10)
+                      setCompressionConfig({
+                        ...compressionConfig,
+                        summary_max_tokens: Number.isFinite(val)
+                          ? Math.min(Math.max(val, 0), 8000)
+                          : DEFAULT_CONTEXT_COMPRESSION_CONFIG.summary_max_tokens,
+                      })
+                    }}
+                    onBlur={() => {
+                      setCompressionConfig({
+                        ...compressionConfig,
+                        summary_max_tokens: Math.min(Math.max(compressionConfig.summary_max_tokens, 128), 8000),
+                      })
+                    }}
+                    className="w-28 h-8 text-sm bg-background"
+                    min={128}
+                    max={8000}
+                    step={128}
+                    disabled={!canUpdate}
+                  />
+                  <span className="text-xs text-muted-foreground">{t('compression.tokens')}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('compression.summaryMaxTokensHint')}
+                </p>
+              </div>
+
+              {/* Streaming progress events */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-background border">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">{t('compression.emitEvents')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('compression.emitEventsHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={compressionConfig.emit_sse_events}
+                  onCheckedChange={(checked) => {
+                    setCompressionConfig({
+                      ...compressionConfig,
+                      emit_sse_events: checked,
                     })
                   }}
                   disabled={!canUpdate}

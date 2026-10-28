@@ -261,7 +261,7 @@ Agent: To install Clouisle, follow these steps...
      [Agent remembers we're talking about Clouisle]
 ```
 
-Long conversations are automatically compressed to fit the model's context window.
+Long conversations are automatically compressed to fit the model's context window. The thought-process timeline shows when older history was summarized or completed tool results were compacted, including before/after token counts. If the summarizer was unavailable, the step says that earlier history was omitted; restate key details or start a new conversation if the answer seems to miss context. Agents can turn this behavior off in their Context Compression settings.
 
 ## Advanced Features & Multi-Version Branching
 
