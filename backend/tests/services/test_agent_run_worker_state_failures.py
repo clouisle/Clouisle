@@ -619,3 +619,135 @@ async def test_deferred_resume_without_payload_fails_the_queued_run(monkeypatch)
         assert refreshed.status == AgentRunStatus.FAILED
         assert refreshed.error_code == "enqueue_failed"
         assert "run resume payload is missing" in refreshed.error_message
+
+
+# ---------------------------------------------------------------------------
+# multi-tool pause: unstarted calls live only as ciphertext in the payload
+# ---------------------------------------------------------------------------
+
+
+def _capture_waiting_park(monkeypatch, worker, parked: dict) -> None:
+    """Persist the pause exactly like ``park_run_waiting`` and record it."""
+
+    async def _park(current, **interaction):
+        current.status = AgentRunStatus.WAITING
+        current.pending_tool_call_id = interaction["tool_call_id"]
+        current.pending_tool_name = interaction["tool_name"]
+        current.pending_tool_input = interaction["tool_input"]
+        current.worker_payload = interaction["worker_payload"]
+        parked.update(interaction)
+
+    monkeypatch.setattr(worker.agent_run_store, "park_run_waiting", _park)
+
+
+def _remaining_calls():
+    from app.llm.types import ToolCall
+
+    return [
+        ToolCall(
+            id="call-2",
+            function={"name": "db_query", "arguments": '{"secret":"s3cr3t-arg"}'},
+        ),
+        ToolCall(
+            id="call-3",
+            function={
+                "name": "http_get",
+                "arguments": '{"url":"https://example.test/a"}',
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pause_encrypts_remaining_tool_calls_into_worker_payload(monkeypatch):
+    """Only ciphertext of the unstarted calls survives a durable pause."""
+    import json
+
+    from app.core.tool_secrets import decrypt_tool_secret
+    from app.llm.types import ToolCall
+    from app.services import agent_run_worker as worker
+
+    remaining = _remaining_calls()
+    parked: dict = {}
+
+    async def _pause(context):
+        await context.pause_for_user(
+            tool_call_id="call-1",
+            tool_name="ask_user",
+            arguments={"questions": []},
+            round_id=context.round_id,
+            round_index=3,
+            iteration_index=2,
+            remaining_tool_calls=remaining,
+        )
+
+    run, _stream, _canonical, _context, _user, _loop = _prepare_round(
+        monkeypatch,
+        result=_round_result(waiting_for_user=True),
+        loop_callback=_pause,
+    )
+    _capture_waiting_park(monkeypatch, worker, parked)
+
+    output = await run_agent_round(_round_payload(run))
+
+    assert output == {
+        "status": AgentRunStatus.WAITING.value,
+        "tool_call_id": "call-1",
+    }
+    payload = parked["worker_payload"]
+    cipher = payload["pending_tool_calls_cipher"]
+    assert cipher.startswith("enc:tool:v1:")
+    # The durable payload must not leak call ids or arguments in clear text.
+    durable = json.dumps(payload)
+    assert "s3cr3t-arg" not in durable
+    assert "call-2" not in durable
+    assert "call-3" not in durable
+    raw_calls = json.loads(decrypt_tool_secret(cipher))
+    assert [ToolCall.model_validate(item) for item in raw_calls] == remaining
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remaining", [[], None], ids=["empty-list", "legacy-omitted"])
+async def test_pause_without_remaining_tool_calls_keeps_legacy_payload(
+    monkeypatch, remaining
+):
+    """A single-call pause stores no cipher and forgets any earlier suffix."""
+    from app.core.tool_secrets import encrypt_tool_secret
+    from app.services import agent_run_worker as worker
+
+    parked: dict = {}
+
+    async def _pause(context):
+        kwargs = {
+            "tool_call_id": "call-1",
+            "tool_name": "ask_user",
+            "arguments": {},
+            "round_id": context.round_id,
+            "round_index": 0,
+            "iteration_index": 0,
+        }
+        if remaining is not None:
+            kwargs["remaining_tool_calls"] = remaining
+        await context.pause_for_user(**kwargs)
+
+    run, _stream, _canonical, _context, _user, _loop = _prepare_round(
+        monkeypatch,
+        result=_round_result(waiting_for_user=True),
+        loop_callback=_pause,
+    )
+    _capture_waiting_park(monkeypatch, worker, parked)
+
+    payload = _round_payload(run)
+    payload["pending_tool_calls_cipher"] = encrypt_tool_secret("[]")
+
+    output = await run_agent_round(payload)
+
+    assert output == {
+        "status": AgentRunStatus.WAITING.value,
+        "tool_call_id": "call-1",
+    }
+    resume_payload = parked["worker_payload"]
+    assert "pending_tool_calls_cipher" not in resume_payload
+    assert resume_payload["first_round_index"] == 1
+    assert resume_payload["iteration_offset"] == 0
+    assert resume_payload["history_override"] == []

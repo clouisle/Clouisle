@@ -173,6 +173,8 @@ and rejection, expiry, revocation and stopped runs never become approvals.
 
 The confirmation card shows the action, its status and the account label when available. Expand **View action details** to inspect redacted parameters; choose **Allow** to continue or **Decline** to cancel the call.
 
+When one model turn requests several tools, each call that requires confirmation is presented separately. After an approval or rejection, the run continues with the remaining calls in their original order; rejecting one call does not approve or cancel the others. Calls that do not require confirmation execute according to their own policy.
+
 **Legacy approver configuration fails closed.** Existing policies containing
 `user` or `team_role` gates anywhere, including nested MCP operation overrides,
 are kept unchanged but never treated as caller confirmation or as allow.

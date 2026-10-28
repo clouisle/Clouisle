@@ -262,6 +262,10 @@ TOOL_SECRET_PRIMARY_KEY_ID=2026-10
    Re-run until `failed=0` and `source_key_ids` only show the primary id (resolve conflicts by re-running). The command exits non-zero if any value cannot be decrypted.
 5. Verify backups/restore are valid, then remove the retired key from `TOOL_SECRET_KEYS`. Never remove a key while `source_key_ids` still lists it.
 
+   Waiting Agent runs can also contain encrypted, unstarted tool calls. The rotation command does not rewrap these run payloads; keep old keys until all waiting or queued Agent runs using them have finished or been stopped.
+
+   Deploy this version to all Agent workers before relying on multi-tool approval continuation. Before rolling back to a version without this support, finish or stop runs waiting on multi-tool approvals; older workers cannot resume their saved calls.
+
 The command never prints plaintext or key material; failures are reported by row UUID/key id only.
 
 ### ACCESS_TOKEN_EXPIRE_MINUTES

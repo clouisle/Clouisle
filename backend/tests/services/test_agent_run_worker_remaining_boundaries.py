@@ -1379,3 +1379,233 @@ async def test_run_agent_round_waiting_without_pending_interaction_raises(monkey
     assert "waiting without a pending tool call" in output["error"]
     assert run.error_code == "RuntimeError"
     park_run_waiting.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# multi-tool resume: encrypted pending calls rebuild into the loop context
+# ---------------------------------------------------------------------------
+
+
+def _resume_agent():
+    return SimpleNamespace(
+        id=uuid4(),
+        team_id=None,
+        rag_mode=SimpleNamespace(value="off"),
+        tools_config=[],
+        enable_user_input_request=False,
+        enable_memory=False,
+        enable_image_generation=False,
+        enable_video_generation=False,
+        streaming_config=None,
+    )
+
+
+def _patch_resume_rebuild(monkeypatch, *, user_msg):
+    """Minimal request-prep stubs so only the payload path under test is real."""
+
+    async def _create_session(**_kwargs):
+        return "session-resume"
+
+    async def _no_asset_links(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.services.sandbox.gateway.sandbox_gateway.create_session",
+        _create_session,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_run_worker.Message.get_or_none",
+        AsyncMock(return_value=user_msg),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat.get_agent_tools", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat.get_tool_display_names",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.resolve_agent_chat_model",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                model_id="db-model",
+                tokenizer_model_id=None,
+                provider=None,
+                context_length=128_000,
+                max_output_tokens=None,
+                model=SimpleNamespace(),
+                input_capabilities=SimpleNamespace(modalities=frozenset()),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
+        AsyncMock(return_value=("", None)),
+    )
+    monkeypatch.setattr(
+        "app.models.asset.MessageAsset.filter",
+        lambda **_kwargs: SimpleNamespace(
+            prefetch_related=lambda *_args: SimpleNamespace(
+                order_by=lambda *_args: _no_asset_links()
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.message_branching.get_visible_conversation_messages",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.services.chat_context.build_context_plan",
+        AsyncMock(return_value=SimpleNamespace(will_summarize=False, compression=None)),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_run_worker.AgentRunStream",
+        lambda _run_id: SimpleNamespace(seed_sequence=AsyncMock()),
+    )
+
+
+def _resume_payload(user_msg, **values):
+    payload = {
+        "run_id": str(uuid4()),
+        "round_id": str(uuid4()),
+        "user_message_id": str(user_msg.id),
+        "mode": "send",
+        "message": "q",
+    }
+    payload.update(values)
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_rebuild_context_restores_encrypted_pending_tool_calls(monkeypatch):
+    """The resumed worker receives the exact unstarted calls in order."""
+    import json
+
+    from app.core.tool_secrets import encrypt_tool_secret
+    from app.llm.types import ToolCall
+    from app.services import agent_run_worker
+
+    agent = _resume_agent()
+    conversation = SimpleNamespace(id=uuid4(), user_id=uuid4())
+    user_msg = SimpleNamespace(id=uuid4(), rag_context=None, content="q")
+    _patch_resume_rebuild(monkeypatch, user_msg=user_msg)
+
+    expected = [
+        ToolCall(
+            id="call-2",
+            function={"name": "db_query", "arguments": '{"q":"select 1"}'},
+        ),
+        ToolCall(
+            id="call-3",
+            function={
+                "name": "http_get",
+                "arguments": '{"url":"https://example.test"}',
+            },
+        ),
+    ]
+    calls_json = json.dumps([call.model_dump() for call in expected])
+    payload = _resume_payload(
+        user_msg,
+        pending_tool_calls_cipher=encrypt_tool_secret(calls_json),
+        resume_tool_result={
+            "tool_call_id": "call-1",
+            "tool_name": "db_query",
+            "result": "{}",
+        },
+    )
+
+    loop_context, loaded, _loop = await agent_run_worker._rebuild_context(
+        payload,
+        agent=agent,
+        conversation=conversation,
+        event_queue=asyncio.Queue(),
+    )
+
+    assert loaded is user_msg
+    assert loop_context.resume_tool_calls == expected
+    # The ciphertext stays on the payload so a later pause can drop it.
+    assert payload["pending_tool_calls_cipher"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", ["absent", "none", "empty"])
+async def test_rebuild_context_without_pending_tool_calls_resumes_none(
+    monkeypatch, variant
+):
+    """Legacy payloads keep their single-call resume semantics."""
+    from app.services import agent_run_worker
+
+    agent = _resume_agent()
+    conversation = SimpleNamespace(id=uuid4(), user_id=uuid4())
+    user_msg = SimpleNamespace(id=uuid4(), rag_context=None, content="q")
+    _patch_resume_rebuild(monkeypatch, user_msg=user_msg)
+
+    payload = _resume_payload(user_msg)
+    if variant != "absent":
+        payload["pending_tool_calls_cipher"] = "" if variant == "empty" else None
+
+    loop_context, _loaded, _loop = await agent_run_worker._rebuild_context(
+        payload,
+        agent=agent,
+        conversation=conversation,
+        event_queue=asyncio.Queue(),
+    )
+
+    assert loop_context.resume_tool_calls is None
+
+
+@pytest.mark.asyncio
+async def test_rebuild_context_fails_closed_on_malformed_pending_cipher(monkeypatch):
+    """Corrupt ciphertext must abort the resume instead of dropping calls."""
+    from app.core.tool_secrets import ToolSecretError
+    from app.services import agent_run_worker
+
+    agent = _resume_agent()
+    conversation = SimpleNamespace(id=uuid4(), user_id=uuid4())
+    user_msg = SimpleNamespace(id=uuid4(), rag_context=None, content="q")
+    _patch_resume_rebuild(monkeypatch, user_msg=user_msg)
+
+    payload = _resume_payload(user_msg, pending_tool_calls_cipher="not-an-envelope")
+
+    with pytest.raises(ToolSecretError):
+        await agent_run_worker._rebuild_context(
+            payload,
+            agent=agent,
+            conversation=conversation,
+            event_queue=asyncio.Queue(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_rebuild_context_fails_closed_on_retired_cipher_key(monkeypatch):
+    """A key id removed from the keyring aborts rather than resuming empty."""
+    from cryptography.fernet import Fernet
+
+    from app.core.tool_secrets import (
+        ENVELOPE_PREFIX,
+        ToolSecretError,
+        ToolSecretKeyError,
+    )
+    from app.services import agent_run_worker
+
+    agent = _resume_agent()
+    conversation = SimpleNamespace(id=uuid4(), user_id=uuid4())
+    user_msg = SimpleNamespace(id=uuid4(), rag_context=None, content="q")
+    _patch_resume_rebuild(monkeypatch, user_msg=user_msg)
+
+    token = Fernet(Fernet.generate_key()).encrypt(b"[]").decode()
+    payload = _resume_payload(
+        user_msg,
+        pending_tool_calls_cipher=f"{ENVELOPE_PREFIX}retired-key-id:{token}",
+    )
+
+    with pytest.raises(ToolSecretKeyError) as excinfo:
+        await agent_run_worker._rebuild_context(
+            payload,
+            agent=agent,
+            conversation=conversation,
+            event_queue=asyncio.Queue(),
+        )
+
+    assert isinstance(excinfo.value, ToolSecretError)
+    assert "retired-key-id" in str(excinfo.value)

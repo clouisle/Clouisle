@@ -2,6 +2,11 @@
 
 ## Active
 
+- **multi-tool-approval-resume** — Completed. See `docs/plan/multi-tool-approval-resume.md`.
+  - [x] 1. Preserve and resume unstarted calls across approvals
+  - [x] 2. Verify separate decisions, ordering, and interruption safety
+  - [x] 3. Update operator and user guidance
+
 - **approval-tool-description** — Completed. See `docs/plan/approval-tool-description.md`.
   - [x] 1. Preserve the called tool's description with the approval pause
   - [x] 2. Display it in the chat approval panel

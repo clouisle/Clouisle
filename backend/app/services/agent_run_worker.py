@@ -38,6 +38,8 @@ from uuid import UUID, uuid4
 
 from app.core.config import settings
 from app.core.timezone import now_utc
+from app.core.tool_secrets import decrypt_tool_secret, encrypt_tool_secret
+from app.llm.types import ToolCall
 from app.models.agent import (
     Agent,
     Conversation,
@@ -434,7 +436,11 @@ async def _rebuild_context(
 
     from app.llm.tools import tool_registry
 
+    from app.services.tool_context import get_agent_tool_require_approval
+
     def tool_concurrency(name: str) -> str:
+        if get_agent_tool_require_approval(agent, name):
+            return "exclusive"
         tool_info = tool_registry.get_tool(name)
         return tool_info.concurrency.value if tool_info else "exclusive"
 
@@ -482,6 +488,14 @@ async def _rebuild_context(
         input_capabilities=chat_model.input_capabilities,
         model_config=chat_model.model,
         current_images=current_assets or None,
+        resume_tool_calls=[
+            ToolCall.model_validate(item)
+            for item in json.loads(
+                decrypt_tool_secret(payload["pending_tool_calls_cipher"])
+            )
+        ]
+        if payload.get("pending_tool_calls_cipher")
+        else None,
         tools=tools,
         tool_display_names=tool_display_names,
         tool_timeouts=streaming_config["tool_timeouts"],
@@ -1211,6 +1225,27 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         async def _pause_for_user(**interaction: Any) -> None:
             nonlocal pending_interaction
             resume_payload = dict(payload)
+            remaining_calls = interaction.get("remaining_tool_calls") or []
+            if remaining_calls:
+                resume_payload["pending_tool_calls_cipher"] = encrypt_tool_secret(
+                    json.dumps(
+                        [
+                            {
+                                "id": call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": call.function.name,
+                                    "arguments": call.function.arguments
+                                    if isinstance(call.function.arguments, str)
+                                    else json.dumps(call.function.arguments),
+                                },
+                            }
+                            for call in remaining_calls
+                        ]
+                    )
+                )
+            else:
+                resume_payload.pop("pending_tool_calls_cipher", None)
             # The current round's protocol entries are held in the in-memory
             # history override until the model turn completes. Carry them
             # across the durable pause so the resumed provider sees the

@@ -34,6 +34,7 @@ from app.llm.types import (
     ToolCall,
     Usage,
 )
+from app.llm.types import ToolDefinition, FunctionDefinition
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
 
@@ -543,10 +544,11 @@ async def test_approval_pause_captures_only_matching_tool_description(
                 "type": "function",
                 "function": {"name": "other", "description": "Wrong operation"},
             },
-            {
-                "type": "function",
-                "function": {"name": "mcp_calendar_delete", "description": description},
-            },
+            ToolDefinition(
+                function=FunctionDefinition(
+                    name="mcp_calendar_delete", description=description
+                )
+            ),
         ],
         team_chat=team_chat,
         build_turn=build_turn,
