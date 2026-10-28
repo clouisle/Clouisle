@@ -346,6 +346,18 @@ describe('model management dialog', () => {
     expect(updateModel.mock.calls[0]?.[1]?.capabilities).not.toHaveProperty('vision')
   })
 
+  test('restores required text modalities on legacy chat models while preserving other declarations', async () => {
+    const renderer = render({ model: {
+      id: 'model-1', name: 'Existing', provider: 'openai', model_id: 'gpt-existing', model_type: 'chat',
+      base_url: 'https://old.test', is_enabled: true, is_default: false,
+      capabilities: { input_modalities: ['image'], output_modalities: [] },
+    } as React.ComponentProps<typeof ModelDialog>['model'] })
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    expect(updateModel).toHaveBeenCalledWith('model-1', expect.objectContaining({
+      capabilities: expect.objectContaining({ input_modalities: ['text', 'image'], output_modalities: ['text'] }),
+    }))
+  })
+
   test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
     const renderer = render()
     act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
@@ -383,7 +395,7 @@ describe('model management dialog', () => {
         presence_penalty: 0.3, max_tokens: 4096, reasoning_effort: 'high',
         extra_body: { metadata: { tier: 'gold' } },
       },
-      capabilities: { input_modalities: ['text'], output_modalities: [], function_call: true, streaming: false, json_mode: true },
+      capabilities: { input_modalities: ['text'], output_modalities: ['text'], function_call: true, streaming: false, json_mode: true },
       config: { region: 'us-east' }, is_enabled: false, is_default: true,
     })
   })

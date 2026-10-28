@@ -189,7 +189,7 @@ describe('ModelDialog issue #255 callbacks', () => {
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Coverage model', provider: 'openai', model_id: 'gpt-fake',
       capabilities: expect.objectContaining({
-        input_modalities: ['text'], output_modalities: [],
+        input_modalities: ['text'], output_modalities: ['text'],
         function_call: true, streaming: false, json_mode: true,
       }),
       default_params: expect.objectContaining({ temperature: 0.7, extra_body: { trace: true }, custom: 1 }),
