@@ -184,17 +184,16 @@ export const ChainOfThoughtContent = memo(
       return () => {
         element.removeEventListener("wheel", handleNativeWheel);
       };
-    }, [containScroll]);
+    }, [containScroll, isOpen]);
 
     return (
-      <TraceCollapsibleContent forceMount>
+      <TraceCollapsibleContent>
         <div
           id={contentId}
           ref={ref}
           data-state={isOpen ? "open" : "closed"}
           className={cn(
             "mt-3 mb-0 ml-0 space-y-2 border-0 p-0 text-sm leading-normal text-muted-foreground outline-none",
-            !isOpen && "hidden",
             className
           )}
           onWheel={onWheel}

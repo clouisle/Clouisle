@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Thought-process and tool details now use a short fade on expansion instead of conflicting height and visibility transitions.
 - Thought-process steps use distinct icons for tools, Skills and other actions, with error states still highlighted.
 - Long thought processes keep their header available while scrolling for easy collapse.
 - Tool calls in the thought process now use a single expandable trace step instead of a duplicate nested card.
