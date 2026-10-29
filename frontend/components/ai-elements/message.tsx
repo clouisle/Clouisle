@@ -10,34 +10,63 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTrigger,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import {
+  Message as MessageRoot,
+  MessageContent as MessageBody,
+  MessageFooter,
+} from "@/components/ui/message";
 import { cn } from "@/lib/utils";
 import type { FileUIPart, UIMessage } from "ai";
 import { FileTypeIcon } from "@/components/file-type-icon";
-import { AuthenticatedImage } from '@/components/chat/authenticated-media';
-import { downloadAuthenticatedAsset } from '@/components/chat/authenticated-asset';
+import { AuthenticatedImage } from "@/components/chat/authenticated-media";
+import { downloadAuthenticatedAsset } from "@/components/chat/authenticated-asset";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
-import { createContext, memo, useContext, useEffect, useState, useMemo, Children, isValidElement } from "react";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Streamdown } from "streamdown";
-
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
 };
 
+const MessageRoleContext = createContext<UIMessage["role"]>("assistant");
+
 export const Message = ({ className, from, ...props }: MessageProps) => (
-  <div
-    className={cn(
-      "group flex w-full max-w-[95%] flex-col gap-2",
-      from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
-      className
-    )}
-    {...props}
-  />
+  <MessageRoleContext.Provider value={from}>
+    <MessageRoot
+      align={from === "user" ? "end" : "start"}
+      className={cn(
+        "group !flex-col w-full max-w-[95%] gap-2",
+        from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
+        className
+      )}
+      {...props}
+    />
+  </MessageRoleContext.Provider>
 );
 
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
@@ -46,19 +75,33 @@ export const MessageContent = ({
   children,
   className,
   ...props
-}: MessageContentProps) => (
-  <div
-    className={cn(
-      "is-user:dark flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
-      "group-[.is-assistant]:text-foreground",
-      className
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-);
+}: MessageContentProps) => {
+  const from = useContext(MessageRoleContext);
+
+  return (
+    <MessageBody
+      className={cn(
+        "w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
+        className
+      )}
+      {...props}
+    >
+      {from === "user" ? (
+        <Bubble
+          align="end"
+          variant="muted"
+          className="w-fit max-w-full [&>[data-slot=bubble-content]]:bg-secondary"
+        >
+          <BubbleContent className="rounded-lg !bg-secondary px-4 py-3 text-foreground dark:!bg-secondary">
+            {children}
+          </BubbleContent>
+        </Bubble>
+      ) : (
+        children
+      )}
+    </MessageBody>
+  );
+};
 
 export type MessageActionsProps = ComponentProps<"div">;
 
@@ -67,9 +110,15 @@ export const MessageActions = ({
   children,
   ...props
 }: MessageActionsProps) => (
-  <div className={cn("flex items-center gap-1", className)} {...props}>
+  <MessageFooter
+    className={cn(
+      "flex items-center gap-1 px-0 text-sm font-normal text-inherit",
+      className
+    )}
+    {...props}
+  >
     {children}
-  </div>
+  </MessageFooter>
 );
 
 export type MessageActionProps = ComponentProps<typeof Button> & {
@@ -81,17 +130,21 @@ export const MessageAction = ({
   tooltip,
   children,
   label,
+  "aria-label": ariaLabel,
   variant = "ghost",
   size = "icon-sm",
   ...props
 }: MessageActionProps) => {
   const button = (
-    <Button size={size} variant={variant} {...props}>
+    <Button
+      aria-label={ariaLabel || label || tooltip}
+      size={size}
+      variant={variant}
+      {...props}
+    >
       {children}
-      <span className="sr-only">{label || tooltip}</span>
     </Button>
   );
-
   if (tooltip) {
     return (
       <Tooltip>
@@ -355,88 +408,116 @@ export function MessageAttachment({
 }: MessageAttachmentProps) {
   const filename = data.filename || "";
   const anchorProps = props as React.AnchorHTMLAttributes<HTMLAnchorElement>;
-  const mediaType =
-    data.mediaType?.startsWith("image/") && data.url ? "image" : "file";
-  const isImage = mediaType === "image";
+  const isImage = data.mediaType?.startsWith("image/") && Boolean(data.url);
 
-  // For images, show thumbnail; for files, show compact tag style
+  const handleDownload = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    anchorProps.onClick?.(event);
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    if (!data.url) return;
+    void downloadAuthenticatedAsset(data.url, filename).catch((error) => {
+      console.error("Failed to download attachment:", error);
+    });
+  };
+
   if (isImage) {
     return (
-      <div
+      <Attachment
         className={cn(
-          "group relative size-24 overflow-hidden rounded-lg",
+          "group relative h-24 w-24 overflow-hidden rounded-lg bg-transparent !border-0 !p-0",
           className
         )}
+        orientation="vertical"
         {...props}
       >
-        <AuthenticatedImage
-          alt={filename || "attachment"}
-          className="size-full object-cover"
-          height={100}
-          src={data.url}
-          width={100}
-        />
+        <AttachmentMedia
+          className="absolute inset-0 size-full rounded-lg p-0"
+          variant="image"
+        >
+          <AuthenticatedImage
+            alt={filename || "attachment"}
+            className="size-full object-cover"
+            height={100}
+            src={data.url}
+            width={100}
+          />
+        </AttachmentMedia>
         {onRemove && (
-          <Button
-            aria-label="Remove attachment"
-            className="absolute top-2 right-2 size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity hover:bg-background group-hover:opacity-100 [&>svg]:size-3"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            variant="ghost"
-          >
-            <XIcon />
-            <span className="sr-only">Remove</span>
-          </Button>
+          <AttachmentActions className="absolute top-2 right-2 z-20">
+            <AttachmentAction
+              aria-label="Remove attachment"
+              className="size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity hover:bg-background group-hover:opacity-100 [&>svg]:size-3"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove();
+              }}
+              size="icon-xs"
+              variant="ghost"
+            >
+              <XIcon />
+              <span className="sr-only">Remove</span>
+            </AttachmentAction>
+          </AttachmentActions>
         )}
-      </div>
+      </Attachment>
     );
   }
 
-  // Compact file tag style for documents
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <a
-            href={data.url}
-            download={filename}
-            className={cn(
-              "group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/50 text-xs hover:bg-muted transition-colors cursor-pointer",
-              className
-            )}
-            {...anchorProps}
-            onClick={(event) => {
-              anchorProps.onClick?.(event);
-              if (event.defaultPrevented) return;
-              event.preventDefault();
-              if (!data.url) return;
-              void downloadAuthenticatedAsset(data.url, filename).catch((error) => {
-                console.error('Failed to download attachment:', error);
-              });
-            }}
-          >
-            <FileTypeIcon filename={filename} mimeType={data.mediaType} className="size-3.5 shrink-0" />
-            <span className="truncate max-w-32">{filename || "Attachment"}</span>
-            {onRemove && (
-              <Button
-                aria-label="Remove attachment"
-                className="size-5 shrink-0 rounded p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 [&>svg]:size-3"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onRemove();
-                }}
-                variant="ghost"
-              >
-                <XIcon />
-                <span className="sr-only">Remove</span>
-              </Button>
-            )}
-          </a>
-        }
-      />
+      <Attachment
+        className={cn(
+          "group inline-flex min-w-0 max-w-48 cursor-pointer items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-1 text-xs transition-colors hover:bg-muted",
+          className
+        )}
+        size="xs"
+      >
+        <AttachmentMedia className="size-auto w-auto shrink-0 rounded-none bg-transparent p-0">
+          <FileTypeIcon
+            className="size-3.5 shrink-0"
+            filename={filename}
+            mimeType={data.mediaType}
+          />
+        </AttachmentMedia>
+        <AttachmentContent className="min-w-0 flex-none leading-normal">
+          <AttachmentTitle className="max-w-32 font-normal">
+            {filename || "Attachment"}
+          </AttachmentTitle>
+        </AttachmentContent>
+        {onRemove && (
+          <AttachmentActions className="relative z-20">
+            <AttachmentAction
+              aria-label="Remove attachment"
+              className="size-5 shrink-0 rounded p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 [&>svg]:size-3"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRemove();
+              }}
+              size="icon-xs"
+              variant="ghost"
+            >
+              <XIcon />
+              <span className="sr-only">Remove</span>
+            </AttachmentAction>
+          </AttachmentActions>
+        )}
+        <TooltipTrigger
+          render={
+            <AttachmentTrigger
+              render={
+                <a
+                  aria-label={filename || "Attachment"}
+                  href={data.url}
+                  download={filename}
+                  {...anchorProps}
+                  onClick={handleDownload}
+                />
+              }
+            />
+          }
+        />
+      </Attachment>
       <TooltipContent>
         <p>{filename || "Attachment"}</p>
       </TooltipContent>
@@ -456,15 +537,15 @@ export function MessageAttachments({
   }
 
   return (
-    <div
+    <AttachmentGroup
       className={cn(
-        "ml-auto flex w-fit flex-wrap items-start gap-2",
+        "ml-auto flex w-fit flex-wrap items-start gap-2 overflow-x-visible overflow-y-visible py-0",
         className
       )}
       {...props}
     >
       {children}
-    </div>
+    </AttachmentGroup>
   );
 }
 
@@ -485,3 +566,4 @@ export const MessageToolbar = ({
     {children}
   </div>
 );
+

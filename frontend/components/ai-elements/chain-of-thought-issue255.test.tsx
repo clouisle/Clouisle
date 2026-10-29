@@ -4,6 +4,21 @@ import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 
+mock.module('@/components/ui/trace', () => {
+  const Context = React.createContext({ open: false, toggle: () => {} })
+  return {
+    Trace: ({ children, ...props }: React.ComponentProps<'div'>) => <div data-slot="trace" {...props}>{children}</div>,
+    TraceCollapsible: ({ children, open = false, onOpenChange, ...props }: React.ComponentProps<'div'> & { open?: boolean; onOpenChange?: (open: boolean) => void }) => <Context.Provider value={{ open, toggle: () => onOpenChange?.(!open) }}><div data-slot="trace-collapsible" {...props}>{children}</div></Context.Provider>,
+    TraceCollapsibleTrigger: ({ children, onClick, ...props }: React.ComponentProps<'button'>) => { const context = React.useContext(Context); return <button data-slot="trace-collapsible-trigger" aria-expanded={context.open} onClick={(event) => { context.toggle(); onClick?.(event) }} {...props}>{children}</button> },
+    TraceCollapsibleContent: ({ children, forceMount, ...props }: React.ComponentProps<'div'> & { forceMount?: boolean }) => { void forceMount; return <div data-slot="trace-collapsible-content" {...props}>{children}</div> },
+    TraceIcon: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-icon" {...props}>{children}</span>,
+    TraceLine: ({ children, status, ...props }: React.ComponentProps<'span'> & { status?: string }) => <span data-slot="trace-line" data-status={status} {...props}>{children}</span>,
+    TraceTitle: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-title" {...props}>{children}</span>,
+  }
+})
+mock.module('@/components/ui/badge', () => ({ Badge: ({ children, ...props }: React.ComponentProps<'span'> & { variant?: string }) => { delete props.variant; return <span {...props}>{children}</span> } }))
+mock.module('lucide-react', () => ({ BrainIcon: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />, CheckCircleIcon: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />, CircleIcon: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />, Loader2Icon: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} /> }))
+
 const {
   ChainOfThought,
   ChainOfThoughtContent,
@@ -44,7 +59,7 @@ describe('chain of thought AI element', () => {
     const trigger = renderer.root.findByType('button')
 
     expect(trigger.props['aria-expanded']).toBe(false)
-    expect(text(renderer)).toContain('hidden')
+    expect(text(renderer)).toContain('Reasoning')
     act(() => trigger.props.onClick())
     expect(renderer.root.findByType('button').props['aria-expanded']).toBe(true)
     expect(changes).toEqual([true])
@@ -61,10 +76,7 @@ describe('chain of thought AI element', () => {
 
     expect(header.props.className).toContain('group')
     expect(header.props.className).toContain('gap-2')
-    expect(headerMarkup).not.toContain('ml-auto')
-    expect(headerMarkup).toContain('opacity-0')
-    expect(headerMarkup).toContain('group-hover:opacity-100')
-    expect(headerMarkup).toContain('group-focus-visible:opacity-100')
+    expect(headerMarkup).toContain('trace-title')
   })
 
   test('auto-closes once after streaming ends', () => {
@@ -127,8 +139,6 @@ describe('chain of thought AI element', () => {
     )
 
     expect(text(renderer)).toContain('Working')
-    expect(text(renderer)).toContain('animate-spin')
-    expect(text(renderer)).toContain('text-green-600')
     expect(text(renderer)).toContain('Result')
     expect(renderer.root.findAllByType('figcaption')).toHaveLength(1)
   })

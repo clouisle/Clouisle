@@ -7,23 +7,23 @@ const CollapsibleContext = createContext<{ open: boolean; toggle: () => void }>(
   toggle: () => {},
 })
 
-mock.module('@/components/ui/collapsible', () => ({
-  Collapsible: ({ children, open = false, onOpenChange, ...props }: React.ComponentProps<'div'> & {
-    open?: boolean
-    onOpenChange?: (open: boolean) => void
-  }) => (
-    <CollapsibleContext.Provider value={{ open, toggle: () => onOpenChange?.(!open) }}>
-      <div data-state={open ? 'open' : 'closed'} {...props}>{children}</div>
-    </CollapsibleContext.Provider>
+mock.module('@/components/ui/trace', () => ({
+  Trace: ({ children, ...props }: React.ComponentProps<'div'>) => <div data-slot="trace" {...props}>{children}</div>,
+  TraceCollapsible: ({ children, open = false, onOpenChange, ...props }: React.ComponentProps<'div'> & { open?: boolean; onOpenChange?: (open: boolean) => void }) => (
+    <CollapsibleContext.Provider value={{ open, toggle: () => onOpenChange?.(!open) }}><div data-slot="trace-collapsible" {...props}>{children}</div></CollapsibleContext.Provider>
   ),
-  CollapsibleTrigger: ({ children, ...props }: React.ComponentProps<'button'>) => {
+  TraceCollapsibleTrigger: ({ children, ...props }: React.ComponentProps<'button'>) => {
     const { open, toggle } = useContext(CollapsibleContext)
-    return <button aria-expanded={open} onClick={toggle} {...props}>{children}</button>
+    return <button data-slot="trace-collapsible-trigger" aria-expanded={open} onClick={toggle} {...props}>{children}</button>
   },
-  CollapsibleContent: ({ children, ...props }: React.ComponentProps<'div'>) => {
+  TraceCollapsibleContent: ({ children, forceMount, ...props }: React.ComponentProps<'div'> & { forceMount?: boolean }) => {
     const { open } = useContext(CollapsibleContext)
-    return open ? <div {...props}>{children}</div> : null
+    void forceMount
+    return open ? <div data-slot="trace-collapsible-content" {...props}>{children}</div> : null
   },
+  TraceLine: ({ children, status, ...props }: React.ComponentProps<'span'> & { status?: string }) => <span data-slot="trace-line" data-status={status} {...props}>{children}</span>,
+  TraceIcon: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-icon" {...props}>{children}</span>,
+  TraceTitle: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-title" {...props}>{children}</span>,
 }))
 
 mock.module('@/components/ui/badge', () => ({
@@ -118,7 +118,7 @@ describe('task AI element', () => {
 
     expect(renderer.root.findByType('button').props['aria-expanded']).toBe(true)
     expect(text(renderer)).toContain('Searching the handbook')
-    expect(text(renderer)).toContain('rotate-180')
+    expect(text(renderer)).toContain('trace-title')
 
     for (const state of ['completed', 'error'] as const) {
       const variant = render(<Task state={state}><TaskTrigger title={state} /></Task>)

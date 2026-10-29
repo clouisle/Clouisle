@@ -2,34 +2,88 @@
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowDownIcon } from "lucide-react";
 import type { ComponentProps } from "react";
-import { useCallback } from "react";
-import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
+import * as React from "react";
+import {
+  MessageScroller,
+  MessageScrollerItem,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+export type ConversationProps = ComponentProps<typeof MessageScroller>;
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
-  <StickToBottom
-    className={cn("relative flex-1 overflow-y-hidden", className)}
-    initial="smooth"
-    resize="smooth"
-    role="log"
-    {...props}
-  />
+export const Conversation = ({
+  className,
+  role = "log",
+  ...props
+}: ConversationProps) => (
+  <MessageScrollerProvider autoScroll>
+    <MessageScroller
+      className={cn("relative flex-1 overflow-y-hidden", className)}
+      role={role}
+      {...props}
+    />
+  </MessageScrollerProvider>
 );
 
 export type ConversationContentProps = ComponentProps<
-  typeof StickToBottom.Content
->;
+  typeof MessageScrollerContent
+> & {
+  messageIds?: readonly string[];
+  scrollAnchorIndex?: number;
+};
 
 export const ConversationContent = ({
   className,
+  children,
+  messageIds,
+  scrollAnchorIndex,
   ...props
-}: ConversationContentProps) => (
-  <StickToBottom.Content
-    className={cn("flex flex-col gap-8 p-4", className)}
-    {...props}
+}: ConversationContentProps) => {
+  const items = React.Children.map(children, (child, index) => (
+    <MessageScrollerItem
+      key={React.isValidElement(child) && child.key ? child.key : index}
+      messageId={messageIds?.[index]}
+      scrollAnchor={index === scrollAnchorIndex}
+    >
+      {child}
+    </MessageScrollerItem>
+  ));
+  return (
+    <MessageScrollerViewport>
+      <MessageScrollerContent
+        className={cn("flex flex-col gap-8 p-4", className)}
+        {...props}
+      >
+        {items}
+      </MessageScrollerContent>
+    </MessageScrollerViewport>
+  );
+};
+
+export type ConversationScrollButtonProps = ComponentProps<typeof Button> &
+  Pick<ComponentProps<typeof MessageScrollerButton>, "behavior" | "direction">;
+
+export const ConversationScrollButton = ({
+  className,
+  direction = "end",
+  behavior,
+  variant = "outline",
+  size = "icon",
+  onClick,
+  ref,
+  ...buttonProps
+}: ConversationScrollButtonProps) => (
+  <MessageScrollerButton
+    direction={direction}
+    behavior={behavior}
+    onClick={onClick}
+    ref={ref}
+    className={cn("absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full", className)}
+    render={<Button variant={variant} size={size} {...buttonProps} />}
   />
 );
 
@@ -68,32 +122,3 @@ export const ConversationEmptyState = ({
   </div>
 );
 
-export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
-
-export const ConversationScrollButton = ({
-  className,
-  ...props
-}: ConversationScrollButtonProps) => {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
-
-  const handleScrollToBottom = useCallback(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
-
-  return (
-    !isAtBottom && (
-      <Button
-        className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full",
-          className
-        )}
-        onClick={handleScrollToBottom}
-        size="icon"
-        variant="outline"
-        {...props}
-      >
-        <ArrowDownIcon className="size-4" />
-      </Button>
-    )
-  );
-};

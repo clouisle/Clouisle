@@ -1,7 +1,8 @@
 "use client";
 
+import type { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   Carousel,
   type CarouselApi,
@@ -54,7 +55,10 @@ export const InlineCitationCard = (props: InlineCitationCardProps) => (
   <HoverCard {...props} />
 );
 
-export type InlineCitationCardTriggerProps = ComponentProps<typeof Badge> & {
+export type InlineCitationCardTriggerProps = Omit<
+  ComponentProps<typeof Badge>,
+  "ref"
+> & {
   sources: string[];
   label?: ReactNode;
 };
@@ -76,7 +80,16 @@ export const InlineCitationCardTrigger = ({
 
   return (
     <HoverCardTrigger
-      render={<Badge className={cn("ml-1 rounded-full", className)} variant="secondary" {...props} />}
+      delay={10}
+      closeDelay={100}
+      render={
+        <Button
+          className={cn("ml-1 rounded-full", className)}
+          variant="secondary"
+          size="xs"
+          {...props}
+        />
+      }
     >
       {label ?? (sources.length > 1 ? `${hostname} +${sources.length - 1}` : hostname)}
     </HoverCardTrigger>
@@ -273,7 +286,12 @@ export const InlineCitationSource = ({
       <h4 className="truncate font-medium text-sm leading-tight">{title}</h4>
     )}
     {url && (
-      <p className="truncate break-all text-muted-foreground text-xs">{url}</p>
+      <p className="truncate break-all text-muted-foreground text-xs">
+        <a href={url} target="_blank" rel="noreferrer">
+          {url}
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      </p>
     )}
     {description && (
       <p className="line-clamp-3 text-muted-foreground text-sm leading-relaxed">

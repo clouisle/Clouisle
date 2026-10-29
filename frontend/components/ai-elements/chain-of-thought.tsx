@@ -1,10 +1,19 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { Badge } from "@/components/ui/badge";
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
 import { cn } from "@/lib/utils";
 import {
   BrainIcon,
-  ChevronDownIcon,
   CheckCircleIcon,
   CircleIcon,
   Loader2Icon,
@@ -12,7 +21,6 @@ import {
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
 type ChainOfThoughtContextValue = {
@@ -56,9 +64,9 @@ export const ChainOfThought = memo(
     const contentId = useId();
     const isOpen = open ?? uncontrolledOpen;
     const setIsOpen = useCallback((nextOpen: boolean) => {
-      setUncontrolledOpen(nextOpen);
+      if (open === undefined) setUncontrolledOpen(nextOpen);
       onOpenChange?.(nextOpen);
-    }, [onOpenChange]);
+    }, [open, onOpenChange]);
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const contextValue = useMemo(
@@ -80,13 +88,15 @@ export const ChainOfThought = memo(
 
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
-        <div
+        <Trace
           className={cn("not-prose w-full", className)}
           data-state={isOpen ? "open" : "closed"}
           {...props}
         >
-          {children}
-        </div>
+          <TraceCollapsible open={isOpen} onOpenChange={setIsOpen}>
+            {children}
+          </TraceCollapsible>
+        </Trace>
       </ChainOfThoughtContext.Provider>
     );
   }
@@ -107,36 +117,24 @@ export const ChainOfThoughtHeader = memo(
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
-    const { isOpen, setIsOpen, isStreaming, contentId } = useChainOfThought();
+    const { isOpen, isStreaming, contentId } = useChainOfThought();
     const t = useTranslations('chat.reasoning');
 
     return (
-      <button
-        type="button"
+      <TraceCollapsibleTrigger
         className={cn(
           "group flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
         )}
-        onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-controls={contentId}
         {...props}
       >
-        <Icon className="size-4" />
-        {children ?? (
-          isStreaming ? (
-            <Shimmer duration={1}>{title ?? t('thinkingDefault')}</Shimmer>
-          ) : (
-            <span>{title ?? t('thoughtDefault')}</span>
-          )
-        )}
-        <ChevronDownIcon
-          className={cn(
-            "size-4 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
-            isOpen ? "rotate-180" : "rotate-0"
-          )}
-        />
-      </button>
+        <TraceLine status={isStreaming ? "running" : undefined}>
+          <TraceIcon><Icon /></TraceIcon>
+          <TraceTitle>{children ?? title ?? (isStreaming ? t('thinkingDefault') : t('thoughtDefault'))}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
     );
   }
 );
@@ -174,21 +172,22 @@ export const ChainOfThoughtContent = memo(
     }, [containScroll]);
 
     return (
-      <div
-        ref={ref}
-        id={contentId}
-        data-state={isOpen ? "open" : "closed"}
-        className={cn(
-          "mt-3 space-y-2 text-sm outline-none",
-          "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
-          !isOpen && "hidden",
-          className
-        )}
-        onWheel={onWheel}
-        {...props}
-      >
-        {children}
-      </div>
+      <TraceCollapsibleContent forceMount>
+        <div
+          id={contentId}
+          ref={ref}
+          data-state={isOpen ? "open" : "closed"}
+          className={cn(
+            "mt-3 mb-0 ml-0 space-y-2 border-0 p-0 text-sm leading-normal text-muted-foreground outline-none",
+            !isOpen && "hidden",
+            className
+          )}
+          onWheel={onWheel}
+          {...props}
+        >
+          <Trace>{children}</Trace>
+        </div>
+      </TraceCollapsibleContent>
     );
   }
 );
@@ -222,16 +221,12 @@ export const ChainOfThoughtStep = memo(
   }: ChainOfThoughtStepProps) => {
     return (
       <div className={cn("text-muted-foreground", className)} {...props}>
-        <div className="flex items-center gap-2">
-          {statusIcons[status]}
-          {Icon && <Icon className="size-3.5" />}
-          <span className="text-xs">{label}</span>
-        </div>
-        {children && (
-          <div className="ml-5 mt-1.5">
-            {children}
-          </div>
-        )}
+        <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
+          <TraceIcon>{statusIcons[status]}</TraceIcon>
+          {Icon && <TraceIcon><Icon className="size-3.5" /></TraceIcon>}
+          <TraceTitle className="text-xs">{label}</TraceTitle>
+        </TraceLine>
+        {children && <div className="ml-5 mt-1.5">{children}</div>}
       </div>
     );
   }
@@ -255,16 +250,9 @@ export type ChainOfThoughtSearchResultProps = ComponentProps<"span">;
 
 export const ChainOfThoughtSearchResult = memo(
   ({ className, children, ...props }: ChainOfThoughtSearchResultProps) => (
-    <span
-      className={cn(
-        "inline-flex items-center px-2 py-0.5 text-xs rounded-full",
-        "bg-muted text-muted-foreground",
-        className
-      )}
-      {...props}
-    >
+    <Badge className={cn("rounded-full", className)} variant="secondary" {...props}>
       {children}
-    </span>
+    </Badge>
   )
 );
 ChainOfThoughtSearchResult.displayName = "ChainOfThoughtSearchResult";

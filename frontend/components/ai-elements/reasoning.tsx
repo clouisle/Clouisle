@@ -2,17 +2,20 @@
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceDescription,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
 import { cn } from "@/lib/utils";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon, Loader2Icon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState, useRef, Children, isValidElement } from "react";
 import { Streamdown } from "streamdown";
-import { Shimmer } from "./shimmer";
-
 type ReasoningContextValue = {
   isStreaming: boolean;
   isOpen: boolean;
@@ -30,7 +33,7 @@ export const useReasoning = () => {
   return context;
 };
 
-export type ReasoningProps = ComponentProps<typeof Collapsible> & {
+export type ReasoningProps = Omit<ComponentProps<typeof TraceCollapsible>, "open" | "defaultOpen" | "onOpenChange"> & {
   isStreaming?: boolean;
   open?: boolean;
   defaultOpen?: boolean;
@@ -71,66 +74,50 @@ export const Reasoning = memo(
         if (startTimeRef.current === null) {
           startTimeRef.current = Date.now();
         }
+        setIsOpen(true);
       } else if (startTimeRef.current !== null) {
         setDuration(Math.ceil((Date.now() - startTimeRef.current) / MS_IN_S));
         startTimeRef.current = null;
       }
-    }, [isStreaming, setDuration]);
+    }, [isStreaming, setDuration, setIsOpen]);
 
     // Auto-open when streaming starts, auto-close when streaming ends (once only)
     useEffect(() => {
       if (defaultOpen && !isStreaming && isOpen && !hasAutoClosed) {
-        // Add a small delay before closing to allow user to see the content
         const timer = setTimeout(() => {
           setIsOpen(false);
           setHasAutoClosed(true);
         }, AUTO_CLOSE_DELAY);
-
         return () => clearTimeout(timer);
       }
     }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
-
-    const handleOpenChange = (newOpen: boolean) => {
-      setIsOpen(newOpen);
-    };
-
     return (
-      <ReasoningContext.Provider
-        value={{ isStreaming, isOpen, setIsOpen, duration }}
-      >
-        <Collapsible
-          className={cn("not-prose mb-4", className)}
-          onOpenChange={handleOpenChange}
-          open={isOpen}
-          {...props}
-        >
-          {children}
-        </Collapsible>
+      <ReasoningContext.Provider value={{ isStreaming, isOpen, setIsOpen, duration }}>
+        <Trace className={cn("not-prose mb-4", className)} {...props}>
+          <TraceCollapsible open={isOpen} onOpenChange={setIsOpen}>
+            {children}
+          </TraceCollapsible>
+        </Trace>
       </ReasoningContext.Provider>
     );
   }
 );
 
-export type ReasoningTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
+export type ReasoningTriggerProps = ComponentProps<typeof TraceCollapsibleTrigger> & {
   getThinkingMessage?: (isStreaming: boolean, duration?: number) => ReactNode;
 };
 
 const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
-  if (isStreaming || duration === 0) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>;
-  }
-  if (duration === undefined) {
-    return <p>Thought for a few seconds</p>;
-  }
-  return <p>Thought for {duration} seconds</p>;
+  if (isStreaming || duration === 0) return "Thinking...";
+  if (duration === undefined) return "Thought for a few seconds";
+  return `Thought for ${duration} seconds`;
 };
 
 export const ReasoningTrigger = memo(
   ({ className, children, getThinkingMessage = defaultGetThinkingMessage, ...props }: ReasoningTriggerProps) => {
-    const { isStreaming, isOpen, duration } = useReasoning();
-
+    const { isStreaming, duration } = useReasoning();
     return (
-      <CollapsibleTrigger
+      <TraceCollapsibleTrigger
         className={cn(
           "flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
@@ -138,36 +125,26 @@ export const ReasoningTrigger = memo(
         {...props}
       >
         {children ?? (
-          <>
-            <BrainIcon className="size-4" />
-            {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
-              className={cn(
-                "size-4 transition-transform",
-                isOpen ? "rotate-180" : "rotate-0"
-              )}
-            />
-          </>
+          <TraceLine status={isStreaming ? "running" : undefined}>
+            <TraceIcon>{isStreaming ? <Loader2Icon className="size-4 animate-spin" /> : <BrainIcon className="size-4" />}</TraceIcon>
+            <TraceTitle>{getThinkingMessage(isStreaming, duration)}</TraceTitle>
+            {duration !== undefined && !isStreaming && <TraceDescription>{duration}s</TraceDescription>}
+          </TraceLine>
         )}
-      </CollapsibleTrigger>
+      </TraceCollapsibleTrigger>
     );
   }
 );
 
-export type ReasoningContentProps = ComponentProps<
-  typeof CollapsibleContent
-> & {
+export type ReasoningContentProps = ComponentProps<typeof TraceCollapsibleContent> & {
   children: string;
 };
 
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-        className
-      )}
+    <TraceCollapsibleContent
+      forceMount
+      className={cn("mt-4 text-sm text-muted-foreground", className)}
       {...props}
     >
       <Streamdown
@@ -194,7 +171,7 @@ export const ReasoningContent = memo(
       >
         {children}
       </Streamdown>
-    </CollapsibleContent>
+    </TraceCollapsibleContent>
   )
 );
 
