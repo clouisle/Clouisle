@@ -30,6 +30,7 @@
       "processing": "推理中...",
       "thinkingDefault": "思考中...",
       "thoughtDefault": "思考过程",
+      "collapse": "收起思考过程",
       "thinkingActive": "思考中",
       "thinkingCompleted": "思考了 {seconds} 秒",
       "toolCallExecuting": "执行 {tool}",

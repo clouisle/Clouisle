@@ -27,6 +27,8 @@ type ChainOfThoughtContextValue = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   isStreaming: boolean;
+  headerRef: React.RefObject<HTMLButtonElement | null>;
+  collapseFromFooter: () => void;
   contentId: string;
 };
 
@@ -61,17 +63,34 @@ export const ChainOfThought = memo(
     ...props
   }: ChainOfThoughtProps) => {
     const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLButtonElement>(null);
     const contentId = useId();
     const isOpen = open ?? uncontrolledOpen;
     const setIsOpen = useCallback((nextOpen: boolean) => {
       if (open === undefined) setUncontrolledOpen(nextOpen);
       onOpenChange?.(nextOpen);
     }, [open, onOpenChange]);
+    const collapse = useCallback((restoreFocus: boolean) => {
+      const root = rootRef.current;
+      const scroller = root?.closest<HTMLElement>('[data-chat-scroller]');
+      if (root && scroller) {
+        const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        if (offset < 0) scroller.scrollBy({ top: offset, behavior: "instant" });
+      }
+      if (restoreFocus) headerRef.current?.focus({ preventScroll: true });
+      setIsOpen(false);
+    }, [setIsOpen]);
+    const collapseFromFooter = useCallback(() => collapse(true), [collapse]);
+    const handleOpenChange = useCallback((nextOpen: boolean) => {
+      if (nextOpen) setIsOpen(true);
+      else collapse(false);
+    }, [collapse, setIsOpen]);
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const contextValue = useMemo(
-      () => ({ isOpen, setIsOpen, isStreaming, contentId }),
-      [isOpen, setIsOpen, isStreaming, contentId]
+      () => ({ isOpen, setIsOpen, isStreaming, contentId, headerRef, collapseFromFooter }),
+      [isOpen, setIsOpen, isStreaming, contentId, collapseFromFooter]
     );
 
     // Auto-close when streaming ends (once only)
@@ -89,11 +108,12 @@ export const ChainOfThought = memo(
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Trace
+          ref={rootRef}
           className={cn("not-prose w-full", className)}
           data-state={isOpen ? "open" : "closed"}
           {...props}
         >
-          <TraceCollapsible open={isOpen} onOpenChange={setIsOpen}>
+          <TraceCollapsible open={isOpen} onOpenChange={handleOpenChange}>
             {children}
           </TraceCollapsible>
         </Trace>
@@ -117,13 +137,14 @@ export const ChainOfThoughtHeader = memo(
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
-    const { isOpen, isStreaming, contentId } = useChainOfThought();
+    const { isOpen, isStreaming, contentId, headerRef } = useChainOfThought();
     const t = useTranslations('chat.reasoning');
 
     return (
       <TraceCollapsibleTrigger
+        ref={headerRef}
         className={cn(
-          "group flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+          "sticky top-0 z-10 group flex w-full items-center gap-2 bg-background py-1 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
         )}
         aria-expanded={isOpen}
@@ -147,7 +168,8 @@ export type ChainOfThoughtContentProps = ComponentProps<"div"> & {
 
 export const ChainOfThoughtContent = memo(
   ({ className, children, containScroll = false, onWheel, ...props }: ChainOfThoughtContentProps) => {
-    const { isOpen, contentId } = useChainOfThought();
+    const { isOpen, contentId, collapseFromFooter } = useChainOfThought();
+    const t = useTranslations('chat.reasoning');
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -186,6 +208,9 @@ export const ChainOfThoughtContent = memo(
           {...props}
         >
           <Trace>{children}</Trace>
+          <button type="button" onClick={collapseFromFooter} className="mt-3 rounded-md px-1 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {t('collapse')}
+          </button>
         </div>
       </TraceCollapsibleContent>
     );

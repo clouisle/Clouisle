@@ -81,7 +81,8 @@ export const MessageContent = ({
   return (
     <MessageBody
       className={cn(
-        "w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
+        "w-full min-w-0 flex-col gap-2 text-sm",
+        from === "user" && "overflow-hidden",
         className
       )}
       {...props}

@@ -30,6 +30,7 @@
       "processing": "Reasoning...",
       "thinkingDefault": "Thinking...",
       "thoughtDefault": "Thought process",
+      "collapse": "Collapse thought process",
       "thinkingActive": "In progress",
       "thinkingCompleted": "Thought for {seconds}s",
       "toolCallExecuting": "Executing {tool}",
