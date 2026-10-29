@@ -625,6 +625,70 @@ async def test_finalize_creates_semantic_checkpoint_for_covered_groups(monkeypat
 
 
 @pytest.mark.anyio
+async def test_restored_semantic_checkpoint_requires_current_source_and_branch(
+    monkeypatch,
+):
+    messages, meta, contents = _build_view(
+        [(f"c{i}", _large_result(f"r{i}")) for i in range(3)]
+    )
+    entries = {
+        name: context_checkpoint.build_entry(
+            ToolResultSource(
+                tool_call_id=name,
+                tool_name="bash",
+                content=contents[name],
+                round_id=ROUND,
+            )
+        )
+        for name in ("c0", "c1")
+    }
+    sources = {
+        name: ToolResultSource(
+            tool_call_id=name, tool_name="bash", content=contents[name], round_id=ROUND
+        )
+        for name in entries
+    }
+    groups = chat_context._complete_tool_groups(
+        messages, meta, current_user_index=1, active_round_id=ROUND
+    )
+    transcript = chat_context._checkpoint_transcript(
+        messages, groups, 1, entries, sources
+    )
+    loaded = LoadedCheckpoint(
+        run_id=uuid4(),
+        round_id=str(ROUND),
+        entries=entries,
+        mode="semantic",
+        summary_text=SUMMARY,
+        source_sha256=content_version_hash(
+            chat_context._render_summary_transcript(transcript)
+        ),
+    )
+    versions = {
+        name: content_version_hash(content) for name, content in contents.items()
+    }
+    _patch_checkpoint_io(monkeypatch, loaded=loaded, versions=versions)
+    restored = await chat_context._restore_round_checkpoint(
+        messages, meta, uuid4(), ROUND, 1
+    )
+    assert SUMMARY in restored[3].content
+    assert restored[5].content.startswith("[Earlier tool result omitted")
+    changed_goal = list(messages)
+    changed_goal[1] = messages[1].model_copy(update={"content": "different task"})
+    assert (
+        await chat_context._restore_round_checkpoint(
+            changed_goal, meta, uuid4(), ROUND, 1
+        )
+        == changed_goal
+    )
+    versions["c0"] = content_version_hash("different result")
+    assert (
+        await chat_context._restore_round_checkpoint(messages, meta, uuid4(), ROUND, 1)
+        == messages
+    )
+
+
+@pytest.mark.anyio
 async def test_recovery_reuses_semantic_checkpoint_without_llm(monkeypatch):
     exchanges = [(f"c{i}", _large_result(f"r{i}", success=True)) for i in range(4)]
     messages, meta, contents = _build_view(exchanges)
