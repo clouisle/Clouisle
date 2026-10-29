@@ -533,6 +533,20 @@ async def _rebuild_context(
         ]
         if payload.get("pending_tool_calls_cipher")
         else None,
+        resume_tool_call_ids={
+            str(item.get("id"))
+            for item in json.loads(
+                decrypt_tool_secret(payload["pending_tool_calls_cipher"])
+            )
+            if isinstance(item, dict) and item.get("id")
+        }
+        if payload.get("pending_tool_calls_cipher")
+        else set(),
+        resume_tool_visible_names=(
+            set(payload["pending_tool_visible_names"])
+            if isinstance(payload.get("pending_tool_visible_names"), list)
+            else None
+        ),
         tools=tools,
         tool_discovery=discovery,
         tool_display_names=tool_display_names,
@@ -1515,8 +1529,16 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             discovery = getattr(loop_context, "tool_discovery", None)
             if discovery is not None:
                 resume_payload["discovered_tools"] = discovery.loaded_names
+                resume_tool_visible_names = interaction.get("resume_tool_visible_names")
+                if remaining_calls and isinstance(resume_tool_visible_names, list):
+                    resume_payload["pending_tool_visible_names"] = (
+                        resume_tool_visible_names
+                    )
+                else:
+                    resume_payload.pop("pending_tool_visible_names", None)
             else:
                 resume_payload.pop("discovered_tools", None)
+                resume_payload.pop("pending_tool_visible_names", None)
             resume_payload["pending_tool_display_name"] = str(
                 interaction.get("display_name") or interaction["tool_name"]
             )

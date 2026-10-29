@@ -1430,7 +1430,14 @@ class _FakeMessageQuery:
             )
         ]
 
-    def order_by(self, *_args):
+    def order_by(self, *fields):
+        for field in reversed(fields):
+            descending = field.startswith("-")
+            name = field.removeprefix("-") if descending else field
+            self._rows.sort(
+                key=lambda row: getattr(row, name),
+                reverse=descending,
+            )
         return self
 
     def only(self, *_args):
@@ -1454,6 +1461,9 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
     rows = [
         SimpleNamespace(
             conversation_id=conversation_id,
+            round_index=1,
+            created_at=1,
+            id=1,
             round_id=ROUND,
             role=MessageRole.TOOL,
             tool_call_id="call-1",
@@ -1463,6 +1473,9 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
         ),
         SimpleNamespace(
             conversation_id=conversation_id,
+            round_index=99,
+            created_at=99,
+            id=99,
             round_id=wrong_round_id,
             role=MessageRole.TOOL,
             tool_call_id="call-1",
@@ -1472,6 +1485,9 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
         ),
         SimpleNamespace(
             conversation_id=conversation_id,
+            round_index=2,
+            created_at=2,
+            id=2,
             round_id=ROUND,
             role=MessageRole.TOOL,
             tool_call_id="call-1",

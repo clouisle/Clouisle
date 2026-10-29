@@ -128,6 +128,11 @@ class AgentLoopContext:
     #: ``tool_discovery.tools_for_turn()`` instead, so a large catalog does not
     #: occupy every provider request.
     tool_discovery: Any = None
+    #: Tool schemas declared for the model response owning pending calls.
+    resume_tool_visible_names: set[str] | None = None
+    active_resume_tool_visible_names: set[str] | None = None
+    resume_tool_call_ids: set[str] = field(default_factory=set)
+    replay_tool_call_ids: set[str] = field(default_factory=set)
     resume_tool_calls: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
@@ -620,8 +625,36 @@ class AgentLoop:
                     "display_name": "",
                 },
             )
-
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
+
+        if str(tc.id) in ctx.replay_tool_call_ids and ctx.tool_discovery is not None:
+            visible_names = ctx.active_resume_tool_visible_names or set()
+            if tool_name not in visible_names or not ctx.tool_discovery.is_visible(
+                tool_name
+            ):
+                error = ctx.tool_discovery.undiscovered_error(tool_name)
+                return (
+                    self._build_tool_call_sse(tc),
+                    build_tool_result_sse_event(
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        tool_display_name=ctx.tool_display_names.get(
+                            tool_name, tool_name
+                        ),
+                        display_result=error,
+                    ),
+                    None,
+                    {
+                        "id": tc.id,
+                        "name": tool_name,
+                        "arguments": arguments,
+                        "display_result": error,
+                        "llm_result": error,
+                        "display_name": ctx.tool_display_names.get(
+                            tool_name, tool_name
+                        ),
+                    },
+                )
         tool_runner = ctx.execute_tool_call or execute_tool_call
         reset_notices: list[dict[str, Any]] = []
         trajectory_arguments = arguments
@@ -1558,9 +1591,13 @@ class AgentLoop:
             # (``load_tools``), so the list is resolved once per iteration.
             turn_tools = (
                 ctx.tool_discovery.tools_for_turn()
-                if ctx.tool_discovery is not None
+                if ctx.tool_discovery is not None and not ctx.resume_tool_calls
                 else ctx.tools
             )
+            if ctx.tool_discovery is not None and not ctx.resume_tool_calls:
+                ctx.active_resume_tool_visible_names = set(
+                    getattr(ctx.tool_discovery, "turn_visible_names", None) or ()
+                )
             messages_for_llm: list[dict[str, Any]] = []
             prepared: Any = None
             if not ctx.resume_tool_calls:
@@ -1611,6 +1648,20 @@ class AgentLoop:
             client_disconnected = False
             pause_turn_pending = False
             resuming_calls = bool(ctx.resume_tool_calls)
+            if resuming_calls:
+                replay_visible_names = (
+                    set(ctx.resume_tool_visible_names)
+                    if ctx.resume_tool_visible_names is not None
+                    else None
+                )
+            else:
+                replay_visible_names = ctx.active_resume_tool_visible_names
+            if resuming_calls and replay_visible_names is None:
+                replay_visible_names = set()
+            ctx.active_resume_tool_visible_names = replay_visible_names
+            ctx.replay_tool_call_ids = (
+                set(ctx.resume_tool_call_ids) if resuming_calls else set()
+            )
 
             model_state: dict[str, Any] = {
                 "handle": await self._begin_model_trajectory(
@@ -2237,6 +2288,7 @@ class AgentLoop:
                                 image_inventory=ctx.image_inventory,
                             )
                             processed_call_count += 1
+                            ctx.resume_tool_call_ids.discard(str(tc.id))
                             if record.get("interaction") is not None:
                                 pause_record = record
                                 pending_tool_calls.append(record)
@@ -2358,6 +2410,24 @@ class AgentLoop:
                     if ctx.pause_for_user is None or pause_tool_index is None:
                         raise RuntimeError("ask_user requires a durable pause callback")
                     interaction = pause_record["interaction"]
+                    remaining_calls = collected_tool_calls[processed_call_count:]
+                    if resuming_calls and remaining_calls:
+                        ctx.resume_tool_calls = list(remaining_calls)
+                        ctx.resume_tool_call_ids = {
+                            str(call.id) for call in remaining_calls
+                        }
+                        ctx.replay_tool_call_ids = {
+                            str(call.id) for call in remaining_calls
+                        }
+                        ctx.resume_tool_visible_names = (
+                            set(ctx.active_resume_tool_visible_names)
+                            if ctx.active_resume_tool_visible_names is not None
+                            else None
+                        )
+                    else:
+                        ctx.resume_tool_calls = None
+                        ctx.resume_tool_call_ids.clear()
+                        ctx.resume_tool_visible_names = None
                     await ctx.pause_for_user(
                         tool_call_id=pause_record["id"],
                         tool_name=pause_record["name"],
@@ -2366,9 +2436,13 @@ class AgentLoop:
                         round_index=pause_tool_index,
                         iteration_index=iteration,
                         display_name=pause_record["display_name"],
-                        remaining_tool_calls=collected_tool_calls[
-                            processed_call_count:
-                        ],
+                        resume_tool_visible_names=(
+                            sorted(ctx.active_resume_tool_visible_names)
+                            if ctx.tool_discovery is not None
+                            and ctx.active_resume_tool_visible_names is not None
+                            else None
+                        ),
+                        remaining_tool_calls=remaining_calls,
                     )
                     call_sse = build_tool_call_sse_event(
                         tool_call_id=pause_record["id"],

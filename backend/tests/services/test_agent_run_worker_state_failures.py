@@ -662,6 +662,7 @@ def _remaining_calls():
 async def test_pause_encrypts_remaining_tool_calls_into_worker_payload(monkeypatch):
     """Only ciphertext of the unstarted calls survives a durable pause."""
     import json
+    from types import SimpleNamespace
 
     from app.core.tool_secrets import decrypt_tool_secret
     from app.llm.types import ToolCall
@@ -679,12 +680,16 @@ async def test_pause_encrypts_remaining_tool_calls_into_worker_payload(monkeypat
             round_index=3,
             iteration_index=2,
             remaining_tool_calls=remaining,
+            resume_tool_visible_names=["db_query", "ask_user"],
         )
 
-    run, _stream, _canonical, _context, _user, _loop = _prepare_round(
+    run, _stream, _canonical, context, _user, _loop = _prepare_round(
         monkeypatch,
         result=_round_result(waiting_for_user=True),
         loop_callback=_pause,
+    )
+    context.tool_discovery = SimpleNamespace(
+        loaded_names=["db_query"],
     )
     _capture_waiting_park(monkeypatch, worker, parked)
 
@@ -704,6 +709,7 @@ async def test_pause_encrypts_remaining_tool_calls_into_worker_payload(monkeypat
     assert "call-3" not in durable
     raw_calls = json.loads(decrypt_tool_secret(cipher))
     assert [ToolCall.model_validate(item) for item in raw_calls] == remaining
+    assert payload["pending_tool_visible_names"] == ["db_query", "ask_user"]
 
 
 @pytest.mark.asyncio
@@ -748,6 +754,7 @@ async def test_pause_without_remaining_tool_calls_keeps_legacy_payload(
     }
     resume_payload = parked["worker_payload"]
     assert "pending_tool_calls_cipher" not in resume_payload
+    assert "pending_tool_visible_names" not in resume_payload
     assert resume_payload["first_round_index"] == 1
     assert resume_payload["iteration_offset"] == 0
     assert resume_payload["history_override"] == []

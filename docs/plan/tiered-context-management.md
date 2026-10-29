@@ -57,6 +57,12 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Validation**: Exercise resumed runs, same-turn tool load, empty stream overflow, asset views, steering, stale branches, fractional pagination, accessibility and event ordering; run focused suites and pre-push checks. Roll back individual changes by reverting their commits without altering saved conversation records.
 - Verification: after correcting the test fixture, 150 focused backend tests passed and Ruff passed; a worker tool-loading smoke scenario exposed `read_tool_result` for a recovered complete tool exchange. Frontend focused tests: 95 passed; TypeScript and ESLint passed. No browser session was started for this review pass.
 
+### Stage 10: Review Follow-ups
+- **Files modified**: tool discovery and Agent pause/recovery services, chat hook, relevant behavior tests, and changelog.
+- **Specific logic**: Keep bounded discovery searches useful for late query terms and CJK suffixes; preserve the original model-response tool visibility across pauses; prevent errors from an edited-away branch from returning; make checkpoint ordering regression meaningful.
+- **Validation**: Exercise long and mixed queries, pause/replay with newly loaded tools, edited-branch reloads, and ordering. Run focused tests and pre-push gates; no browser or service startup. Revert individual commits if recovery or search behavior regresses.
+- Verification: after reassessing the recovery control flow, 144 focused backend tests passed, including replay and approval coverage; 72 frontend hook tests passed, as did Ruff, ESLint and TypeScript. Search smoke checks found both a long CJK suffix and a later query keyword. No browser or application service was started.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.

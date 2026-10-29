@@ -1599,12 +1599,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           : [{ type: 'text' as const, text: content }, ...message.parts]
         return { ...message, parts }
       })
-      const retainedErrorMessages = previous.filter((message) => (
-        message.metadata?.isError === true
-        && isValidUUID(message.id)
-        && !beforeAndEditedUser.some((retained) => retained.id === message.id)
-      ))
-      return [...beforeAndEditedUser, ...retainedErrorMessages, {
+      return [...beforeAndEditedUser, {
         id: placeholderId,
         role: 'assistant',
         parts: [],

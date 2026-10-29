@@ -12,6 +12,7 @@
   - [x] 7. Reuse validated active-round checkpoints before pressure decisions
   - [x] 8. Localize discovery tools and expose configured sandbox capabilities
   - [x] 9. Address PR review findings and verify recovery, discovery and UI contracts
+  - [x] 10. Address review follow-ups for search, paused tool visibility and edited branches
 
 - **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
   - [x] 1. Add team-level view of individual tool approval settings

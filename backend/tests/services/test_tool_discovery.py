@@ -140,6 +140,68 @@ async def test_discover_then_load_makes_tool_visible_and_persists():
 
 
 @pytest.mark.asyncio
+async def test_discover_matches_final_bigram_of_long_cjk_query():
+    query = "创建日历事件并查询指定用户最近的全部历史记录以及可用的导出选项和筛选条件"
+    suffix_bigram = query[-2:]
+    state = await build_tool_discovery(
+        [
+            _schema("mcp_calendar_history_search", f"Search {suffix_bigram} records"),
+            *[
+                _schema(f"mcp_unrelated_tool_{index}", "Unrelated")
+                for index in range(25)
+            ],
+        ],
+        min_discoverable=5,
+    )
+    assert state is not None
+
+    result = json.loads(await state.execute(DISCOVER_TOOLS_TOOL, {"query": query}))
+    assert "mcp_calendar_history_search" in [tool["name"] for tool in result["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_discover_matches_terms_after_the_first_twelve():
+    query = "calendar event create update delete search history user profile account settings report export"
+    state = await build_tool_discovery(
+        [
+            _schema("mcp_export_report", "Export report data"),
+            *[
+                _schema(f"mcp_unrelated_tool_{index}", "Unrelated")
+                for index in range(25)
+            ],
+        ],
+        min_discoverable=5,
+    )
+    assert state is not None
+
+    result = json.loads(await state.execute(DISCOVER_TOOLS_TOOL, {"query": query}))
+    assert "mcp_export_report" in [tool["name"] for tool in result["tools"]]
+
+
+@pytest.mark.asyncio
+async def test_discover_bounds_query_length_before_matching():
+    state = await build_tool_discovery(
+        [
+            _schema("mcp_tail_keyword_tool", "Find the distinctive tail keyword"),
+            *[
+                _schema(f"mcp_unrelated_tool_{index}", "Unrelated")
+                for index in range(25)
+            ],
+        ],
+        min_discoverable=5,
+    )
+    assert state is not None
+
+    result = json.loads(
+        await state.execute(
+            DISCOVER_TOOLS_TOOL,
+            {"query": "ordinary " * 60 + "distinctive_tail_keyword"},
+        )
+    )
+    assert result["tools"] == []
+
+
+@pytest.mark.asyncio
 async def test_unknown_names_are_never_loaded():
     state = await build_tool_discovery(_mcp_catalog(25), min_discoverable=5)
     assert state is not None
@@ -891,10 +953,14 @@ async def test_retry_reduction_sheds_loaded_tools_and_reports_removed_names():
 
 @pytest.mark.asyncio
 async def test_search_bounds_primary_terms_and_matches_full_description():
-    query = " ".join(f"term{index}" for index in range(30))
+    query = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu"
     expanded, primary = _search_terms(query)
-    assert len(primary) == 12
+    assert len(primary) == 24
     assert len(expanded) <= 24
+
+    bounded_expanded, bounded_primary = _search_terms("中" * 10000)
+    assert len(bounded_primary) == 1
+    assert len(bounded_expanded) <= 24
 
     keyword = "distinctivecapability"
     description = "prefix " + ("ordinary description " * 20) + keyword

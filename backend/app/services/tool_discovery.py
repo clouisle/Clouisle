@@ -81,7 +81,8 @@ DEFAULT_SEARCH_LIMIT = 8
 MAX_SEARCH_LIMIT = 20
 MAX_LOADED_TOOLS = 24
 _DESCRIPTION_LIMIT = 180
-_MAX_PRIMARY_TERMS = 12
+_MAX_QUERY_LENGTH = 512
+_MAX_PRIMARY_TERMS = 24
 
 #: Latin words/digits and CJK runs. Chinese queries are common, so tokenizing
 #: must not drop CJK text; CJK runs are also expanded into bigrams for partial
@@ -164,23 +165,31 @@ def _search_terms(query: str) -> tuple[list[str], list[str]]:
     characters also contribute bigrams so a natural-language Chinese query
     (「创建日历事件」) matches a shorter tool description (「日历 事件」).
     """
-    primary: list[str] = []
-    for match in _TERM_RE.finditer(query.lower()):
-        primary.append(match.group())
-        if len(primary) == _MAX_PRIMARY_TERMS:
-            break
-    expanded: list[str] = []
-    seen: set[str] = set()
+    bounded_query = query[:_MAX_QUERY_LENGTH].lower()
+    primary = [
+        match.group()
+        for _, match in zip(range(_MAX_PRIMARY_TERMS), _TERM_RE.finditer(bounded_query))
+    ]
+    # Keep every primary term before adding optional CJK bigrams, so early long
+    # CJK runs cannot crowd later query words out of the bounded match set.
+    expanded = list(dict.fromkeys(primary))[:_MAX_QUERY_TERMS]
+    seen = set(expanded)
+    remaining = _MAX_QUERY_TERMS - len(expanded)
     for run in primary:
-        candidates = [run]
-        if not run[0].isascii() and len(run) > 2:
-            candidates.extend(run[index : index + 2] for index in range(len(run) - 1))
-        for term in candidates:
-            if term and term not in seen:
-                seen.add(term)
-                expanded.append(term)
-                if len(expanded) >= _MAX_QUERY_TERMS:
-                    return expanded, primary
+        if remaining <= 0:
+            break
+        if run[0].isascii() or len(run) <= 2:
+            continue
+        bigrams = (run[index : index + 2] for index in range(len(run) - 1))
+        unseen = [term for term in bigrams if term not in seen]
+        # If the run is longer than the remaining budget, retain its suffix
+        # bigram as well as the leading ones instead of silently losing it.
+        if len(unseen) > remaining:
+            unseen = [*unseen[: remaining - 1], unseen[-1]]
+        for term in unseen:
+            expanded.append(term)
+            seen.add(term)
+            remaining -= 1
     return expanded, primary
 
 
@@ -332,7 +341,7 @@ class ToolDiscoveryState:
         )
 
     def _search(self, args: Mapping[str, Any]) -> str:
-        query = str(args.get("query") or "").strip()
+        query = str(args.get("query") or "")[:_MAX_QUERY_LENGTH].strip()
         limit = _clamp_int(args.get("limit"), DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT)
         terms, primary_terms = _search_terms(query)
         loaded = set(self.loaded)

@@ -1526,6 +1526,54 @@ describe('useChat', () => {
     expect(result.status).toBe('idle')
   })
 
+  it('discards old-branch errors during an edit and after its terminal reload', async () => {
+    const errorId = '22222222-2222-2222-2222-222222222222'
+    const userId = '11111111-1111-1111-1111-111111111111'
+    const terminal = deferred<StreamEvent>()
+    const reloadStarted = deferred<void>()
+    const reload = deferred<{ messages: ChatMessage[] }>()
+    const failedMessage: ChatMessage = {
+      id: errorId,
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'request failed' }],
+      metadata: { isError: true, errorMessage: 'request failed' },
+    }
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+      failedMessage,
+    ])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: '33333333-3333-3333-3333-333333333333', edited_message_id: userId } },
+      { event: 'content_delta', data: { delta: 'updated' } },
+      terminal.promise,
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockImplementation(() => {
+      reloadStarted.resolve()
+      return reload.promise
+    })
+
+    const editing = result.editMessage(userId, 'edited')
+    await flush()
+    expect(result.messages.map((message) => message.id)).not.toContain(errorId)
+
+    terminal.resolve({ event: 'message_end', data: {} })
+    await reloadStarted.promise
+    reload.resolve({
+      messages: [
+        { id: userId, role: 'user', parts: [{ type: 'text', text: 'edited' }] },
+        { id: '33333333-3333-3333-3333-333333333333', role: 'assistant', parts: [{ type: 'text', text: 'updated' }] },
+      ] as ChatMessage[],
+    })
+    await editing
+
+    expect(result.messages.map((message) => message.id)).not.toContain(errorId)
+    expect(result.status).toBe('idle')
+  })
   it('preserves errored messages during an ordinary history refresh', async () => {
     const errorId = '22222222-2222-2222-2222-222222222222'
     const userId = '11111111-1111-1111-1111-111111111111'
@@ -1543,21 +1591,14 @@ describe('useChat', () => {
       failedMessage,
     ])
     await flush()
-    streamEvents = [
-      { event: 'message_start', data: { message_id: '33333333-3333-3333-3333-333333333333', edited_message_id: userId } },
-      { event: 'content_delta', data: { delta: 'updated' } },
-      { event: 'message_end', data: {} },
-    ]
-    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
     getConversation.mockResolvedValue({
-      messages: [
-        { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
-        { id: '33333333-3333-3333-3333-333333333333', role: 'assistant', parts: [{ type: 'text', text: 'updated' }] },
-      ] as ChatMessage[],
+      messages: [{ id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] }] as ChatMessage[],
     })
 
-    await result.editMessage(userId, 'edited')
+    result.reconnect()
+    await flush()
 
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
     expect(result.messages.map((message) => message.id)).toContain(errorId)
     expect(result.messages.find((message) => message.id === errorId)).toBe(failedMessage)
   })
