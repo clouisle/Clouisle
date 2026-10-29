@@ -1536,6 +1536,18 @@ async def test_rebuild_context_restores_encrypted_pending_tool_calls(monkeypatch
     )
     assert legacy_context.resume_tool_visible_names is None
 
+    cipher_only_payload = _resume_payload(
+        user_msg, pending_tool_calls_cipher=encrypt_tool_secret(calls_json)
+    )
+    cipher_only_context, _loaded, _loop = await agent_run_worker._rebuild_context(
+        cipher_only_payload,
+        agent=agent,
+        conversation=conversation,
+        event_queue=asyncio.Queue(),
+    )
+    assert cipher_only_context.resume_tool_calls == expected
+    assert cipher_only_context.resume_tool_visible_names is None
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("variant", ["absent", "none", "empty"])

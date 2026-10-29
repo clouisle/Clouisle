@@ -177,6 +177,7 @@ async def test_discover_deduplicates_repeated_cjk_bigrams_before_ranking():
 
     result = json.loads(await state.execute(DISCOVER_TOOLS_TOOL, {"query": query}))
     assert "mcp_suffix_bigram" in [tool["name"] for tool in result["tools"]]
+    assert "mcp_repeated_bigram" in [tool["name"] for tool in result["tools"]]
 
 
 @pytest.mark.asyncio

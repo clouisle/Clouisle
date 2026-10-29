@@ -1687,6 +1687,8 @@ class AgentLoop:
                     if ctx.resume_tool_visible_names is not None
                     else None
                 )
+                if ctx.tool_discovery is not None and replay_visible_names is not None:
+                    ctx.tool_discovery.turn_visible_names = set(replay_visible_names)
             else:
                 replay_visible_names = ctx.active_resume_tool_visible_names
             ctx.active_resume_tool_visible_names = replay_visible_names

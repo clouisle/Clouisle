@@ -254,6 +254,30 @@ async def test_rebuilt_worker_discovery_uses_persisted_response_snapshot(monkeyp
 
     assert executed == []
 
+    # The response declared this tool, then it was unloaded before pause.
+    # Rebuild retains authorization but not the loaded set.
+    payload["discovered_tools"] = []
+    payload["pending_tool_visible_names"].append("mcp_ops_server_action_1")
+    rebuilt = await _build_tool_discovery_state(
+        schemas,
+        payload=payload,
+        agent=SimpleNamespace(team_id=None, tools_config=[]),
+        user_id=None,
+    )
+    assert rebuilt is not None
+    context.tool_discovery = rebuilt
+    context.resume_tool_calls = [
+        ToolCall(
+            id="pending-2",
+            function=FunctionCall(name="mcp_ops_server_action_1", arguments="{}"),
+        )
+    ]
+    context.resume_tool_call_ids = {"pending-2"}
+    context.resume_tool_visible_names = set(payload["pending_tool_visible_names"])
+    async for _ in AgentLoop(context).run():
+        pass
+    assert executed == ["mcp_ops_server_action_1"]
+
 
 def test_approval_history_with_result_reference_restores_readback_tool():
     from app.services.agent_run_worker import _history_override_has_tool_result_ref
