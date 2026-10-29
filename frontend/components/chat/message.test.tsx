@@ -304,59 +304,46 @@ describe('message rendering', () => {
     expect(hidden).toContain('chat.reasoning.thought')
   })
 
-  test('keeps ask_user interaction content out of conversation nodes', () => {
-    const markup = renderToStaticMarkup(<Message
-      message={{
-        id: 'pending-ask-user',
-        role: 'assistant',
-        metadata: { isLoading: true },
-        parts: [
-          { type: 'reasoning', text: 'Need clarification', state: 'done' as const },
-          {
-            type: 'tool-call' as const,
-            toolCallId: 'ask-1',
-            toolName: 'ask_user',
-            toolDisplayName: 'Ask user',
-            input: {
-              questions: [
-                { id: 'target', question: 'Where should this go?', options: ['cloud', 'local'], required: true },
-              ],
-            },
-            state: 'pending' as const,
-          },
-          {
-            type: 'tool-result' as const,
-            toolCallId: 'ask-1',
-            toolName: 'ask_user',
-            output: { target: 'cloud' },
-          },
-        ],
-      }}
-    />)
+  test('shows waiting and answered ask_user calls in the reasoning chain', () => {
+    const call = {
+      type: 'tool-call' as const,
+      toolCallId: 'ask-1',
+      toolName: 'ask_user',
+      input: { questions: [{ id: 'target', question: 'Where?' }] },
+    }
+    const pending = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-pending', role: 'assistant', metadata: { isLoading: true },
+      parts: [{ ...call, state: 'pending' as const }],
+    }} />)
+    expect(pending).toContain('chat.message.askUserWaiting')
+    expect(pending).toContain('Where?')
+    expect(pending).toContain('data-tool-default-open="false"')
 
-    expect(markup).toContain('chat.reasoning.thought')
-    expect(markup).not.toContain('Where should this go?')
-    expect(markup).not.toContain('cloud')
-    expect(markup).not.toContain('local')
-    expect(markup).not.toContain('Ask user')
-  })
+    const answered = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-answered', role: 'assistant',
+      parts: [
+        { ...call, state: 'done' as const },
+        { type: 'tool-result' as const, toolCallId: 'ask-1', toolName: 'ask_user', output: { target: 'cloud' } },
+      ],
+    }} />)
+    expect(answered).toContain('chat.message.askUserAnswered')
+    expect(answered).toContain('cloud')
+    expect(answered.match(/data-chat-tool-node="true"/g)?.length).toBe(1)
 
-  test('omits an assistant message containing only ask_user plumbing', () => {
-    const markup = renderToStaticMarkup(<Message
-      message={{
-        id: 'ask-user-only',
-        role: 'assistant',
-        parts: [{
-          type: 'tool-call' as const,
-          toolCallId: 'ask-1',
-          toolName: 'ask_user',
-          input: { questions: [{ id: 'target', question: 'Where?' }] },
-          state: 'pending' as const,
-        }],
-      }}
-    />)
+    const skipped = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-skipped', role: 'assistant',
+      parts: [
+        { ...call, state: 'done' as const },
+        { type: 'tool-result' as const, toolCallId: 'ask-1', toolName: 'ask_user', output: { answers: {}, skipped: true } },
+      ],
+    }} />)
+    expect(skipped).toContain('chat.message.askUserSkipped')
 
-    expect(markup).toBe('')
+    const hidden = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-hidden', role: 'assistant', parts: [{ ...call, state: 'pending' as const }],
+    }} hideToolCalls />)
+    expect(hidden).not.toContain('Where?')
+    expect(hidden).not.toContain('chat.message.askUserWaiting')
   })
 
   test('renders iteration cap and stopped markers once', () => {

@@ -175,9 +175,6 @@ const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
 
-function isAskUserInteractionPart(part: MessagePart) {
-  return (isToolCallPart(part) || isToolResultPart(part)) && part.toolName === 'ask_user'
-}
 
 const MCP_TOOL_NAME_PREFIX = 'mcp_'
 
@@ -535,11 +532,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const tReasoning = useTranslations('chat.reasoning')
     const tTask = useTranslations('chat.task')
     const getToolDisplayName = React.useCallback((name: string, fallback?: string) => {
+      if (name === 'ask_user') return t('askUserTool')
       if (name === 'discover_tools') return tTask('discoverTools')
       if (name === 'load_tools') return tTask('loadTools')
       if (name === 'unload_tools') return tTask('unloadTools')
       return fallback || name
-    }, [tTask])
+    }, [t, tTask])
     const [copied, setCopied] = React.useState(false)
     const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
@@ -914,14 +912,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [otherPartEntries])
     const toolActivityCount = React.useMemo(() => {
-      let count = 0
-      for (const part of toolCallParts) {
-        if (!isAskUserInteractionPart(part)) count += 1
-      }
+      let count = toolCallParts.length
       for (const { part, index } of otherPartEntries) {
         if (
           (isToolResultPart(part) || isMcpToolResultPart(part))
-          && !isAskUserInteractionPart(part)
           && !pairedToolResultIndexes.has(index)
         ) {
           count += 1
@@ -962,8 +956,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           />
         )
       }
-
-      if (isAskUserInteractionPart(part)) return null
 
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
         const result = toolResultsByCallIndex.get(index)
@@ -1131,7 +1123,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
     const visibleContentEntries = React.useMemo(() => {
       return otherPartEntries.filter(({ part }) => {
-        if (isAskUserInteractionPart(part)) return false
         if (isFilePart(part)) return false
         if (isErroredMessage && !showPreservedErrorNote && streamErrorMessage && isTextPart(part)) {
           return part.text.trim() !== streamErrorMessage.trim()
@@ -1140,7 +1131,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       })
     }, [isErroredMessage, otherPartEntries, showPreservedErrorNote, streamErrorMessage])
     const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
-      if (isAskUserInteractionPart(part)) return false
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
       if (isTaskPart(part)) return !hideReasoning
@@ -1152,15 +1142,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasTextContent = textParts.some(part => part.text.length > 0)
     const hasMessageContent = hasTextContent
       || otherParts.some(part => (
-        !isAskUserInteractionPart(part)
-        && (
-          isReasoningPart(part)
-          || isUserInstructionPart(part)
-          || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
-          || isToolCallPart(part)
-          || isMcpToolCallPart(part)
-          || isMcpToolResultPart(part)
-        )
+        isReasoningPart(part)
+        || isUserInstructionPart(part)
+        || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
+        || isToolCallPart(part)
+        || isMcpToolCallPart(part)
+        || isMcpToolResultPart(part)
       ))
       || isErroredMessage
     const isLoadingMessage = Boolean(message.metadata?.isLoading && !hasVisibleTimelineContent)
@@ -1322,6 +1309,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       const name = isToolCallPart(toolPart)
         ? getToolDisplayName(toolPart.toolName, toolPart.toolDisplayName)
         : `${toolPart.serverName}/${toolPart.toolName}`
+      if (isToolCallPart(toolPart) && toolPart.toolName === 'ask_user' && toolPart.state === 'pending') {
+        return t('askUserWaiting')
+      }
+      if (isToolCallPart(toolPart) && toolPart.toolName === 'ask_user' && toolPart.state === 'done') {
+        return t('askUserAnswered')
+      }
       switch (toolPart.state) {
         case 'running': return t('toolRunning', { name })
         case 'done': return t('toolCompleted', { name })
@@ -1447,7 +1440,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           return
         }
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-          if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
             ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
@@ -1462,7 +1454,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             <ChainOfThoughtStep
               key={`tool-${part.toolCallId}-${index}`}
               icon={Wrench}
-              label={getToolCallLabel(part)}
+              label={isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
+                ? t('askUserSkipped')
+                : getToolCallLabel(part)}
               status={getToolCallStepStatus(part.state)}
             >
               <Tool defaultOpen={false} className="mt-2">
@@ -1693,14 +1687,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       streamErrorMessage,
       t,
     ])
-
-    const isAskUserOnlyMessage = isAssistant
-      && otherParts.length > 0
-      && otherParts.every(isAskUserInteractionPart)
-
-    if (isAskUserOnlyMessage && !isErroredMessage && !isManuallyStoppedMessage) {
-      return null
-    }
 
     return (
       <div

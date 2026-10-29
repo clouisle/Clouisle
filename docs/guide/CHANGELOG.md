@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Chat thought-process timelines now show `ask_user` calls and their waiting, answered, or skipped state; the question form remains in the composer area.
 - MCP browsing distinguishes unsupported capabilities and invalid resource templates, resets server state, labels untrusted prompt content and reports truncated results.
 - Tool-connection revocation and OAuth disconnect require confirmation, configured badges reflect active connections, and administrators can open builtin connection management.
 - The Agent API approval preview explanation renders its execution ID placeholder correctly.

@@ -162,6 +162,10 @@ export type ChatMessages = {
       toolRunning: string
       toolCompleted: string
       toolFailed: string
+      askUserTool: string
+      askUserWaiting: string
+      askUserAnswered: string
+      askUserSkipped: string
       outputTruncated: string
       iterationCapReached: string
       manuallyStopped: string
