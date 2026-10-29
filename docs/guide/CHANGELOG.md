@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Tool calls in the thought process now use a single expandable trace step instead of a duplicate nested card.
 - Migrated the local AI Elements patterns to shadcn/ui primitives and removed the obsolete `ai-elements` CLI dependency. Conversation scrolling now uses Message Scroller instead of spring-based scrolling.
 - Chat thought-process timelines now show `ask_user` calls and their waiting, answered, or skipped state; the question form remains in the composer area.
 - MCP browsing distinguishes unsupported capabilities and invalid resource templates, resets server state, labels untrusted prompt content and reports truncated results.

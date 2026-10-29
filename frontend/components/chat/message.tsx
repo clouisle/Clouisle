@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -1440,40 +1440,24 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           return
         }
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-          const toolName = isToolCallPart(part)
-            ? getToolDisplayName(part.toolName, part.toolDisplayName)
-            : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
           if (hideToolCalls) return
-          const state = part.state === 'error' ? 'output-error'
-            : part.state === 'done' ? 'output-available'
-              : part.state === 'running' ? 'input-available'
-                : 'input-streaming'
 
           steps.push(
             <ChainOfThoughtStep
               key={`tool-${part.toolCallId}-${index}`}
-              icon={Wrench}
+              collapsible
               label={isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
                 ? t('askUserSkipped')
                 : getToolCallLabel(part)}
               status={getToolCallStepStatus(part.state)}
             >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={toolName}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={part.input} />
-                  {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                    (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
-                      ? null
-                      : renderToolResultContent(result.output, result.isError)
-                  )}
-                </AIToolContent>
-              </Tool>
+              <ToolInput input={part.input} />
+              {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
+                  ? null
+                  : renderToolResultContent(result.output, result.isError)
+              )}
             </ChainOfThoughtStep>
           )
           return
@@ -1483,21 +1467,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           const toolName = isToolResultPart(part)
             ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
-          const state = part.isError ? 'output-error' : 'output-available'
 
           steps.push(
             <ChainOfThoughtStep
               key={`tool-result-${part.toolCallId}-${index}`}
-              icon={Wrench}
+              collapsible
               label={part.isError ? t('toolFailed', { name: toolName }) : t('toolCompleted', { name: toolName })}
               status={part.isError ? 'error' : 'complete'}
             >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader title={toolName} type="tool-call" state={state} />
-                <AIToolContent>
-                  {renderToolResultContent(part.output, part.isError)}
-                </AIToolContent>
-              </Tool>
+              {renderToolResultContent(part.output, part.isError)}
             </ChainOfThoughtStep>
           )
           return

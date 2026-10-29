@@ -317,7 +317,7 @@ describe('message rendering', () => {
     }} />)
     expect(pending).toContain('chat.message.askUserWaiting')
     expect(pending).toContain('Where?')
-    expect(pending).toContain('data-tool-default-open="false"')
+    expect(pending).not.toContain('data-chat-tool-node="true"')
 
     const answered = renderToStaticMarkup(<Message message={{
       id: 'ask-user-answered', role: 'assistant',
@@ -328,7 +328,7 @@ describe('message rendering', () => {
     }} />)
     expect(answered).toContain('chat.message.askUserAnswered')
     expect(answered).toContain('cloud')
-    expect(answered.match(/data-chat-tool-node="true"/g)?.length).toBe(1)
+    expect(answered).not.toContain('data-chat-tool-node="true"')
 
     const skipped = renderToStaticMarkup(<Message message={{
       id: 'ask-user-skipped', role: 'assistant',
@@ -641,12 +641,10 @@ describe('message behavior', () => {
     expect(container.textContent).toContain('chat.task.compressingContext')
     expect(container.textContent).toContain('chat.task.generating')
     expect(thought).not.toBeNull()
-    expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
     expect(thought?.textContent).toContain('Inspecting evidence')
     expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.actionQueryingTool tool=Web search')
     expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
-    expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['output-available', 'input-available', 'output-error', 'input-streaming'])
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -664,10 +662,9 @@ describe('message behavior', () => {
     />)
 
     const trace = container.querySelector('[data-chat-thought-process="true"]')
-    const tool = container.querySelector('[data-chat-tool-node="true"]')
     expect(trace).not.toBeNull()
     expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
-    expect(trace?.contains(tool)).toBe(true)
+    expect(trace?.textContent).toContain('Weather lookup')
     expect(container.textContent).toContain('It is sunny.')
 
     const embedded = render(<Message
@@ -690,8 +687,7 @@ describe('message behavior', () => {
 
     const trace = container.querySelector('[data-chat-thought-process="true"]')
     expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
-    expect(trace?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
-    expect(trace?.querySelector('[data-tool-state]')?.getAttribute('data-tool-state')).toBe('output-available')
+    expect(trace?.textContent).toContain('Inspect repository')
   })
 
   test('keeps a stable header for the aggregated thought process', () => {
@@ -821,7 +817,6 @@ describe('message behavior', () => {
     expect(header.outerHTML).toBe(headerHtml)
     expect(header.textContent).not.toContain('mcp')
     expect(thought.textContent).toContain('repo/read')
-    expect(thought.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
 
     renderMessage([
       { type: 'reasoning', text: 'Inspecting the request again', state: 'streaming' },
@@ -1060,12 +1055,7 @@ describe('message behavior', () => {
     />)
 
     const thought = container.querySelector('[data-chat-thought-process="true"]')
-    const tool = thought?.querySelector('[data-chat-tool-node="true"]')
     expect(thought).not.toBeNull()
-    expect(tool).not.toBeNull()
-    expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
-    expect(tool?.className).toContain('mt-2')
-    expect(tool?.className).not.toContain('mb-2')
     expect(thought?.textContent).toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
     expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.thoughtFor seconds=1')
@@ -1113,7 +1103,6 @@ describe('message behavior', () => {
 
     expect(html).toContain('chat.task.compressionCompleted')
     expect(html).toContain('lookup')
-    expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
   })
 

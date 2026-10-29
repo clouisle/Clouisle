@@ -201,6 +201,7 @@ export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
   icon?: LucideIcon;
   label: string;
   status?: StepStatus;
+  collapsible?: boolean;
 };
 
 const statusIcons: Record<StepStatus, ReactNode> = {
@@ -216,9 +217,23 @@ export const ChainOfThoughtStep = memo(
     icon: Icon,
     label,
     status = "pending",
+    collapsible = false,
     children,
     ...props
   }: ChainOfThoughtStepProps) => {
+    if (collapsible) {
+      return (
+        <TraceCollapsible className={className} {...props}>
+          <TraceCollapsibleTrigger>
+            <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
+              <TraceIcon>{statusIcons[status]}</TraceIcon>
+              <TraceTitle>{label}</TraceTitle>
+            </TraceLine>
+          </TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>{children}</TraceCollapsibleContent>
+        </TraceCollapsible>
+      );
+    }
     return (
       <div className={cn("text-muted-foreground", className)} {...props}>
         <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
