@@ -98,6 +98,7 @@ export interface BackendMessage {
   is_manually_stopped?: boolean | null
   round_status?: 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error' | null
   steps?: BackendMessageStep[] | null
+  compression_events?: Array<{ timestamp: string; payload: Record<string, unknown> }> | null
   created_at: string
   // Version info
   parent_id?: string | null
@@ -237,6 +238,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     message.content ||
     message.reasoning_content ||
     (message.tool_calls && message.tool_calls.length > 0) ||
+    (message.compression_events && message.compression_events.length > 0) ||
     (message.steps && message.steps.length > 0) ||
     message.is_manually_stopped ||
     message.round_status === 'error'
@@ -284,6 +286,13 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     // Assistant message: step traces first, then final reasoning/text
     // Note: RAG context is stored with user messages and attached in convertBackendMessages()
 
+    const compressionEvents = [...(message.compression_events || [])].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+    const appendCompressionBefore = (timestamp: number) => {
+      while (compressionEvents.length && Date.parse(compressionEvents[0].timestamp) <= timestamp) {
+        const event = compressionEvents.shift()!
+        parts.push({ type: 'task', taskType: 'compression', state: 'completed', info: event.payload })
+      }
+    }
     if (message.steps && Array.isArray(message.steps) && message.steps.length > 0) {
       const sortedSteps = message.steps
         .map((step, index) => ({ step, index }))
@@ -323,6 +332,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       }
 
       for (let i = 0; i < sortedSteps.length; i++) {
+        appendCompressionBefore(Date.parse(sortedSteps[i].created_at))
         const step = sortedSteps[i]
         if (step.role === 'user' || step.round_role === 'user_input') {
           if (step.content?.trim()) {
@@ -343,6 +353,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
           if (part.type === 'tool-call') {
             const toolResultMsg = takeToolResult(part.toolCallId, i)
             if (toolResultMsg) {
+              appendCompressionBefore(Date.parse(toolResultMsg.created_at))
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
               const isError = inferToolResultIsError(parsedOutput)
               if (part.state !== 'error' && isError) {
@@ -367,6 +378,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
         }
       }
     }
+    appendCompressionBefore(Infinity)
 
     if (message.reasoning_content) {
       parts.push({

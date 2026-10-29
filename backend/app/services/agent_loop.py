@@ -16,7 +16,11 @@ SSE strings via a route-supplied formatter (stream paths) or a silent
 side-effecting run with ``formatter=None`` (non-stream path). Error handling
 and branch/version finalization stay with the caller so every path keeps its
 existing terminal persistence, error events, branch activation and stats
-updates; the loop lets model errors propagate.
+updates; the loop lets model errors propagate — except an unambiguously
+classified provider input-context overflow that arrives before the streaming
+request yielded any chunk, which the loop retries against a strictly smaller
+provider view (bounded, with an explicit omission notice and existing
+compression events).
 
 The loop does NOT own: access checks, RAG retrieval, asset resolution, user
 message creation, placeholder assistant creation, branch/version selection,
@@ -44,6 +48,7 @@ from app.api.v1.endpoints.chat_sse import (
     build_tool_result_sse_event,
 )
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
+from app.llm.errors import ContextLengthError
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.services.tool_context import (
     RuntimeToolIdentity,
@@ -81,6 +86,18 @@ ITERATION_CAP_REACHED = "iteration_cap_reached"
 
 MAX_DEPENDENCY_METRICS_PER_PASS = 64
 
+# Provider-side context-overflow recovery. The preflight budget is an
+# estimate; a provider can still reject the request. Recovery is bounded and
+# only retries a request that produced no output yet, always with a strictly
+# smaller provider view.
+CONTEXT_OVERFLOW_MAX_RETRIES = 2
+CONTEXT_OVERFLOW_OMISSION_PREFIX = (
+    "Earlier conversation history was omitted to fit the model's context window."
+)
+CONTEXT_OVERFLOW_OMISSION_NOTICE = (
+    f"{CONTEXT_OVERFLOW_OMISSION_PREFIX} Do not assume its contents."
+)
+
 
 @dataclass(slots=True)
 class AgentLoopContext:
@@ -105,6 +122,17 @@ class AgentLoopContext:
     input_capabilities: Any = None
     model_config: Any = None
     tools: list[Any] | None = None
+    #: Optional authorized tool discovery state
+    #: (``app.services.tool_discovery.ToolDiscoveryState``). ``ctx.tools`` stays
+    #: the full authorized list; when discovery is active the loop sends
+    #: ``tool_discovery.tools_for_turn()`` instead, so a large catalog does not
+    #: occupy every provider request.
+    tool_discovery: Any = None
+    #: Tool schemas declared for the model response owning pending calls.
+    resume_tool_visible_names: set[str] | None = None
+    active_resume_tool_visible_names: set[str] | None = None
+    resume_tool_call_ids: set[str] = field(default_factory=set)
+    replay_tool_call_ids: set[str] = field(default_factory=set)
     resume_tool_calls: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
@@ -246,6 +274,177 @@ def _tool_call_changed(previous: Any, current: Any) -> bool:
         _safe_arguments(getattr(previous.function, "arguments", None))
         != _safe_arguments(getattr(current.function, "arguments", None))
     )
+
+
+def _tool_schema_names(tools: list[Any] | None) -> set[str]:
+    """Return the names from the exact schema list passed to a model call."""
+    names: set[str] = set()
+    for tool in tools or []:
+        function = (
+            tool.get("function", {})
+            if isinstance(tool, dict)
+            else getattr(tool, "function", None)
+        )
+        name = (
+            function.get("name")
+            if isinstance(function, dict)
+            else getattr(function, "name", None)
+        )
+        if isinstance(name, str) and name:
+            names.add(name)
+    return names
+
+
+def _message_role(message: dict[str, Any]) -> str:
+    """Return a provider-view message's role as a plain string."""
+    role = message.get("role")
+    return str(getattr(role, "value", role) or "")
+
+
+def _reducible_history_units(
+    messages: list[dict[str, Any]],
+    protected_indexes: set[int] | None = None,
+) -> tuple[int, int, list[tuple[int, int]]]:
+    """Split the provider view into system prefix, current instruction, units.
+
+    Only history strictly between the system prompt and the last user message
+    is reducible. Each unit is either one message or an assistant tool-call
+    message plus its immediately following tool results, so a retry can never
+    orphan half of a provider tool exchange.
+
+    Fail closed:
+    - With no protection mask there is no evidence of which user messages are
+      current instructions, so nothing is reducible.
+    - Units touching a protected index (current user input and active-round
+      protocol) are never offered.
+    - Only plain assistant text without tool calls is droppable. User
+      messages (including context summaries and instructions), tool calls and
+      tool results are never dropped: the provider view has no round
+      identifiers, so nothing else is provably recoverable or discardable.
+    """
+    protected = protected_indexes or set()
+    prefix_end = 1 if messages and _message_role(messages[0]) == "system" else 0
+    anchor = len(messages)
+    for index in range(len(messages) - 1, prefix_end - 1, -1):
+        if _message_role(messages[index]) == "user":
+            anchor = index
+            break
+    if not protected:
+        return prefix_end, anchor, []
+
+    units: list[tuple[int, int]] = []
+    index = prefix_end
+    while index < anchor:
+        message = messages[index]
+        end = index + 1
+        if _message_role(message) == "assistant" and message.get("tool_calls"):
+            while end < anchor and _message_role(messages[end]) == "tool":
+                end += 1
+        droppable = _message_role(message) == "assistant" and not message.get(
+            "tool_calls"
+        )
+        if droppable and not any(
+            index <= protected_index < end for protected_index in protected
+        ):
+            units.append((index, end))
+        index = end
+    return prefix_end, anchor, units
+
+
+def _reduce_history_messages(
+    messages: list[dict[str, Any]],
+    *,
+    drop_all: bool,
+    protected_indexes: set[int] | None = None,
+    notice_index: int | None = None,
+) -> tuple[list[dict[str, Any]], int, set[int], int | None]:
+    """Drop removable assistant history and disclose the omission explicitly.
+
+    ``notice_index`` is the internally tracked position of the omission notice
+    this loop inserted earlier, or ``None``. It is removed by index and
+    replaced by one fresh notice; content is never matched, so a user message
+    that happens to share the notice wording is preserved.
+
+    Returns the candidate provider view, the number of source messages
+    removed, the protected indexes remapped onto the candidate view, and the
+    new notice index. The system prompt, all user messages (including context
+    summaries and instructions), and all tool-call/tool-result history are
+    preserved verbatim.
+    """
+    protected = set(protected_indexes or ())
+    prefix_end, _anchor, units = _reducible_history_units(messages, protected)
+    if not units:
+        return messages, 0, protected, notice_index
+    drop_count = len(units) if drop_all else max(1, len(units) // 2)
+    dropped: set[int] = set()
+    for start, end in units[:drop_count]:
+        dropped.update(range(start, end))
+    if not dropped:
+        return messages, 0, protected, notice_index
+    kept_pairs = [
+        (index, message)
+        for index, message in enumerate(messages)
+        if index not in dropped and index != notice_index
+    ]
+    insert_at = 1 if prefix_end else 0
+    remapped: set[int] = set()
+    for new_position, (old_index, _message) in enumerate(kept_pairs):
+        if old_index in protected:
+            remapped.add(new_position + (1 if new_position >= insert_at else 0))
+    kept = [message for _old_index, message in kept_pairs]
+    kept.insert(
+        insert_at, {"role": "user", "content": CONTEXT_OVERFLOW_OMISSION_NOTICE}
+    )
+    return kept, len(dropped), remapped, insert_at
+
+
+def _is_provider_context_overflow(exc: BaseException) -> bool:
+    """Whether an error is unambiguously a provider *input* context overflow.
+
+    ``ModelManager`` classifies provider errors loosely (message containing
+    ``token`` + ``max``), which also catches output-parameter errors such as
+    ``max_tokens`` being too large. Retrying those with a smaller history
+    cannot help, so only explicit context-window/prompt-too-long wording is
+    accepted. Local preflight guards mark themselves ``retryable=False`` and
+    are never retried here.
+    """
+    if not isinstance(exc, ContextLengthError):
+        return False
+    details = exc.details or {}
+    if details.get("retryable") is False:
+        return False
+    reason = str(details.get("reason") or "")
+    if reason.startswith(("protected_payload", "context_summary")):
+        return False
+    if str(getattr(exc, "code", "") or "") != "context_length_error":
+        return False
+    message = str(getattr(exc, "message", "") or str(exc)).lower()
+    return any(
+        marker in message
+        for marker in (
+            "context_length_exceeded",
+            "context length",
+            "context window",
+            "maximum context",
+            "max context",
+            "prompt is too long",
+            "prompt too long",
+            "input is too long",
+            "input too long",
+            "input token count",
+            "reduce the length of the messages",
+            "exceeds the maximum number of tokens",
+        )
+    )
+
+
+@dataclass(slots=True)
+class _OverflowRetryResult:
+    """Successful value of a request after bounded retries."""
+
+    value: Any
+    notice_index: int | None = None
+    retry_count: int = 0
 
 
 @dataclass(slots=True)
@@ -445,8 +644,52 @@ class AgentLoop:
                     "display_name": "",
                 },
             )
-
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
+
+        if str(tc.id) in ctx.replay_tool_call_ids and ctx.tool_discovery is not None:
+            visible_names = ctx.active_resume_tool_visible_names
+            catalog = getattr(ctx.tool_discovery, "catalog", {})
+            currently_authorized = tool_name in catalog or ctx.tool_discovery.handles(
+                tool_name
+            )
+            legacy_core_fallback = (
+                visible_names is None
+                and tool_name in getattr(ctx.tool_discovery, "core_names", ())
+                and tool_name in catalog
+                and ctx.tool_discovery.is_visible(tool_name)
+            )
+            visible = currently_authorized and (
+                legacy_core_fallback
+                or (
+                    visible_names is not None
+                    and tool_name in visible_names
+                    and ctx.tool_discovery.is_visible(tool_name)
+                )
+            )
+            if not visible:
+                error = ctx.tool_discovery.undiscovered_error(tool_name)
+                return (
+                    self._build_tool_call_sse(tc),
+                    build_tool_result_sse_event(
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        tool_display_name=ctx.tool_display_names.get(
+                            tool_name, tool_name
+                        ),
+                        display_result=error,
+                    ),
+                    None,
+                    {
+                        "id": tc.id,
+                        "name": tool_name,
+                        "arguments": arguments,
+                        "display_result": error,
+                        "llm_result": error,
+                        "display_name": ctx.tool_display_names.get(
+                            tool_name, tool_name
+                        ),
+                    },
+                )
         tool_runner = ctx.execute_tool_call or execute_tool_call
         reset_notices: list[dict[str, Any]] = []
         trajectory_arguments = arguments
@@ -883,7 +1126,11 @@ class AgentLoop:
         )
 
     async def _begin_model_trajectory(
-        self, messages_for_llm: list[dict[str, Any]], *, fallback: bool = False
+        self,
+        messages_for_llm: list[dict[str, Any]],
+        *,
+        fallback: bool = False,
+        tools: list[Any] | None = None,
     ) -> Any:
         """Snapshot the request at the boundary, before history can mutate."""
         ctx = self.context
@@ -906,7 +1153,7 @@ class AgentLoop:
                     ctx.streaming and ctx.team_chat_stream is not None and not fallback
                 ),
                 messages=messages_for_llm,
-                tools=ctx.tools,
+                tools=tools if tools is not None else ctx.tools,
                 options=safe_model_options(ctx.model_config),
                 # Configured budgets, not verified effective provider values.
                 limits={
@@ -978,6 +1225,291 @@ class AgentLoop:
             raise
         except Exception:
             logger.debug("Model trajectory finalization dropped", exc_info=True)
+
+    def _compression_enabled(self) -> bool:
+        """Whether the agent allows automatic context reduction at all."""
+        from app.services.chat_context import get_context_compression_config
+
+        try:
+            config = get_context_compression_config(self.context.agent)
+        except Exception:
+            logger.debug("Context compression config unavailable", exc_info=True)
+            return True
+        return bool(config.get("enabled", True))
+
+    def _estimate_request_tokens(
+        self, messages: list[dict[str, Any]], tools: list[Any] | None
+    ) -> int:
+        """Estimate provider input tokens for a candidate request view."""
+        from app.llm.token_counter import count_message_tokens
+
+        ctx = self.context
+        try:
+            total = count_message_tokens(
+                messages,
+                model_id=ctx.tokenizer_model_id,
+                provider=ctx.model_provider,
+                include_tool_calls=True,
+            )
+        except Exception:
+            total = (
+                sum(len(str(message.get("content") or "")) for message in messages) // 4
+            )
+        if tools and ctx.count_tool_definition_tokens is not None:
+            try:
+                total += int(
+                    ctx.count_tool_definition_tokens(
+                        tools, ctx.tokenizer_model_id, ctx.model_provider
+                    )
+                    or 0
+                )
+            except Exception:
+                logger.debug("Tool schema token estimation failed", exc_info=True)
+        return total
+
+    async def _shed_optional_tools(self) -> list[str]:
+        """Drop optional loaded tool schemas; empty means no reduction."""
+        discovery = self.context.tool_discovery
+        if discovery is None:
+            return []
+        reducer = getattr(discovery, "reduce_for_retry", None)
+        if not callable(reducer):
+            return []
+        try:
+            removed = await reducer()
+        except Exception:
+            logger.warning("Optional tool schema reduction failed", exc_info=True)
+            return []
+        return [str(name) for name in removed or [] if name]
+
+    async def _apply_context_overflow_retry(
+        self,
+        *,
+        attempt: int,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None,
+        protected_indexes: set[int] | None = None,
+        notice_index: int | None = None,
+    ) -> (
+        tuple[
+            list[dict[str, Any]],
+            list[Any] | None,
+            list[str],
+            int,
+            set[int],
+            int | None,
+        ]
+        | None
+    ):
+        """Build a strictly smaller request view for one overflow retry.
+
+        Attempt 0 sheds optional loaded tool schemas and removes the oldest
+        half of removable (unprotected plain-assistant) history units;
+        attempt 1 removes all remaining reducible history. History reduction
+        fails closed without a protection mask and never drops user messages,
+        context summaries, tool calls or tool results. ``notice_index`` is the
+        loop-owned omission notice position, replaced by index rather than by
+        matching message text. Returns ``(messages, tools, removed_tool_names,
+        removed_message_count, protected_indexes, notice_index)`` or ``None``
+        when nothing would actually shrink.
+        """
+        if attempt >= CONTEXT_OVERFLOW_MAX_RETRIES:
+            return None
+        if not self._compression_enabled():
+            return None
+
+        protected = set(protected_indexes or ())
+        removed_tools: list[str] = []
+        if attempt == 0:
+            removed_tools = await self._shed_optional_tools()
+        new_tools = tools
+        if removed_tools and self.context.tool_discovery is not None:
+            # The pre-shed list is stale; resolve the surviving authorized set.
+            new_tools = self.context.tool_discovery.tools_for_turn()
+            if new_tools == tools:
+                # No actual schema change: never claim or retry on it.
+                removed_tools = []
+
+        before_tokens = self._estimate_request_tokens(messages, tools)
+        candidate = messages
+        candidate_protected = protected
+        candidate_notice = notice_index
+        removed_messages = 0
+        for drop_all in (attempt > 0, True):
+            reduced, dropped, remapped, new_notice = _reduce_history_messages(
+                messages,
+                drop_all=drop_all,
+                protected_indexes=protected,
+                notice_index=notice_index,
+            )
+            if not dropped:
+                continue
+            if self._estimate_request_tokens(reduced, new_tools) < before_tokens:
+                candidate = reduced
+                candidate_protected = remapped
+                candidate_notice = new_notice
+                removed_messages = dropped
+                break
+
+        if candidate is messages and not removed_tools:
+            return None
+        return (
+            candidate,
+            new_tools,
+            removed_tools,
+            removed_messages,
+            candidate_protected,
+            candidate_notice,
+        )
+
+    def _overflow_compression_events(
+        self,
+        *,
+        before_tokens: int,
+        after_tokens: int,
+        input_budget: int,
+        removed_tools: list[str],
+        removed_messages: int,
+    ) -> list[str]:
+        """Emit the existing compression events describing the retry reduction."""
+        from app.services.chat_context import CompressionMeta
+
+        actions = ["provider_overflow_retry"]
+        if removed_messages:
+            actions.append("provider_overflow_history_omitted")
+        if removed_tools:
+            actions.append("provider_overflow_tool_schemas_shed")
+        limit = int(self.context.model_context_limit or 0)
+        meta = CompressionMeta(
+            stage="fallback",
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            input_budget=input_budget or max(before_tokens, 1),
+            trigger_ratio=0.9,
+            utilization_before=before_tokens / limit if limit else 0.0,
+            utilization_after=after_tokens / limit if limit else 0.0,
+            policy_used="provider_overflow_retry",
+            actions=actions,
+            context_limit=limit,
+            context_limit_source="configured" if limit else "default",
+        )
+        start = self._emit(
+            COMPRESSION_START, {"stage": "fallback", "trigger": "provider_overflow"}
+        )
+        end = self._emit(
+            COMPRESSION_END, {"compression": meta, "trigger": "provider_overflow"}
+        )
+        logger.warning(
+            "Provider context overflow; retrying with a reduced request "
+            "(messages_removed=%d, tools_shed=%d)",
+            removed_messages,
+            len(removed_tools),
+        )
+        return [event for event in (start, end) if event]
+
+    async def _prepare_overflow_retry(
+        self,
+        *,
+        exc: BaseException,
+        attempt: int,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None,
+        protected_indexes: set[int],
+        notice_index: int | None,
+        input_budget: int,
+    ) -> (
+        tuple[list[dict[str, Any]], list[Any] | None, set[int], list[str], int | None]
+        | None
+    ):
+        """Reduce a request view after a classified provider overflow."""
+        if not _is_provider_context_overflow(exc):
+            return None
+        before_tokens = self._estimate_request_tokens(messages, tools)
+        retry = await self._apply_context_overflow_retry(
+            attempt=attempt,
+            messages=messages,
+            tools=tools,
+            protected_indexes=protected_indexes,
+            notice_index=notice_index,
+        )
+        if retry is None:
+            return None
+        (
+            messages,
+            tools,
+            removed_tools,
+            removed_messages,
+            protected,
+            notice_index,
+        ) = retry
+        return (
+            messages,
+            tools,
+            protected,
+            self._overflow_compression_events(
+                before_tokens=before_tokens,
+                after_tokens=self._estimate_request_tokens(messages, tools),
+                input_budget=input_budget,
+                removed_tools=removed_tools,
+                removed_messages=removed_messages,
+            ),
+            notice_index,
+        )
+
+    async def _iter_overflow_retried_request(
+        self,
+        *,
+        request: Callable[[list[dict[str, Any]], list[Any] | None], Any],
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None,
+        protected_indexes: set[int],
+        input_budget: int,
+        finalize: Callable[[str, str | None], Any],
+        on_retry: Callable[[list[dict[str, Any]], list[Any] | None, set[int]], Any],
+        notice_index: int | None = None,
+        initial_retries: int = 0,
+    ) -> AsyncIterator[Any]:
+        """Run one request with bounded overflow retries before any output.
+
+        Used for non-streaming calls and for the first chunk of a streaming
+        call. Yields compression-event lists between attempts, then exactly
+        one ``_OverflowRetryResult``. ``finalize`` closes a failed attempt and
+        ``on_retry`` re-arms per-attempt accounting before the next one.
+        """
+        attempt = initial_retries
+        while True:
+            try:
+                value = await request(messages, tools)
+            except asyncio.CancelledError:
+                await finalize("cancelled", "cancelled")
+                raise
+            except ContextLengthError as exc:
+                prepared = await self._prepare_overflow_retry(
+                    exc=exc,
+                    attempt=attempt,
+                    messages=messages,
+                    tools=tools,
+                    protected_indexes=protected_indexes,
+                    notice_index=notice_index,
+                    input_budget=input_budget,
+                )
+                await finalize("failed", f"{type(exc).__name__}: {exc}")
+                if prepared is None:
+                    raise
+                (
+                    messages,
+                    tools,
+                    protected_indexes,
+                    events,
+                    notice_index,
+                ) = prepared
+                attempt += 1
+                await on_retry(messages, tools, protected_indexes)
+                if events:
+                    yield events
+                continue
+            yield _OverflowRetryResult(value, notice_index, attempt)
+            return
 
     async def run(self) -> AsyncIterator[str | None]:
         start_time = time.time()
@@ -1090,13 +1622,23 @@ class AgentLoop:
                 return
 
             # ---- provider context -------------------------------------------
+            # Tool discovery may change the visible schemas after each turn
+            # (``load_tools``), so the list is resolved once per iteration.
+            turn_tools = (
+                ctx.tool_discovery.tools_for_turn()
+                if ctx.tool_discovery is not None and not ctx.resume_tool_calls
+                else ctx.tools
+            )
+            if not ctx.resume_tool_calls:
+                ctx.active_resume_tool_visible_names = _tool_schema_names(turn_tools)
             messages_for_llm: list[dict[str, Any]] = []
+            prepared: Any = None
             if not ctx.resume_tool_calls:
                 tool_definition_tokens = (
                     ctx.count_tool_definition_tokens(
-                        ctx.tools, ctx.tokenizer_model_id, ctx.model_provider
+                        turn_tools, ctx.tokenizer_model_id, ctx.model_provider
                     )
-                    if ctx.count_tool_definition_tokens and ctx.tools
+                    if ctx.count_tool_definition_tokens and turn_tools
                     else 0
                 )
                 kwargs = self._context_kwargs(tool_definition_tokens)
@@ -1139,9 +1681,25 @@ class AgentLoop:
             client_disconnected = False
             pause_turn_pending = False
             resuming_calls = bool(ctx.resume_tool_calls)
+            if resuming_calls:
+                replay_visible_names = (
+                    set(ctx.resume_tool_visible_names)
+                    if ctx.resume_tool_visible_names is not None
+                    else None
+                )
+                if ctx.tool_discovery is not None and replay_visible_names is not None:
+                    ctx.tool_discovery.turn_visible_names = set(replay_visible_names)
+            else:
+                replay_visible_names = ctx.active_resume_tool_visible_names
+            ctx.active_resume_tool_visible_names = replay_visible_names
+            ctx.replay_tool_call_ids = (
+                set(ctx.resume_tool_call_ids) if resuming_calls else set()
+            )
 
             model_state: dict[str, Any] = {
-                "handle": await self._begin_model_trajectory(messages_for_llm)
+                "handle": await self._begin_model_trajectory(
+                    messages_for_llm, tools=turn_tools
+                )
                 if not resuming_calls
                 else None,
                 "finalized": False,
@@ -1172,12 +1730,100 @@ class AgentLoop:
                 ctx.resume_tool_calls = None
                 iteration -= 1
             elif ctx.streaming and ctx.team_chat_stream is not None:
-                stream = ctx.team_chat_stream(
-                    team_id=str(ctx.agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=ctx.model_id,
-                    tools=ctx.tools,
+                # Retry only before the stream yields anything. The request
+                # helper finalizes rejected attempts over a smaller view.
+                async def _stream_request(
+                    msgs: list[dict[str, Any]], tools: list[Any] | None
+                ) -> tuple[Any, AsyncIterator[Any]]:
+                    stream = ctx.team_chat_stream(
+                        team_id=str(ctx.agent.team_id),
+                        messages=msgs,
+                        model_id=ctx.model_id,
+                        tools=tools,
+                    )
+                    timed = iter_with_idle_timeout(
+                        stream,
+                        timeout_seconds=ctx.idle_timeout,
+                        activity_predicate=None,
+                    )
+                    try:
+                        return await timed.__anext__(), timed
+                    except StopAsyncIteration:
+                        return None, timed
+                    except ContextLengthError:
+                        close = getattr(stream, "aclose", None)
+                        if callable(close):
+                            try:
+                                await close()
+                            except Exception:
+                                logger.debug(
+                                    "Provider stream close failed", exc_info=True
+                                )
+                        raise
+
+                stream_protected = set(
+                    getattr(prepared, "protected_indexes", None) or ()
                 )
+                input_budget = int(
+                    getattr(getattr(prepared, "token_budget", None), "input_budget", 0)
+                    or 0
+                )
+                first_chunk: Any = None
+                timed_stream: AsyncIterator[Any] | None = None
+                stream_notice_index: int | None = None
+                stream_retry_count = 0
+
+                async def _on_stream_retry(
+                    retry_messages: list[dict[str, Any]],
+                    retry_tools: list[Any] | None,
+                    retry_protected: set[int],
+                ) -> None:
+                    nonlocal \
+                        messages_for_llm, \
+                        turn_tools, \
+                        stream_usage, \
+                        stream_protected
+                    messages_for_llm = retry_messages
+                    turn_tools = retry_tools
+                    stream_protected = retry_protected
+                    ctx.active_resume_tool_visible_names = _tool_schema_names(
+                        retry_tools
+                    )
+                    stream_usage = None
+                    model_state.update(
+                        handle=await self._begin_model_trajectory(
+                            messages_for_llm, tools=turn_tools
+                        ),
+                        finalized=False,
+                        finish_reason=None,
+                    )
+                    self._active_model_finalizer = finalize_model
+
+                async for item in self._iter_overflow_retried_request(
+                    request=_stream_request,
+                    messages=messages_for_llm,
+                    tools=turn_tools,
+                    protected_indexes=stream_protected,
+                    input_budget=input_budget,
+                    finalize=finalize_model,
+                    on_retry=_on_stream_retry,
+                ):
+                    if isinstance(item, _OverflowRetryResult):
+                        first_chunk, timed_stream = item.value
+                        stream_notice_index = item.notice_index
+                        stream_retry_count = item.retry_count
+                    else:
+                        for event in item:
+                            yield event
+                assert timed_stream is not None
+
+                async def _with_first(
+                    first: Any, rest: AsyncIterator[Any]
+                ) -> AsyncIterator[Any]:
+                    if first is not None:
+                        yield first
+                    async for item in rest:
+                        yield item
 
                 async def guarded_stream(iterator: Any) -> AsyncIterator[Any]:
                     try:
@@ -1191,11 +1837,7 @@ class AgentLoop:
                         raise
 
                 async for chunk in guarded_stream(
-                    iter_with_idle_timeout(
-                        stream,
-                        timeout_seconds=ctx.idle_timeout,
-                        activity_predicate=None,
-                    )
+                    _with_first(first_chunk, timed_stream)
                 ):
                     if chunk.usage:
                         stream_usage = chunk.usage
@@ -1300,25 +1942,65 @@ class AgentLoop:
                     await finalize_model("empty")
                     model_state.update(
                         handle=await self._begin_model_trajectory(
-                            messages_for_llm, fallback=True
+                            messages_for_llm, fallback=True, tools=turn_tools
                         ),
                         finalized=False,
                         finish_reason=None,
                     )
                     self._active_model_finalizer = finalize_model
-                    try:
-                        fallback_response = await ctx.team_chat(
+
+                    async def _fallback_request(
+                        msgs: list[dict[str, Any]], tools: list[Any] | None
+                    ) -> Any:
+                        return await ctx.team_chat(
                             team_id=str(ctx.agent.team_id),
-                            messages=messages_for_llm,
+                            messages=msgs,
                             model_id=ctx.model_id,
-                            tools=ctx.tools,
+                            tools=tools,
                         )
-                    except asyncio.CancelledError:
-                        await finalize_model("cancelled", "cancelled")
-                        raise
-                    except Exception as exc:
-                        await finalize_model("failed", f"{type(exc).__name__}: {exc}")
-                        raise
+
+                    async def _on_fallback_retry(
+                        retry_messages: list[dict[str, Any]],
+                        retry_tools: list[Any] | None,
+                        retry_protected: set[int],
+                    ) -> None:
+                        nonlocal messages_for_llm, turn_tools, stream_usage
+                        nonlocal stream_protected
+                        messages_for_llm = retry_messages
+                        turn_tools = retry_tools
+                        stream_protected = retry_protected
+                        ctx.active_resume_tool_visible_names = _tool_schema_names(
+                            retry_tools
+                        )
+                        stream_usage = None
+                        model_state.update(
+                            handle=await self._begin_model_trajectory(
+                                retry_messages, fallback=True, tools=retry_tools
+                            ),
+                            finalized=False,
+                            finish_reason=None,
+                        )
+                        self._active_model_finalizer = finalize_model
+
+                    # No provider output exists here (the stream produced no
+                    # chunk), so overflow retries are safe.
+                    fallback_response: Any = None
+                    async for item in self._iter_overflow_retried_request(
+                        request=_fallback_request,
+                        messages=messages_for_llm,
+                        tools=turn_tools,
+                        protected_indexes=stream_protected,
+                        input_budget=input_budget,
+                        finalize=finalize_model,
+                        on_retry=_on_fallback_retry,
+                        notice_index=stream_notice_index,
+                        initial_retries=stream_retry_count,
+                    ):
+                        if isinstance(item, _OverflowRetryResult):
+                            fallback_response = item.value
+                        else:
+                            for event in item:
+                                yield event
                     used_fallback = True
                     fallback_finish = getattr(fallback_response, "finish_reason", None)
                     model_state["finish_reason"] = (
@@ -1351,19 +2033,63 @@ class AgentLoop:
                         if event:
                             yield event
             elif ctx.team_chat is not None:
-                try:
-                    response = await ctx.team_chat(
+
+                async def _request(
+                    msgs: list[dict[str, Any]], tools: list[Any] | None
+                ) -> Any:
+                    return await ctx.team_chat(
                         team_id=str(ctx.agent.team_id),
-                        messages=messages_for_llm,
+                        messages=msgs,
                         model_id=ctx.model_id,
-                        tools=ctx.tools,
+                        tools=tools,
                     )
-                except asyncio.CancelledError:
-                    await finalize_model("cancelled", "cancelled")
-                    raise
-                except Exception as exc:
-                    await finalize_model("failed", f"{type(exc).__name__}: {exc}")
-                    raise
+
+                response: Any = None
+
+                async def _on_retry(
+                    retry_messages: list[dict[str, Any]],
+                    retry_tools: list[Any] | None,
+                    _retry_protected: set[int],
+                ) -> None:
+                    nonlocal messages_for_llm, turn_tools, stream_usage
+                    messages_for_llm = retry_messages
+                    turn_tools = retry_tools
+                    ctx.active_resume_tool_visible_names = _tool_schema_names(
+                        retry_tools
+                    )
+                    stream_usage = None
+                    model_state.update(
+                        handle=await self._begin_model_trajectory(
+                            retry_messages, tools=retry_tools
+                        ),
+                        finalized=False,
+                        finish_reason=None,
+                    )
+                    self._active_model_finalizer = finalize_model
+
+                async for item in self._iter_overflow_retried_request(
+                    request=_request,
+                    messages=messages_for_llm,
+                    tools=turn_tools,
+                    protected_indexes=set(
+                        getattr(prepared, "protected_indexes", None) or ()
+                    ),
+                    input_budget=int(
+                        getattr(
+                            getattr(prepared, "token_budget", None),
+                            "input_budget",
+                            0,
+                        )
+                        or 0
+                    ),
+                    finalize=finalize_model,
+                    on_retry=_on_retry,
+                ):
+                    if isinstance(item, _OverflowRetryResult):
+                        response = item.value
+                    else:
+                        for event in item:
+                            yield event
                 response_finish = getattr(response, "finish_reason", None)
                 model_state["finish_reason"] = (
                     str(getattr(response_finish, "value", response_finish))
@@ -1428,7 +2154,7 @@ class AgentLoop:
                     iteration_cache_creation_tokens,
                     iteration_total_input_tokens,
                 ) = ctx.calculate_usage(
-                    tools=ctx.tools,
+                    tools=turn_tools,
                     messages=messages_for_llm,
                     content=iteration_content,
                     reasoning_content=iteration_reasoning,
@@ -1604,6 +2330,7 @@ class AgentLoop:
                                 image_inventory=ctx.image_inventory,
                             )
                             processed_call_count += 1
+                            ctx.resume_tool_call_ids.discard(str(tc.id))
                             if record.get("interaction") is not None:
                                 pause_record = record
                                 pending_tool_calls.append(record)
@@ -1725,6 +2452,24 @@ class AgentLoop:
                     if ctx.pause_for_user is None or pause_tool_index is None:
                         raise RuntimeError("ask_user requires a durable pause callback")
                     interaction = pause_record["interaction"]
+                    remaining_calls = collected_tool_calls[processed_call_count:]
+                    if resuming_calls and remaining_calls:
+                        ctx.resume_tool_calls = list(remaining_calls)
+                        ctx.resume_tool_call_ids = {
+                            str(call.id) for call in remaining_calls
+                        }
+                        ctx.replay_tool_call_ids = {
+                            str(call.id) for call in remaining_calls
+                        }
+                        ctx.resume_tool_visible_names = (
+                            set(ctx.active_resume_tool_visible_names)
+                            if ctx.active_resume_tool_visible_names is not None
+                            else None
+                        )
+                    else:
+                        ctx.resume_tool_calls = None
+                        ctx.resume_tool_call_ids.clear()
+                        ctx.resume_tool_visible_names = None
                     await ctx.pause_for_user(
                         tool_call_id=pause_record["id"],
                         tool_name=pause_record["name"],
@@ -1733,9 +2478,12 @@ class AgentLoop:
                         round_index=pause_tool_index,
                         iteration_index=iteration,
                         display_name=pause_record["display_name"],
-                        remaining_tool_calls=collected_tool_calls[
-                            processed_call_count:
-                        ],
+                        resume_tool_visible_names=(
+                            sorted(ctx.active_resume_tool_visible_names)
+                            if ctx.active_resume_tool_visible_names is not None
+                            else None
+                        ),
+                        remaining_tool_calls=remaining_calls,
                     )
                     call_sse = build_tool_call_sse_event(
                         tool_call_id=pause_record["id"],

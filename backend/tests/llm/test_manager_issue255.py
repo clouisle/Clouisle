@@ -160,3 +160,11 @@ def test_handle_error_classifies_provider_failures(exception, error_type):
 
     assert isinstance(error, error_type)
     assert str(exception) in str(error)
+
+
+def test_http_401_without_authentication_word_is_authentication_error():
+    error = Exception("Invalid token")
+    error.status_code = 401
+    assert isinstance(
+        ModelManager()._handle_error(error, "provider", "model"), AuthenticationError
+    )

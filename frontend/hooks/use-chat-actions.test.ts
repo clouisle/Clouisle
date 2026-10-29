@@ -527,6 +527,7 @@ describe('useChat failure and lifecycle actions', () => {
     try {
       options = {
         agentId: 'agent-1',
+        conversationId: 'conversation-1',
         initialMessages: [
           { id: messageId, role: 'assistant', parts: [{ type: 'text', text: 'stale answer' }], createdAt: new Date() },
         ],

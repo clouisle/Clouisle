@@ -358,27 +358,27 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       session.state.ragSources,
       streaming
     )
-    setMessages((previous) => previous.map((message) => (
-      message.id === messageId
-        ? {
-            ...message,
-            parts,
-            metadata: {
-              ...message.metadata,
-              ...(streaming
-                ? { isLoading: true }
-                : {
-                    isLoading: false,
-                    isManuallyStopped: false,
-                    isError: false,
-                    errorMessage: undefined,
-                    preservedPartialProgress: undefined,
-                    ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
-                  }),
-            },
-          }
-        : message
-    )))
+    setMessages((previous) => {
+      const message = previous.find((item) => item.id === messageId)
+      const next: ChatMessage = {
+        ...(message ?? { id: messageId, role: 'assistant', createdAt: new Date() }),
+        parts,
+        metadata: {
+          ...message?.metadata,
+          ...(streaming
+            ? { isLoading: true }
+            : {
+                isLoading: false,
+                isManuallyStopped: false,
+                isError: false,
+                errorMessage: undefined,
+                preservedPartialProgress: undefined,
+                ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
+              }),
+        },
+      }
+      return message ? previous.map((item) => item.id === messageId ? next : item) : [...previous, next]
+    })
   }, [])
 
   const scheduleSessionRender = useCallback((session: AssistantStreamSession) => {
@@ -473,18 +473,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     targetConversationId = conversationIdRef.current,
     isCurrent?: () => boolean,
     prefetched?: { messages: ChatMessage[] },
+    preserveTransientState = true,
   ) => {
     if (!targetConversationId) return
     const { messages: convertedMessages } = prefetched ?? await api.getConversation(targetConversationId)
     if (isCurrent && !isCurrent()) return
     const currentById = new Map(messagesRef.current.map((message) => [message.id, message]))
+    const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
     const nextMessages = convertedMessages.map((message) => {
       const previous = currentById.get(message.id)
+      if (!preserveTransientState) {
+        if (previous && areChatMessagesEqual(previous, message)) return previous
+        return message
+      }
       if (!previous?.metadata) {
         if (previous && areChatMessagesEqual(previous, message)) return previous
         return message
       }
-      const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
       const transientMetadata = Object.fromEntries(
         transientKeys
           .filter((key) => {
@@ -500,6 +505,28 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (previous && areChatMessagesEqual(previous, resolvedMessage)) return previous
       return resolvedMessage
     })
+    if (preserveTransientState) {
+      for (const previous of messagesRef.current) {
+        const failedRunConversationId = previous.metadata?.failedRunConversationId
+        if (previous.id.startsWith('assistant-run-') && failedRunConversationId !== targetConversationId) continue
+        const failedRunAnchorMessageId = previous.metadata?.failedRunAnchorMessageId
+        const anchorIndex = typeof failedRunAnchorMessageId === 'string'
+          ? convertedMessages.findIndex((message) => message.id === failedRunAnchorMessageId)
+          : -1
+        const branchStillCurrent = anchorIndex === convertedMessages.length - 1
+          || (typeof failedRunAnchorMessageId !== 'string' && convertedMessages.length === 0)
+        const belongsToTargetRun = previous.id.startsWith('assistant-run-')
+          && failedRunConversationId === targetConversationId
+          && branchStillCurrent
+        if (
+          previous.metadata?.isError
+          && !nextMessages.some((message) => message.id === previous.id)
+          && (isValidUUID(previous.id) || belongsToTargetRun)
+        ) {
+          nextMessages.push(previous)
+        }
+      }
+    }
     if (
       nextMessages.length === messagesRef.current.length &&
       nextMessages.every((msg, idx) => msg === messagesRef.current[idx])
@@ -588,12 +615,18 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       session.state.taskState.compression = 'error'
       updateLatestTimelineTask(session.state.segments, 'compression', 'error')
     }
+    const messageId = session.displayMessageId || session.backendMessageId
     const errorText = getErrorMessage(chatError, tError, tAuth)
     const { parts, preservedProgress } = buildErroredMessageParts({
       ...session.state,
       errorText,
     })
-    const messageId = session.displayMessageId || session.backendMessageId
+    const failedRunContext = messageId?.startsWith('assistant-run-')
+      ? {
+          failedRunConversationId: session.conversationId,
+          failedRunAnchorMessageId: [...messagesRef.current].reverse().find((message) => message.role === 'user')?.id,
+        }
+      : {}
     if (messageId) {
       setMessages((previous) => previous.map((message) => (
         message.id === messageId
@@ -607,6 +640,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 errorMessage: errorText,
                 errorCode: chatError.code,
                 preservedPartialProgress: preservedProgress,
+                ...failedRunContext,
               },
             }
           : message
@@ -868,7 +902,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         } else if (!terminalSession.receivedMessageEnd) {
           finishAssistantMessage(terminalSession)
         }
-        if (terminalSession.reloadAfterTerminal && terminalConversationId) {
+        if (terminalSession.reloadAfterTerminal && terminalConversationId && terminalStatus !== 'failed') {
           void reloadConversationMessages(
             terminalConversationId,
             () => conversationIdRef.current === terminalConversationId,
@@ -1076,6 +1110,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           if (!isCurrentReconnect()) return
         }
         if (!isCurrentReconnect()) return
+        if (current.status === 'failed') {
+          const failedSession = ensureSession(current.canonical_message_id ?? `assistant-run-${stored.runId}`, stored.runId)
+          if (failedSession) {
+            const chatError: ChatError = { message: current.error_message || 'Run failed' }
+            markAssistantError(failedSession, chatError)
+            onError?.(chatError)
+          }
+        }
         disconnectLocalSubscription()
         if (activeSessionRef.current?.runId === stored.runId) activeSessionRef.current = null
         sessionsByRunRef.current.delete(stored.runId)
@@ -1125,6 +1167,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     clearStoredRunSnapshot,
     disconnectLocalSubscription,
     ensureSession,
+    markAssistantError,
+    onError,
     reloadConversationMessages,
     renderSession,
     runApi,
@@ -1547,12 +1591,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const switchVersion = useCallback(async (messageId: string, versionIndex: number) => {
     if (statusRef.current !== 'idle' || isReconnectableRunStatus(runStatusRef.current)) return
     const message = messagesRef.current.find((item) => item.id === messageId)
-    if (!message) return
+    const targetConversationId = conversationIdRef.current
+    if (!message || !targetConversationId) return
     try {
       const versions = await api.getMessageVersions(agentId, messageId)
-      if (versionIndex < 0 || versionIndex >= versions.length) return
+      if (conversationIdRef.current !== targetConversationId || versionIndex < 0 || versionIndex >= versions.length) return
       await api.switchMessageVersion(agentId, messageId, versions[versionIndex].id)
-      await reloadConversationMessages()
+      if (conversationIdRef.current !== targetConversationId) return
+      await reloadConversationMessages(targetConversationId, () => conversationIdRef.current === targetConversationId, undefined, false)
     } catch (reason) {
       console.error('Failed to switch version:', reason)
     }
@@ -2075,13 +2121,18 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
   return state
 }
 
-function appendTimelineTask(segments: ContentSegment[], taskType: TaskPart['taskType']) {
+function appendTimelineTask(
+  segments: ContentSegment[],
+  taskType: TaskPart['taskType'],
+  info?: TaskPart['info']
+) {
   segments.push({
     type: 'task',
     task: {
       type: 'task',
       taskType,
       state: 'running',
+      ...(info === undefined ? {} : { info }),
     },
   })
 }
@@ -2345,10 +2396,14 @@ function applyAssistantStreamEvent(
       return true
     }
 
-    case 'compression_start':
+    case 'compression_start': {
       state.taskState.compression = 'running'
-      appendTimelineTask(state.segments, 'compression')
+      const startInfo = event.data && typeof event.data === 'object' && Object.keys(event.data).length > 0
+        ? event.data as unknown as Record<string, unknown>
+        : undefined
+      appendTimelineTask(state.segments, 'compression', startInfo)
       return true
+    }
 
     case 'compression_end':
       state.taskState.compression = 'completed'

@@ -164,6 +164,7 @@ async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkey
     )
     step_message = SimpleNamespace(round_id=round_id, is_round_canonical=False)
     final_message = SimpleNamespace(
+        id=uuid4(),
         round_id=round_id,
         round_role=MessageRoundRole.ASSISTANT_FINAL,
         is_round_canonical=True,
@@ -173,6 +174,10 @@ async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkey
         "build_round_steps_map",
         AsyncMock(return_value={round_id: [{"content": "tool result"}]}),
     )
+    query = MagicMock()
+    query.annotate.return_value = query
+    query.values = AsyncMock(return_value=[])
+    monkeypatch.setattr(chat._AgentRunModel, "filter", MagicMock(return_value=query))
     validated = MagicMock()
     validated.model_dump.side_effect = [{"role": "user"}, {"role": "assistant"}]
     monkeypatch.setattr(
@@ -187,6 +192,48 @@ async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkey
         {"role": "user"},
         {"role": "assistant", "steps": [{"content": "tool result"}]},
     ]
+
+
+@pytest.mark.asyncio
+async def test_history_attaches_only_events_bound_to_visible_message_and_round(
+    monkeypatch,
+):
+    round_id, message_id = uuid4(), uuid4()
+    final = SimpleNamespace(
+        id=message_id,
+        round_id=round_id,
+        round_role=MessageRoundRole.ASSISTANT_FINAL,
+        is_round_canonical=True,
+    )
+    monkeypatch.setattr(
+        chat, "build_round_steps_map", AsyncMock(return_value={round_id: []})
+    )
+    validated = MagicMock()
+    validated.model_dump.return_value = {"id": message_id}
+    monkeypatch.setattr(
+        chat.MessageOut, "model_validate", MagicMock(return_value=validated)
+    )
+    valid = {
+        "message_id": str(message_id),
+        "round_id": str(round_id),
+        "timestamp": "2026-01-01T00:00:00Z",
+        "payload": {"stage": "micro"},
+    }
+    stale = {**valid, "round_id": str(uuid4())}
+    query = MagicMock()
+    query.annotate.return_value = query
+    query.values = AsyncMock(
+        return_value=[
+            {
+                "canonical_message_id": message_id,
+                "active_round_id": round_id,
+                "compression_events": [valid, stale],
+            }
+        ]
+    )
+    monkeypatch.setattr(chat._AgentRunModel, "filter", MagicMock(return_value=query))
+    result = await chat.build_message_round_payloads([final])
+    assert result[0]["compression_events"] == [valid]
 
 
 @pytest.mark.asyncio

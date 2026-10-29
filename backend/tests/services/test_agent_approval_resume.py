@@ -312,6 +312,131 @@ async def test_expiry_resumes_agent_run_with_tool_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_park_run_waiting_merges_checkpoint_with_real_database(monkeypatch):
+    async with _database(monkeypatch):
+        user = await _user()
+        _team, _agent, conversation = await _team_and_agent(user)
+        round_id = uuid4()
+        checkpoint = {"mode": "semantic", "summary_text": "keep me"}
+        run = await _waiting_run(
+            _agent,
+            conversation,
+            user,
+            status=AgentRunStatus.RUNNING,
+            round_id=round_id,
+            payload={
+                "history_override": [{"role": "user", "content": "fresh"}],
+                "resume_tool_result": {"tool_call_id": "consumed"},
+                "pending_tool_calls_cipher": "consumed-ciphertext",
+                "pending_tool_visible_names": ["consumed-tool"],
+                "active_round_checkpoint": checkpoint,
+                "compression_events": [
+                    {"type": "compression_end", "payload": {"before_tokens": 900}}
+                ],
+            },
+        )
+        # The worker's in-memory instance predates the checkpoint and carries a
+        # stale copy in its resume payload.
+        run.worker_payload = {}
+        await agent_run_store.park_run_waiting(
+            run,
+            tool_call_id="call-1",
+            tool_name="custom_resume_tool",
+            tool_input={"interaction_kind": "tool_approval"},
+            round_id=round_id,
+            round_index=6,
+            iteration_index=3,
+            worker_payload={
+                "history_override": [{"role": "user", "content": "stale"}],
+                "resume": True,
+                "compression_events": [],
+                "active_round_checkpoint": {
+                    "mode": "readback_only",
+                    "summary_text": None,
+                },
+            },
+        )
+        fresh = await AgentRun.get(id=run.id)
+        assert fresh.status == AgentRunStatus.WAITING
+        # The locked row value wins for the checkpoint; resume fields win for
+        # everything the caller actually supplies.
+        assert fresh.worker_payload["active_round_checkpoint"] == checkpoint
+        assert fresh.worker_payload["resume"] is True
+        assert fresh.worker_payload["compression_events"] == [
+            {"type": "compression_end", "payload": {"before_tokens": 900}}
+        ]
+        assert "resume_tool_result" not in fresh.worker_payload
+        assert "pending_tool_calls_cipher" not in fresh.worker_payload
+        assert "pending_tool_visible_names" not in fresh.worker_payload
+        assert fresh.worker_payload["history_override"] == [
+            {"role": "user", "content": "stale"}
+        ]
+
+
+@pytest.mark.asyncio
+async def test_compression_events_survive_approval_pause_and_remain_visible(
+    monkeypatch,
+):
+    import asyncio
+    from types import SimpleNamespace
+    from app.api.v1.endpoints.chat import build_message_round_payloads
+    from app.models.agent import MessageRole, MessageRoundRole
+    from app.services.agent_run_worker import MicroBatchingCollector
+
+    async with _database(monkeypatch):
+        user = await _user()
+        _, agent, conversation = await _team_and_agent(user)
+        round_id = uuid4()
+        message = await Message.create(
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT,
+            content="done",
+            round_id=round_id,
+            round_role=MessageRoundRole.ASSISTANT_FINAL,
+            is_round_canonical=True,
+        )
+        run = await _waiting_run(
+            agent, conversation, user, status=AgentRunStatus.RUNNING, round_id=round_id
+        )
+        run.canonical_message_id = message.id
+        await run.save(update_fields=["canonical_message_id"])
+        events = asyncio.Queue()
+        published = []
+
+        async def publish(event_type, payload, **kwargs):
+            published.append((event_type, payload, kwargs))
+
+        collector = MicroBatchingCollector(
+            event_queue=events,
+            stream=SimpleNamespace(publish=publish),
+            run=run,
+            canonical_message_id=message.id,
+        )
+        task = asyncio.create_task(collector.run_loop())
+        await events.put(
+            (
+                "compression_end",
+                {"stage": "micro", "before_tokens": 900, "after_tokens": 500},
+            )
+        )
+        await events.put(None)
+        await task
+        await agent_run_store.park_run_waiting(
+            run,
+            tool_call_id="call",
+            tool_name="tool",
+            tool_input={},
+            round_id=round_id,
+            round_index=1,
+            iteration_index=1,
+            worker_payload={"compression_events": []},
+        )
+        payloads = await build_message_round_payloads([message])
+        assert payloads[0]["compression_events"][0]["payload"]["before_tokens"] == 900
+        assert published[0][0] == "compression_end"
+
+
+@pytest.mark.asyncio
 async def test_post_park_recheck_closes_decision_before_waiting_race(monkeypatch):
     async with _database(monkeypatch):
         user = await _user()

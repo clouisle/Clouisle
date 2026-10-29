@@ -31,7 +31,10 @@ class ApiError extends Error {
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
-  useTranslations: () => (key: string, values?: Record<string, unknown>) => values?.seconds === undefined ? key : `${key}:${values.seconds}`,
+  useTranslations: () => Object.assign(
+    (key: string, values?: Record<string, unknown>) => values?.seconds === undefined ? key : `${key}:${values.seconds}`,
+    { has: (key: string) => !key.startsWith('custom') },
+  ),
 }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('lucide-react', () => ({ Loader2: () => null, Mail: () => null, CheckCircle2: () => null, ArrowLeft: () => null, ChevronDown: () => null }))
@@ -157,7 +160,7 @@ test('covers terms, translated API validation, and captcha callbacks', async () 
   register.mockRejectedValueOnce({ errors: { password: ['password_min_length:8'], username: ['custom:fake'] } })
   await submit()
   expect(container.textContent).toContain('password_min_length')
-  expect(container.textContent).toContain('custom')
+  expect(container.textContent).toContain('custom:fake')
 })
 
 test('submits accepted terms and the solved captcha in the registration contract', async () => {

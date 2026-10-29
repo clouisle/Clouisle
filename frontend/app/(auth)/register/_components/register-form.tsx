@@ -216,11 +216,7 @@ export function RegisterForm() {
     for (const [field, errorKeys] of Object.entries(errors)) {
       const translatedErrors = errorKeys.map(errorKey => {
         const { key, params } = parseErrorKey(errorKey)
-        try {
-          return t(key, params)
-        } catch {
-          return errorKey
-        }
+        return t.has(key) ? t(key, params) : errorKey
       })
       result[field] = translatedErrors.join('; ')
     }

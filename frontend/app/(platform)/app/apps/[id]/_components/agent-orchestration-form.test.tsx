@@ -211,6 +211,12 @@ describe('AgentOrchestrationForm', () => {
 
     expect(onUpdate.mock.calls.at(-1)?.[0].enable_user_input_request).toBe(true)
   })
+  test('gives the context-compression toggle an accessible name', () => {
+    const tree = render().tree
+    const toggle = (findByTestId(tree, 'agent-compression-section').props.action as Node)
+
+    expect(toggle.props['aria-label']).toBe('compression.title')
+  })
 
 
   test('loads only current-team resources and tolerates a rejected resource request', async () => {
@@ -315,6 +321,52 @@ describe('AgentOrchestrationForm', () => {
       image_generation_config: expect.objectContaining({ default_width: 256 }),
       video_generation_config: expect.objectContaining({ poll_interval_ms: 30000 }),
     }))
+  })
+
+  test('publishes context compression settings and clamps the summary budget', () => {
+    const compressedAgent = {
+      ...agent,
+      context_compression_config: { enabled: false, summary_max_tokens: 512, emit_sse_events: false },
+    } as never
+    const onUpdate = mock(() => undefined)
+    let tree = render(onUpdate, compressedAgent).tree
+
+    expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({
+      context_compression_config: { enabled: false, summary_max_tokens: 512, emit_sse_events: false },
+    }))
+    const initialCard = findByTestId(tree, 'agent-compression-section')
+    expect((initialCard.props.action as Node).props.checked).toBe(false)
+
+    ;((initialCard.props.action as Node).props.onCheckedChange as (checked: boolean) => void)(true)
+    tree = render(onUpdate, compressedAgent).tree
+    expect(onUpdate.mock.calls.at(-1)?.[0].context_compression_config).toEqual(expect.objectContaining({ enabled: true }))
+
+    ;(findByTestId(tree, 'agent-compression-section').props.onToggle as () => void)()
+    tree = render(onUpdate, compressedAgent).tree
+    const budgetInput = descendants(findByTestId(tree, 'agent-compression-section'))
+      .find((node) => node.type === Input && node.props.min === 128 && node.props.max === 8000)!
+    expect(budgetInput.props.value).toBe(512)
+
+    change(budgetInput, '99999')
+    tree = render(onUpdate, compressedAgent).tree
+    expect(onUpdate.mock.calls.at(-1)?.[0].context_compression_config).toEqual(expect.objectContaining({ summary_max_tokens: 8000 }))
+
+    change(descendants(findByTestId(tree, 'agent-compression-section'))
+      .find((node) => node.type === Input && node.props.min === 128 && node.props.max === 8000)!, '0')
+    tree = render(onUpdate, compressedAgent).tree
+    const blurredInput = descendants(findByTestId(tree, 'agent-compression-section'))
+      .find((node) => node.type === Input && node.props.min === 128 && node.props.max === 8000)!
+    ;(blurredInput.props.onBlur as () => void)()
+    tree = render(onUpdate, compressedAgent).tree
+    expect(onUpdate.mock.calls.at(-1)?.[0].context_compression_config).toEqual(expect.objectContaining({ summary_max_tokens: 128 }))
+
+    const expandedCard = findByTestId(tree, 'agent-compression-section')
+    const emitSwitch = descendants(expandedCard)
+      .find((node) => node.type === Switch && node !== expandedCard.props.action)!
+    expect(emitSwitch.props.checked).toBe(false)
+    ;(emitSwitch.props.onCheckedChange as (checked: boolean) => void)(true)
+    render(onUpdate, compressedAgent)
+    expect(onUpdate.mock.calls.at(-1)?.[0].context_compression_config).toEqual(expect.objectContaining({ emit_sse_events: true }))
   })
 
   test('covers card actions, selection callbacks, and all remaining validation bounds', async () => {

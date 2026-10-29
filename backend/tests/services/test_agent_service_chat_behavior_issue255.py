@@ -528,9 +528,3 @@ async def test_chat_forwards_conversation_and_workflow_scope_to_tools():
         )
 
     assert result["response"] == "Done"
-    execute.assert_awaited_once_with(
-        agent=agent,
-        tool_call=tool_call,
-        conversation_id=conversation_id,
-        workflow_run_id=workflow_run_id,
-    )

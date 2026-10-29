@@ -388,12 +388,14 @@ def _skill_definition_version(skill: Any, config: dict[str, Any]) -> int:
 
 def _is_policy_managed_tool(tool_name: str) -> bool:
     from app.api.v1.endpoints.chat_helpers.asset_tools import ASSET_TOOL_NAMES
+    from app.services.tool_result_readback import READ_TOOL_RESULT_TOOL
 
     return (
         tool_name.startswith("skill_")
         or tool_name == "knowledge_search"
         or tool_name in _CHAT_MEMORY_TOOL_NAMES
         or tool_name in ASSET_TOOL_NAMES
+        or tool_name == READ_TOOL_RESULT_TOOL
     )
 
 
@@ -521,6 +523,33 @@ async def _resolve_policy_invoke(
             )
 
         return definition, invoke
+
+    from app.services.tool_result_readback import (
+        READ_TOOL_RESULT_TOOL,
+        build_definition_descriptor,
+        execute_read_tool_result,
+    )
+
+    if tool_name == READ_TOOL_RESULT_TOOL:
+        # Pure read of persisted conversation data: the definition is
+        # synthetic (no registry entry) and the operation only resolves an
+        # already-executed result, never a new tool call.
+        definition = await get_builtin_definition(
+            agent.team_id,
+            tool_name,
+            descriptor=build_definition_descriptor(),
+        )
+
+        async def invoke_result(parameters: dict, _resolved: Any) -> Any:
+            return await execute_read_tool_result(
+                parameters,
+                agent=agent,
+                user=user,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+            )
+
+        return definition, invoke_result
 
     definition = await get_builtin_definition(agent.team_id, tool_name)
 

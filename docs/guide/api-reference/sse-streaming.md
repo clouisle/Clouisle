@@ -120,8 +120,8 @@ data: <json_data>
 | `tool_call` | Tool call with tool name and the original model-supplied arguments |
 | `tool_result` | Tool execution result |
 | `media_result` | UI-only media result; inspect `success`, and fetch protected URLs with authentication; it is not LLM replay text |
-| `compression_start` | Context compression started |
-| `compression_end` | Context compression finished |
+| `compression_start` | Context compression started; data contains `stage` (`macro`/`micro` for planned context summarization, `fallback` for a provider-overflow retry) and `trigger` |
+| `compression_end` | Context reduction finished; data contains `stage` (`macro`/`micro` for summarization, `fallback` for a provider-overflow retry), `actions`, estimated token counts, and budget metadata |
 | `output_truncated` | Output was truncated due to max output token limit |
 | `iteration_cap_reached` | The agent reached the max tool-call iteration cap |
 | `message_end` | Message ended with token usage statistics |

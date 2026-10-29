@@ -403,6 +403,104 @@ async def test_incomplete_tool_protocol_never_cut_or_summarized(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_steering_protects_full_round_and_asset_view_is_not_current_goal(
+    monkeypatch,
+):
+    agent = _agent()
+    conversation = _conversation()
+    old_round_id = uuid4()
+    active_round_id = uuid4()
+    call_id = "active-tool"
+    messages = [
+        SYSTEM,
+        Message(role=MessageRole.USER, content="old question"),
+        Message(role=MessageRole.ASSISTANT, content="old answer"),
+        Message(role=MessageRole.USER, content="active question"),
+        Message(
+            role=MessageRole.ASSISTANT,
+            content="working",
+            tool_calls=[_tool_call(call_id)],
+        ),
+        Message(
+            role=MessageRole.TOOL,
+            name="tool",
+            content="tool result",
+            tool_call_id=call_id,
+        ),
+        Message(role=MessageRole.USER, content="steering instruction"),
+        Message(role=MessageRole.USER, content="synthetic viewed asset"),
+    ]
+    rows = [
+        {"role": "system", "round_id": None, "source_role": "system"},
+        {"role": "user", "round_id": old_round_id, "source_role": "user"},
+        {"role": "assistant", "round_id": old_round_id, "source_role": "assistant"},
+        {"role": "user", "round_id": active_round_id, "source_role": "user"},
+        {
+            "role": "assistant",
+            "round_id": active_round_id,
+            "source_role": "assistant",
+            "tool_calls": [_tool_call(call_id)],
+        },
+        {
+            "role": "tool",
+            "round_id": active_round_id,
+            "source_role": "tool",
+            "tool_call_id": call_id,
+        },
+        {
+            "role": "user",
+            "round_id": active_round_id,
+            "source_role": "user",
+        },
+        {
+            "role": "user",
+            "round_id": active_round_id,
+            "source_role": "asset_view",
+        },
+    ]
+
+    async def build_messages(**_kwargs):
+        return messages, set(), rows
+
+    def estimate(messages_, *, model_id, provider):
+        del model_id, provider
+        sizes = {
+            "system": 100,
+            "old question": 44_000,
+            "old answer": 44_000,
+            "active question": 8_000,
+            "working": 8_000,
+            "tool result": 8_000,
+            "steering instruction": 8_000,
+        }
+        return sum(
+            sizes.get(m.content, 8_000) if isinstance(m.content, str) else 8_000
+            for m in messages_
+        )
+
+    _install(monkeypatch, build=build_messages, estimate=estimate)
+
+    async def restore(messages_, *_args):
+        return messages_
+
+    monkeypatch.setattr(chat_context, "_restore_round_checkpoint", restore)
+    plan = await chat_context.build_context_plan(
+        agent=agent,
+        conversation=conversation,
+        user_message="steering instruction",
+        model_id="model",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        include_current_user_message=True,
+        protected_round_id=active_round_id,
+    )
+    assert plan.current_user_index == 6
+    assert plan.compression.current_turn_tokens == 40_000
+    assert plan.tail_start_index == 3
+    assert plan.summarized == messages[1:3]
+
+
+@pytest.mark.anyio
 async def test_incremental_summary_keeps_previous_and_moves_watermark(monkeypatch):
     """Previous summary carried into the summarizer; watermark advances to the
     last newly covered message; recent newly covered round stays raw."""

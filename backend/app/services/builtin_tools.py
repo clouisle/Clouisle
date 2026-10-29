@@ -43,6 +43,7 @@ _INTERNAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_memory": "Search memory",
     "get_memory_subgraph": "Read a memory subgraph",
     "file_download": "Download a file",
+    "read_tool_result": "Recover a persisted tool result from this conversation",
 }
 
 #: Internal chat/agent tools default to allow; an Agent's ``require_approval``

@@ -575,6 +575,48 @@ data: {
   - `chat()` / `chat_stream()` / `regenerate_message()` / `edit_user_message_stream()`: 四条链路统一在 provider 调用前执行预检
   - `chat_sse.py`: 发送 compression_start / compression_end 事件
 
+#### 2.5.4 工具发现（大工具集按需加载）
+
+当 Agent 配置了大型 MCP/自定义工具目录时，全量工具 schema 会在每个模型轮次占用大量输入预算。工具发现（Tiered Tool Discovery）把**已授权**工具目录分层：首轮只发送常驻工具 + 三个元工具，其余工具按需检索并加载。
+
+**常驻工具（始终发送）：**
+
+- `ask_user`、`knowledge_search`、`read_tool_result`
+- 附件工具：`list_assets`、`inspect_asset`、`read_asset`、`search_asset`、`materialize_asset`、`view_asset`
+
+**元工具（仅在发现模式出现）：**
+
+| 工具 | 作用 |
+|------|------|
+| `discover_tools(query?, limit?, offset?)` | 在授权目录内按关键词检索，返回名称、简短描述、参数名与是否已加载（不返回完整 schema）。支持中英文：拉丁词按词匹配，中文按子串 + 二字组（bigram）匹配名称与描述。省略 query 可分页列出全部工具；响应含 `offset`/`limit`/`next_offset`（为 null 表示已到末页） |
+| `load_tools(names[])` | 按精确名称加载工具，下一轮模型调用即可调用；可重复检索。达到加载上限时按 LRU 淘汰旧的已加载工具（真实调用会刷新使用顺序）并返回 `evicted`；单次请求超过上限时保留请求顺序、把尾部放入 `not_loaded_limit_reached`。加载 Skill 时先为 Skill 与其沙箱同伴腾出空间，不会驱逐本次请求的工具 |
+| `unload_tools(names[])` | 主动卸载已加载工具释放名额；常驻工具不可卸载，卸载后需重新 `load_tools` 才能调用 |
+
+**触发条件：** 非常驻工具数超过 20 个，或工具 schema 序列化体积估算超过 4096 tokens。低于阈值时行为与原来完全一致（全量下发）。
+
+**授权与执行边界：**
+
+- 目录只来自现有 `get_agent_tools()` 为该 Agent 生成的授权定义，不额外查询或扩大工具集合。
+- 自定义工具在进入目录前复用 `authorize_tool_context()` 复核；被拒绝的 schema 既不暴露也不可加载（MCP 工具在列举时已按连接/团队共享完成授权）。
+- 元工具在 `execute_tool_call` 之前被拦截，仅执行只读目录操作；其他工具调用仍走原有 `execute_tool_call`，连接、审批与幂等语义不变。
+- 发现模式下，模型直接调用**未加载**的工具会被拒绝并提示先 `discover_tools` / `load_tools`；常驻工具与已加载工具可直接调用。授权仍由原执行边界最终裁决，发现模式既不扩大也不绕过授权。
+- 加载 `skill_*` 工具时会一并加载其沙箱原语（`read` / `edit` / `write` / `bash`，若存在），避免技能工具加载后不可用。
+- 恢复运行时，`AgentRun.worker_payload["discovered_tools"]` 中的名称会先与重新构建的授权目录比对，失效名称（配置变更、共享撤销、工具停用）被丢弃。
+
+**持久化与恢复：**
+
+- 每次 `load_tools` / `unload_tools` 成功后写入 `AgentRun.worker_payload["discovered_tools"]`（对该行加锁后合并，不覆盖并发写入的 `history_override` / 审批等字段）；审批暂停、`ask_user` 暂停、Worker 重试均从该字段恢复。
+- 已加载工具数量上限 24；达到上限后继续加载会按 LRU 淘汰最久未使用的已加载工具（模型实际调用已加载工具会刷新其顺序；顺序随下一次加载/卸载或暂停快照持久化），`unload_tools` 可主动释放名额，因此长任务不会被永久卡住。
+
+**实现位置：**
+
+- `backend/app/services/tool_discovery.py`：目录构建、检索、加载、授权复核
+- `backend/app/services/agent_loop.py`：`AgentLoopContext.tool_discovery`，每轮调用 `tools_for_turn()` 取代 `ctx.tools`
+- `backend/app/services/agent_run_worker.py`：构建/恢复状态、包装 `execute_tool_call`、暂停时持久化
+- `backend/app/services/agent.py`：工作流 Agent 节点的同一套发现逻辑（内存态，无跨轮持久化）
+
+**限制：** 元工具的名称/描述当前为英文，界面展示名与本地化文案属于后续 UI 工作；发现模式不改变模型自身的工具选择能力，若模型未检索到所需工具，可继续以不同关键词重复检索。
+
 ---
 
 ## 3. 工作流编排

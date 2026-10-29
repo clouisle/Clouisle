@@ -171,6 +171,15 @@ def build_compression_events(
         "context_limit": compression.context_limit,
         "output_reserve": compression.output_reserve,
         "safety_margin": compression.safety_margin,
+        "system_tokens": getattr(compression, "system_tokens", 0),
+        "tool_definition_tokens": getattr(compression, "tool_definition_tokens", 0),
+        "current_turn_tokens": getattr(compression, "current_turn_tokens", 0),
+        "context_limit_source": getattr(
+            compression, "context_limit_source", "configured"
+        ),
+        "active_round_checkpoint": getattr(
+            compression, "active_round_checkpoint", None
+        ),
         "note": "; ".join(note_parts),
     }
     end_event = (

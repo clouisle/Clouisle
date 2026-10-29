@@ -934,6 +934,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Code tool execution failed",
         "zh": "代码工具执行失败",
     },
+    "context_budget_exceeded": {
+        "en": "The required context exceeds the model's capacity. Shorten your message or attachments, reduce enabled tools, or choose a model with a larger context window.",
+        "zh": "必要的上下文超出模型容量。请缩短消息或附件、减少启用的工具，或选择上下文窗口更大的模型。",
+    },
     "context_summarization_failed": {
         "en": "Please clear or shorten the conversation history, then try again.",
         "zh": "请清理或缩短会话历史后重试。",

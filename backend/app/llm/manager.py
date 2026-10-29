@@ -228,7 +228,9 @@ class ModelManager:
                 model=model,
             )
         elif (
-            "authentication" in error_msg
+            getattr(e, "status_code", None) == 401
+            or "authenticationerror" in type(e).__name__.lower()
+            or "authentication" in error_msg
             or "api key" in error_msg
             or "invalid_api_key" in error_msg
         ):

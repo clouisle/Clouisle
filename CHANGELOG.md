@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Agent runs progressively compact conversation history and completed tool results when context pressure grows, retaining original records and an authorized paginated readback; summary failures fall back without advancing the history watermark.
+- Large Agent tool catalogs use authorized on-demand discovery and loading, reducing tool schema overhead; model-window diagnostics and bilingual compression settings are available in chat and Agent configuration.
+- Configured sandbox file and command tools remain visible to the model in discovery mode; discovery tool names are localized in chat, including historical calls.
+- Active Agent rounds can persist source-bound semantic checkpoints for completed tool exchanges across approval pauses; provider context-overflow retries are bounded and preserve user instructions and tool results.
+- Chat compression notices use concise descriptions instead of token counts and budget percentages; diagnostic event data remains available.
+- New AgentRun compression diagnostics persist across approval pauses and reappear in authorized conversation history; missed terminal errors recover on reconnect, and active stream updates restore a replaced assistant placeholder.
+- Provider authentication failures remain visible when active conversation history reloads omit the failed assistant message.
+- Active-round compression restores verified checkpoints before deciding whether further reduction is needed, avoiding decisions based solely on uncompressed history.
+- Registration displays server validation messages that are not translation keys without triggering a missing-message error.
+- Agent context recovery and tool discovery enforce per-turn visibility and preserve recoverable tool results; compression retries share one overflow budget, and chat history follows the selected message branch.
+- Tool discovery retains long-query suffix matches, paused tool calls keep their original visibility boundary, and editing a chat message removes errors from the replaced branch.
+- Paused tool calls preserve the schemas actually sent to the model across overflow retries and discovery-mode changes; legacy resumes restrict fallback to authorized core tools.
+- Resumed tool batches restore their original declared visibility while still checking current authorization, including tools unloaded after the original model request.
+- Fixed consumed tool calls reappearing after repeated approval pauses, checkpoint validation for JSON tool results, and discovery eviction of tools requested as already loaded. Chat retains recovered run errors and distinguishes tool-schema reduction from omitted history; compression-history lookup reads only its events.
 - Centralized Tavily/Bocha web search in administrator-managed site configuration with an explicit default and enable switches. API keys are encrypted/write-only, Agent/team overrides are removed, and legacy private credentials are archived encrypted without promotion. Bing/DuckDuckGo remain removed; search failures never silently change providers.
 - Fixed workflow tool nodes ignoring declared parameter types: numeric, boolean and JSON mappings are converted before invocation, and invalid values fail the node instead of reaching tool handlers as incompatible strings. This fixes `web_search` failing when a workflow supplies a string result limit.
 - Agent orchestration now offers only site-enabled search engines, and workflow `web_search` nodes provide the same engine dropdown for site routing (no variable/constant switch), including nodes saved before the control existed. Existing unavailable selections remain unchanged; runtime configuration checks still apply.

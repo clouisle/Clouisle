@@ -331,6 +331,42 @@ class MicroBatchingCollector:
                         if self.run_obj
                         else None
                     )
+                    if event_type == "compression_end" and self.run_obj:
+                        try:
+                            from tortoise.transactions import in_transaction
+
+                            async with in_transaction() as conn:
+                                fresh = (
+                                    await AgentRun.filter(id=self.run_obj.id)
+                                    .using_db(conn)
+                                    .select_for_update()
+                                    .first()
+                                )
+                                if fresh and fresh.active_round_id == round_id:
+                                    payload = dict(fresh.worker_payload or {})
+                                    events = list(
+                                        payload.get("compression_events") or []
+                                    )
+                                    events.append(
+                                        {
+                                            "round_id": str(round_id),
+                                            "message_id": str(
+                                                self.canonical_message_id
+                                            ),
+                                            "timestamp": now_utc().isoformat(),
+                                            "payload": event_payload,
+                                        }
+                                    )
+                                    payload["compression_events"] = events
+                                    fresh.worker_payload = payload
+                                    await fresh.save(
+                                        using_db=conn, update_fields=["worker_payload"]
+                                    )
+                        except Exception:
+                            logger.exception(
+                                "Failed to persist compression event for AgentRun %s",
+                                self.run_obj.id,
+                            )
                     await self.stream.publish(
                         event_type,
                         event_payload,
@@ -385,23 +421,14 @@ async def _rebuild_context(
         conversation_id=str(conversation.id),
     )
     chat_model = await resolve_agent_chat_model(agent)
-    from app.services.tool_context import (
-        RuntimeToolIdentity,
-        entrypoint_is_interactive,
-        tool_identity_scope,
-    )
 
-    origin = payload.get("tool_entrypoint")
-    with tool_identity_scope(
-        RuntimeToolIdentity(
-            run_id=UUID(payload["run_id"]),
-            entrypoint=origin or "agent_run",
-            entrypoint_id=payload.get("tool_entrypoint_id"),
-            api_key_id=_payload_api_key_id(payload),
-            interactive=entrypoint_is_interactive(origin),
-        )
-    ):
-        tools_openai = await _load_tools(agent, user_id=conversation.user_id)
+    mode = AgentRunMode(payload["mode"])
+    tools_openai, tools, discovery = await _load_authorized_tools(
+        payload,
+        agent,
+        user_id=conversation.user_id,
+        non_stream=mode == AgentRunMode.NON_STREAM,
+    )
     from app.core.i18n import resolve_language, set_language
 
     effective_locale = await resolve_language(payload.get("locale"))
@@ -436,16 +463,12 @@ async def _rebuild_context(
         current_message_id=user_msg.id,
     )
 
-    mode = AgentRunMode(payload["mode"])
-    if mode == AgentRunMode.NON_STREAM and tools_openai:
-        # ask_user pauses the run for an interactive answer; a non-stream API
-        # caller has no UI to answer, so the model must never see the tool.
-        tools_openai = [
-            tool
-            for tool in tools_openai
-            if tool.get("function", {}).get("name") != "ask_user"
-        ]
-    tools = _tools_definitions(tools_openai)
+    execute_tool_call = _bind_execute_tool_call(discovery)
+    if discovery is not None:
+        from app.services.tool_discovery import DISCOVERY_TOOL_DISPLAY_NAMES
+
+        for name, label in DISCOVERY_TOOL_DISPLAY_NAMES.items():
+            tool_display_names.setdefault(name, label)
     is_streaming = mode != AgentRunMode.NON_STREAM
 
     from app.llm.tools import tool_registry
@@ -510,7 +533,22 @@ async def _rebuild_context(
         ]
         if payload.get("pending_tool_calls_cipher")
         else None,
+        resume_tool_call_ids={
+            str(item.get("id"))
+            for item in json.loads(
+                decrypt_tool_secret(payload["pending_tool_calls_cipher"])
+            )
+            if isinstance(item, dict) and item.get("id")
+        }
+        if payload.get("pending_tool_calls_cipher")
+        else set(),
+        resume_tool_visible_names=(
+            set(payload["pending_tool_visible_names"])
+            if isinstance(payload.get("pending_tool_visible_names"), list)
+            else None
+        ),
         tools=tools,
+        tool_discovery=discovery,
         tool_display_names=tool_display_names,
         tool_timeouts=streaming_config["tool_timeouts"],
         global_timeout=streaming_config["global_timeout"],
@@ -539,9 +577,7 @@ async def _rebuild_context(
         streaming=is_streaming,
         collect_dependency_metrics=True,
         observability_run_id=UUID(payload["run_id"]),
-        execute_tool_call=__import__(
-            "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
-        ).execute_tool_call,
+        execute_tool_call=execute_tool_call,
         team_chat_stream=model_manager.team_chat_stream,
         team_chat=model_manager.team_chat,
         record_stream_usage=None,
@@ -576,6 +612,25 @@ async def _visible_messages(conversation_id: UUID):
     return await get_visible_conversation_messages(conversation_id)
 
 
+def _history_override_has_tool_result_ref(history: Any) -> bool:
+    if not isinstance(history, list):
+        return False
+    from app.services.tool_result_readback import parse_tool_result_ref
+
+    for message in history:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            continue
+        for suffix in content.split("tr1:")[1:]:
+            candidate = "tr1:" + suffix.split(maxsplit=1)[0].rstrip(".,;)]}")
+            try:
+                parse_tool_result_ref(candidate)
+            except (TypeError, ValueError):
+                continue
+            return True
+    return False
+
+
 async def _load_tools(agent: Agent, user_id: UUID | str | None = None):
     from app.api.v1.endpoints.chat import get_agent_tools
 
@@ -586,6 +641,99 @@ async def _load_tool_display_names(agent: Agent, locale: str = "en"):
     from app.api.v1.endpoints.chat import get_tool_display_names
 
     return await get_tool_display_names(agent, locale, enumerate_mcp_tools=False)
+
+
+def _history_override_has_tool_result(history: Any) -> bool:
+    """Whether recovery history contains a result that compaction can omit."""
+    if not isinstance(history, list):
+        return False
+    assistant_calls: dict[str, str] = {}
+    tool_results: dict[str, str] = {}
+    for message in history:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "assistant":
+            calls = message.get("tool_calls")
+            if isinstance(calls, list):
+                for call in calls:
+                    if not isinstance(call, dict) or not isinstance(
+                        call.get("id"), str
+                    ):
+                        continue
+                    function = call.get("function")
+                    name = function.get("name") if isinstance(function, dict) else None
+                    assistant_calls[call["id"]] = name or ""
+        elif message.get("role") == "tool":
+            call_id = message.get("tool_call_id")
+            if isinstance(call_id, str) and isinstance(message.get("content"), str):
+                tool_results[call_id] = message["content"]
+    return any(
+        call_id in tool_results and name not in {"ask_user", "view_asset"}
+        for call_id, name in assistant_calls.items()
+    )
+
+
+def _run_tool_identity(payload: dict[str, Any]):
+    """The trusted runtime identity persisted by the run submitter."""
+    from app.services.tool_context import (
+        RuntimeToolIdentity,
+        entrypoint_is_interactive,
+    )
+
+    origin = payload.get("tool_entrypoint")
+    return RuntimeToolIdentity(
+        run_id=UUID(payload["run_id"]),
+        entrypoint=origin or "agent_run",
+        entrypoint_id=payload.get("tool_entrypoint_id"),
+        api_key_id=_payload_api_key_id(payload),
+        interactive=entrypoint_is_interactive(origin),
+    )
+
+
+async def _load_authorized_tools(
+    payload: dict[str, Any],
+    agent: Agent,
+    *,
+    user_id: UUID | str | None,
+    non_stream: bool,
+):
+    """Load the authorized tool catalog and build discovery in one scope.
+
+    Discovery-time authorization (custom tool checks) must see the same
+    trusted identity as listing and execution — including the API key and the
+    persisted entrypoint — or it could decide differently from the execution
+    boundary. Both steps therefore run inside a single identity scope.
+    """
+    from app.services.tool_context import tool_identity_scope
+
+    with tool_identity_scope(_run_tool_identity(payload)):
+        tools_openai = await _load_tools(agent, user_id=user_id)
+        if _history_override_has_tool_result_ref(
+            payload.get("history_override")
+        ) or _history_override_has_tool_result(payload.get("history_override")):
+            from app.services.tool_result_readback import build_read_tool_result_schema
+
+            if not any(
+                tool.get("function", {}).get("name") == "read_tool_result"
+                for tool in tools_openai
+            ):
+                tools_openai.append(build_read_tool_result_schema())
+        if non_stream:
+            # ask_user pauses the run for an interactive answer; a non-stream
+            # API caller has no UI to answer, so the model must never see it.
+            tools_openai = [
+                tool
+                for tool in tools_openai
+                if tool.get("function", {}).get("name") != "ask_user"
+            ]
+        tools = _tools_definitions(tools_openai)
+        discovery = await _build_tool_discovery_state(
+            tools,
+            payload=payload,
+            agent=agent,
+            user_id=user_id,
+        )
+    return tools_openai, tools, discovery
 
 
 def _tools_definitions(tools_openai: list[dict] | None):
@@ -604,6 +752,63 @@ def _tools_definitions(tools_openai: list[dict] | None):
         )
         for t in tools_openai
     ]
+
+
+async def _build_tool_discovery_state(
+    tools: list[Any] | None,
+    *,
+    payload: dict[str, Any],
+    agent: Agent,
+    user_id: UUID | str | None,
+):
+    """Tier the authorized tool schemas for one run.
+
+    Names already loaded by this run are restored from the durable payload and
+    revalidated inside ``build_tool_discovery`` against the catalog rebuilt for
+    the current Agent/user, so a revoked or disabled tool is never re-exposed.
+    """
+    from app.llm.types import ToolDefinition
+    from app.services.tool_discovery import build_tool_discovery
+
+    discovery = await build_tool_discovery(
+        tools,
+        loaded_names=payload.get("discovered_tools"),
+        factory=ToolDefinition.model_validate,
+        agent=agent,
+        user_id=user_id,
+    )
+    if discovery is None:
+        return None
+    run_id = payload.get("run_id")
+    if run_id:
+
+        async def _remember_loaded(names: list[str]) -> None:
+            await agent_run_store.remember_discovered_tools(UUID(str(run_id)), names)
+
+        discovery.on_loaded_change = _remember_loaded
+    return discovery
+
+
+def _bind_execute_tool_call(discovery: Any):
+    """Route discovery meta-tools ahead of normal tool execution.
+
+    Everything else keeps using ``chat_tools.execute_tool_call`` unchanged, so
+    authorization, connections and approval stay on exactly one boundary.
+    """
+    from app.api.v1.endpoints.chat_tools import execute_tool_call
+
+    if discovery is None:
+        return execute_tool_call
+
+    async def execute_with_discovery(tool_name: str, arguments: Any, **kwargs: Any):
+        if discovery.handles(tool_name):
+            return await discovery.execute(tool_name, arguments)
+        if not discovery.is_visible(tool_name):
+            return discovery.undiscovered_error(tool_name)
+        discovery.touch(tool_name)
+        return await execute_tool_call(tool_name, arguments, **kwargs)
+
+    return execute_with_discovery
 
 
 async def _transition_active_run(
@@ -654,6 +859,29 @@ def _marker_uuid(value: Any) -> UUID | None:
         raise ValueError("approval resume round_id is invalid") from exc
 
 
+def _resumed_result_persistence(
+    raw_result: Any,
+) -> tuple[bool, str | None]:
+    """Mirror the live AgentLoop's persisted-content choice for one result.
+
+    Returns ``(explicit, persisted_content)``. Native asset views persist the
+    same envelope the live loop writes so replay can rehydrate multimodal
+    parts; explicit ``ToolExecutionResult`` payloads persist the model
+    representation envelope; everything else keeps the display payload.
+    """
+    from app.api.v1.endpoints.chat_tools import AssetViewResult
+    from app.utils.tool_output import (
+        ToolExecutionResult,
+        persisted_asset_view_result,
+    )
+
+    if isinstance(raw_result, AssetViewResult):
+        return False, persisted_asset_view_result(
+            raw_result.display_result, raw_result.llm_result
+        )
+    return isinstance(raw_result, ToolExecutionResult), None
+
+
 async def _execute_approved_pending_tool(
     payload: dict[str, Any],
     *,
@@ -686,6 +914,8 @@ async def _execute_approved_pending_tool(
     metric_status = "completed"
     metric_error_category: str | None = None
     is_error = False
+    explicit = False
+    persisted_content: str | None = None
     try:
         from app.api.v1.endpoints.chat_tools import execute_tool_call
         from app.llm.tools.interaction import ToolInteractionRequest
@@ -761,6 +991,7 @@ async def _execute_approved_pending_tool(
             )
         if isinstance(raw_result, ToolInteractionRequest):
             raise RuntimeError("approved tool execution did not resume")
+        explicit, persisted_content = _resumed_result_persistence(raw_result)
         display_result, llm_result = get_tool_execution_payloads(raw_result, tool_name)
     except Exception as exc:
         logger.warning(
@@ -836,6 +1067,8 @@ async def _execute_approved_pending_tool(
         round_id=round_id,
         round_index=round_index,
         iteration_index=iteration_index,
+        explicit=explicit,
+        persisted_content=persisted_content,
     )
     if updated is not None:
         updated["resume_dependency_metrics"] = [dependency_metric]
@@ -1121,6 +1354,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             run.canonical_message_id = canonical.id
             await run.save(update_fields=["canonical_message_id"])
         canonical_message_id = canonical.id
+        collector.canonical_message_id = canonical.id
         publisher_task = asyncio.create_task(publish_queued_events())
         if isinstance(resume_tool_result, dict):
             await stream.publish(
@@ -1292,6 +1526,16 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             resume_payload["first_round_index"] = int(interaction["round_index"]) + 1
             resume_payload["created_message_count"] = loop_context.created_message_count
             resume_payload["iteration_offset"] = int(interaction["iteration_index"])
+            discovery = getattr(loop_context, "tool_discovery", None)
+            if discovery is not None:
+                resume_payload["discovered_tools"] = discovery.loaded_names
+            else:
+                resume_payload.pop("discovered_tools", None)
+            resume_tool_visible_names = interaction.get("resume_tool_visible_names")
+            if remaining_calls and isinstance(resume_tool_visible_names, list):
+                resume_payload["pending_tool_visible_names"] = resume_tool_visible_names
+            else:
+                resume_payload.pop("pending_tool_visible_names", None)
             resume_payload["pending_tool_display_name"] = str(
                 interaction.get("display_name") or interaction["tool_name"]
             )
@@ -1503,9 +1747,14 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         logger.exception("Agent run %s failed", run.id)
         from app.core.i18n import t
         from app.schemas.response import BusinessError
+        from app.llm.errors import AuthenticationError, ContextLengthError
 
         error_message = (
-            t(exc.msg_key, lang=payload.get("locale"), **exc.kwargs)
+            t("context_budget_exceeded", lang=payload.get("locale"))
+            if isinstance(exc, ContextLengthError)
+            else t("model_test_invalid_api_key", lang=payload.get("locale"))
+            if isinstance(exc, AuthenticationError)
+            else t(exc.msg_key, lang=payload.get("locale"), **exc.kwargs)
             if isinstance(exc, BusinessError) and exc.msg_key
             else str(exc)
         )
@@ -1527,6 +1776,8 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         await stream.publish(
             "error",
             {"code": "run_failed", "msg": error_message},
+            round_id=run.active_round_id,
+            message_id=run.canonical_message_id,
         )
         await stream.publish(
             "run_end",

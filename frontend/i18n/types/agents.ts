@@ -335,6 +335,16 @@ export type AgentsMessages = {
         autoExtract: string
         autoExtractHint: string
       }
+      compression: {
+        title: string
+        tooltip: string
+        description: string
+        summaryMaxTokens: string
+        summaryMaxTokensHint: string
+        tokens: string
+        emitEvents: string
+        emitEventsHint: string
+      }
       imageGeneration: {
         title: string
         tooltip: string

@@ -1015,6 +1015,9 @@ msgstr "对话完成"
 msgid "chat_context_summary_applied"
 msgstr "已在下一次模型调用前应用上下文摘要"
 
+msgid "context_budget_exceeded"
+msgstr "必要的上下文超出模型容量。请缩短消息或附件、减少启用的工具，或选择上下文窗口更大的模型。"
+
 msgid "context_summarization_failed"
 msgstr "请清理或缩短会话历史后重试。"
 

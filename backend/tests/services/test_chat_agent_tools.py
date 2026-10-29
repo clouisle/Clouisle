@@ -347,8 +347,10 @@ async def test_authenticated_mcp_discovery_uses_each_invoking_users_account(
                 )
                 return [schema.function.name for schema in schemas]
 
-        assert await discover(users[0]) == ["mcp_tasks_alice_tasks"]
-        assert await discover(users[1]) == ["mcp_tasks_bob_tasks"]
+        assert "mcp_tasks_alice_tasks" in await discover(users[0])
+        assert "mcp_tasks_bob_tasks" in await discover(users[1])
+        assert "mcp_tasks_bob_tasks" not in await discover(users[0])
+        assert "mcp_tasks_alice_tasks" not in await discover(users[1])
         with pytest.raises(BusinessError) as exc:
             await discover(users[2])
         assert exc.value.msg_key == "agent_tool_connection_required"

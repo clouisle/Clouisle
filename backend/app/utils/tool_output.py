@@ -19,6 +19,26 @@ from typing import Any
 PERSISTED_RESULT_KIND = "tool.result.persisted"
 PERSISTED_RESULT_VERSION = 1
 
+#: Envelope written for a ``view_asset`` result. The marker is the text the
+#: live model received and the only way to rehydrate native multimodal parts
+#: on replay; compaction must not replace these results with a text reference.
+ASSET_VIEW_PERSISTED_KIND = "asset.view.persisted"
+ASSET_VIEW_PERSISTED_VERSION = 1
+
+
+def persisted_asset_view_result(display_result: dict[str, Any], marker: str) -> str:
+    """Build the persisted message content for a native asset view."""
+    return json.dumps(
+        {
+            "kind": ASSET_VIEW_PERSISTED_KIND,
+            "version": ASSET_VIEW_PERSISTED_VERSION,
+            "display": display_result,
+            "marker": marker,
+        },
+        ensure_ascii=False,
+    )
+
+
 #: Tools whose payload schemas the renderers may format. Anything else is
 #: returned verbatim so configured/custom/MCP/database/Skill payloads keep
 #: their fields, types and original JSON formatting.

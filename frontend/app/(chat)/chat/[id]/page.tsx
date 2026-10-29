@@ -303,6 +303,7 @@ export default function PublicChatPage({
         void refreshConversations()
       }
       // Keep the active conversation addressable after a browser refresh.
+      suppressUrlConversationReloadRef.current = true
       syncConversationUrl(id)
       onExternalConversationChange?.(id)
     },

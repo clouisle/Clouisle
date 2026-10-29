@@ -1014,6 +1014,9 @@ msgstr "Chat completed successfully"
 msgid "chat_context_summary_applied"
 msgstr "Applied a context summary before the next model call"
 
+msgid "context_budget_exceeded"
+msgstr "The required context exceeds the model's capacity. Shorten your message or attachments, reduce enabled tools, or choose a model with a larger context window."
+
 msgid "context_summarization_failed"
 msgstr "Please clear or shorten the conversation history, then try again."
 

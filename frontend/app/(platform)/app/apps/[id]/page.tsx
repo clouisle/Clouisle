@@ -19,6 +19,7 @@ import {
   type MemoryConfig,
   type ImageGenerationConfig,
   type VideoGenerationConfig,
+  type ContextCompressionConfig,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -102,6 +103,7 @@ export function AgentEditor({
   const [imageGenerationConfig, setImageGenerationConfig] = React.useState<ImageGenerationConfig | null>(null)
   const [enableVideoGeneration, setEnableVideoGeneration] = React.useState(false)
   const [videoGenerationConfig, setVideoGenerationConfig] = React.useState<VideoGenerationConfig | null>(null)
+  const [contextCompressionConfig, setContextCompressionConfig] = React.useState<ContextCompressionConfig | null>(null)
 
   // Fetch agent data
   const fetchAgent = React.useCallback(async () => {
@@ -143,6 +145,7 @@ export function AgentEditor({
       setImageGenerationConfig(data.image_generation_config || null)
       setEnableVideoGeneration(data.enable_video_generation || false)
       setVideoGenerationConfig(data.video_generation_config || null)
+      setContextCompressionConfig(data.context_compression_config || null)
     } catch {
       router.push(backHref)
     } finally {
@@ -188,6 +191,7 @@ export function AgentEditor({
         image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
         enable_video_generation: enableVideoGeneration,
         video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
+        context_compression_config: contextCompressionConfig,
         attachment_config: enableAttachments ? attachmentConfig : null,
       })
       setAgent(updated)
@@ -235,6 +239,7 @@ export function AgentEditor({
     imageGenerationConfig,
     enableVideoGeneration,
     videoGenerationConfig,
+    contextCompressionConfig,
     t,
   ])
 
@@ -303,6 +308,9 @@ export function AgentEditor({
     }
     if (data.video_generation_config !== undefined) {
       setVideoGenerationConfig(data.video_generation_config || null)
+    }
+    if (data.context_compression_config !== undefined) {
+      setContextCompressionConfig(data.context_compression_config || null)
     }
     if (data.attachment_config !== undefined) {
       setAttachmentConfig(data.attachment_config || null)

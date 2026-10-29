@@ -319,6 +319,33 @@ async def transition_run(
     return run
 
 
+async def remember_discovered_tools(
+    run_id: UUID, names: list[str] | tuple[str, ...]
+) -> None:
+    """Persist the discovered tool selection on the run's resume payload.
+
+    Discovery changes are rare (one write per ``load_tools``/``unload_tools``)
+    and must survive approval/user pauses and worker retries. The payload is
+    merged under a row lock because it also carries the round's resume state
+    and approval/stop paths update it from other tasks; a bare read-modify-write
+    would lose those fields.
+    """
+    async with in_transaction() as conn:
+        run = (
+            await AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
+        )
+        if run is None:
+            return
+        payload = dict(run.worker_payload or {})
+        if names:
+            payload["discovered_tools"] = [str(name) for name in names]
+        else:
+            payload.pop("discovered_tools", None)
+        run.worker_payload = payload
+        run.updated_at = now_utc()
+        await run.save(using_db=conn, update_fields=["worker_payload", "updated_at"])
+
+
 async def park_run_waiting(
     run: AgentRun,
     *,
@@ -345,12 +372,63 @@ async def park_run_waiting(
         "first_token_ms": run.first_token_ms,
     }
     if worker_payload is not None:
-        updates["worker_payload"] = worker_payload
-    updated = await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING).update(
-        **updates
-    )
-    if updated != 1:
-        raise RuntimeError("AgentRun is no longer running")
+        # The caller snapshot is authoritative for resume state, including
+        # deletions. Preserve only concurrently persisted checkpoint and
+        # compression-event data from the locked row.
+        async with in_transaction() as conn:
+            fresh = (
+                await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            if fresh is None:
+                raise RuntimeError("AgentRun is no longer running")
+            from app.services.context_checkpoint import CHECKPOINT_KEY
+
+            current = getattr(fresh, "worker_payload", None)
+            stored = current if isinstance(current, dict) else {}
+            merged = dict(worker_payload)
+            # Resume state is a snapshot: omitted keys may have been consumed
+            # in memory and must not be resurrected from the stored payload.
+            # Preserve only data written concurrently by context preparation
+            # and compression event persistence.
+            for key in (CHECKPOINT_KEY, "compression_events"):
+                if key in stored:
+                    merged[key] = stored[key]
+            fresh.status = AgentRunStatus.WAITING
+            fresh.pending_tool_call_id = tool_call_id
+            fresh.pending_tool_name = tool_name
+            fresh.pending_tool_input = tool_input
+            fresh.pending_tool_round_id = round_id
+            fresh.pending_tool_round_index = round_index
+            fresh.pending_tool_iteration_index = iteration_index
+            fresh.updated_at = updated_at
+            fresh.message_started_at = run.message_started_at
+            fresh.worker_payload = merged
+            await fresh.save(
+                using_db=conn,
+                update_fields=[
+                    "status",
+                    "pending_tool_call_id",
+                    "pending_tool_name",
+                    "pending_tool_input",
+                    "pending_tool_round_id",
+                    "pending_tool_round_index",
+                    "pending_tool_iteration_index",
+                    "updated_at",
+                    "message_started_at",
+                    "first_token_ms",
+                    "worker_payload",
+                ],
+            )
+        worker_payload = merged
+    else:
+        updated = await AgentRun.filter(
+            id=run.id, status=AgentRunStatus.RUNNING
+        ).update(**updates)
+        if updated != 1:
+            raise RuntimeError("AgentRun is no longer running")
 
     run.status = AgentRunStatus.WAITING
     run.pending_tool_call_id = tool_call_id
@@ -586,6 +664,34 @@ def _approval_resume_error(execution: "ToolExecution") -> str | None:
     return _APPROVAL_TOOL_ERRORS.get(_enum_text(execution.cancel_reason) or "")
 
 
+def persisted_tool_result_content(
+    tool_name: str | None,
+    display_result: str,
+    llm_result: str,
+    *,
+    explicit: bool,
+) -> str:
+    """Choose the message content exactly as the live AgentLoop does.
+
+    ``ToolExecutionResult`` carries a model representation that the
+    deterministic renderer cannot reproduce. ``persistable_model_result``
+    stores it in the existing envelope only for such explicit results (and
+    never double-wraps), so replayed context and ``read_tool_result`` recover
+    the same text the model originally saw. Plain results stay byte-identical.
+    """
+    from app.utils.tool_output import persistable_model_result
+
+    return (
+        persistable_model_result(
+            tool_name,
+            display_result,
+            llm_result,
+            explicit=explicit,
+        )
+        or display_result
+    )
+
+
 async def _append_approval_tool_result_locked(
     run: AgentRun,
     conn: Any,
@@ -600,14 +706,26 @@ async def _append_approval_tool_result_locked(
     round_id: UUID | None,
     round_index: int | None,
     iteration_index: int | None,
+    explicit: bool = False,
+    persisted_content: str | None = None,
 ) -> dict[str, Any]:
     """Persist one tool result for a resumed approval and update the payload."""
     resolved_round_id = round_id or run.active_round_id
     resolved_round_index = round_index or 0
+    content = (
+        persisted_content
+        if persisted_content is not None
+        else persisted_tool_result_content(
+            tool_name,
+            display_result,
+            llm_result,
+            explicit=explicit,
+        )
+    )
     await Message.create(
         conversation_id=run.conversation_id,
         role=MessageRole.TOOL,
-        content=display_result,
+        content=content,
         tool_call_id=tool_call_id,
         tool_name=tool_name,
         round_id=resolved_round_id,
@@ -812,8 +930,16 @@ async def record_resumed_tool_result(
     round_id: UUID | None,
     round_index: int | None,
     iteration_index: int | None,
+    explicit: bool = False,
+    persisted_content: str | None = None,
 ) -> dict[str, Any] | None:
-    """Persist the original call's result and return the updated worker payload."""
+    """Persist the original call's result and return the updated worker payload.
+
+    ``explicit`` is true only when the resumed call returned a
+    ``ToolExecutionResult``: its model text cannot be reproduced by the
+    deterministic renderer, so it is stored in the same envelope the live
+    AgentLoop uses.
+    """
     async with in_transaction() as conn:
         run = (
             await AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
@@ -833,6 +959,8 @@ async def record_resumed_tool_result(
             round_id=round_id,
             round_index=round_index,
             iteration_index=iteration_index,
+            explicit=explicit,
+            persisted_content=persisted_content,
         )
         run.worker_payload = payload
         run.updated_at = now_utc()

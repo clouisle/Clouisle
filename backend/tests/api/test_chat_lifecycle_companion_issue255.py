@@ -127,6 +127,15 @@ async def test_round_payloads_skip_steps_and_nest_them_under_final_message():
             "build_round_steps_map",
             AsyncMock(return_value={round_id: [{"id": step.id}]}),
         ),
+        patch.object(
+            chat._AgentRunModel,
+            "filter",
+            return_value=MagicMock(
+                annotate=MagicMock(
+                    return_value=SimpleNamespace(values=AsyncMock(return_value=[]))
+                )
+            ),
+        ),
         patch.object(chat, "MessageOut", message_out),
     ):
         result = await chat.build_message_round_payloads([user, step, final])

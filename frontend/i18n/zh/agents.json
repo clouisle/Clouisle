@@ -333,6 +333,16 @@
         "autoExtract": "自动提取记忆",
         "autoExtractHint": "自动从对话中提取并保存重要信息"
       },
+      "compression": {
+        "title": "上下文压缩",
+        "tooltip": "让长对话保持在模型的输入预算内",
+        "description": "启用后，Agent 会在每次调用模型前总结较早的历史，并压缩已完成的工具结果。原始消息与工具记录仍会保留，压缩只改变模型看到的内容。",
+        "summaryMaxTokens": "摘要 Token 预算",
+        "summaryMaxTokensHint": "生成的历史摘要目标大小（128–8000 tokens）。摘要越大保留的细节越多，但留给对话的空间越少。",
+        "tokens": "tokens",
+        "emitEvents": "显示压缩进度",
+        "emitEventsHint": "向对话流发送压缩开始与结束事件，让用户了解上下文何时被压缩。关闭后将静默压缩。"
+      },
       "imageGeneration": {
         "title": "生图",
         "tooltip": "允许 Agent 通过函数调用触发生图模型",
@@ -473,8 +483,8 @@
         "toolCall": "工具调用，包含 tool_call_id、tool_name、tool_display_name 和 arguments。arguments 始终是该调用的模型原始参数，即使该调用因审批而暂停",
         "toolResult": "工具结果，包含匹配的 tool_call_id、result 和 is_error",
         "mediaResult": "media.image 或 media.video 工具结果产生的媒体载荷",
-        "compressionStart": "模型调用前开始压缩上下文",
-        "compressionEnd": "上下文压缩完成，并返回 token 预算元数据",
+        "compressionStart": "模型调用前开始压缩上下文；stage 为 macro 或 micro",
+        "compressionEnd": "上下文压缩完成，并返回 token 预算元数据。stage 为 macro、micro 或 fallback；actions 可能包含 context_summary、tool_result_compacted 和 summary_fallback",
         "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
         "iterationCapReached": "本轮已达到最大工具调用轮次，并以终止提示结束",
         "messageEnd": "消息结束，包含用量、耗时、version_number 和 version_count",

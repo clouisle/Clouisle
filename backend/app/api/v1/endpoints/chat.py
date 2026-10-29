@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 import ast
 import asyncio
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -673,6 +674,39 @@ async def build_round_steps_map(
 async def build_message_round_payloads(messages: list[Message]) -> list[dict[str, Any]]:
     """Serialize canonical round messages with nested non-canonical step payloads."""
     steps_by_round = await build_round_steps_map(messages)
+    final_rounds = {
+        str(message.id): str(message.round_id)
+        for message in messages
+        if message.is_round_canonical
+        and message.round_role == MessageRoundRole.ASSISTANT_FINAL
+    }
+    events_by_message: dict[str, list[dict[str, Any]]] = {}
+    if final_rounds:
+        runs = await (
+            _AgentRunModel.filter(canonical_message_id__in=list(final_rounds))
+            .annotate(compression_events=F("worker_payload__compression_events"))
+            .values("canonical_message_id", "active_round_id", "compression_events")
+        )
+        for run in runs:
+            compression_events = run.get("compression_events") or []
+            if isinstance(compression_events, str):
+                try:
+                    compression_events = json.loads(compression_events)
+                except (TypeError, ValueError):
+                    compression_events = []
+            if not isinstance(compression_events, list):
+                continue
+            for event in compression_events:
+                if not isinstance(event, dict):
+                    continue
+                if event.get("message_id") == str(
+                    run["canonical_message_id"]
+                ) and event.get("round_id") == str(
+                    run["active_round_id"]
+                ) == final_rounds.get(str(run["canonical_message_id"])):
+                    events_by_message.setdefault(
+                        str(run["canonical_message_id"]), []
+                    ).append(event)
     payloads: list[dict[str, Any]] = []
     for message in messages:
         if message.round_id and not message.is_round_canonical:
@@ -680,6 +714,8 @@ async def build_message_round_payloads(messages: list[Message]) -> list[dict[str
         msg_data = MessageOut.model_validate(message).model_dump()
         if message.round_id and message.round_role == MessageRoundRole.ASSISTANT_FINAL:
             msg_data["steps"] = steps_by_round.get(message.round_id)
+            if str(message.id) in events_by_message:
+                msg_data["compression_events"] = events_by_message[str(message.id)]
         payloads.append(msg_data)
     return payloads
 
@@ -1091,6 +1127,16 @@ Examples of when to search:
                         logger.warning(
                             f"Failed to get MCP tools from {mcp_tool.name}: {e}"
                         )
+
+    # Context compaction replaces completed tool results with references.
+    # Expose the recovery tool whenever the model has any other tool, so a
+    # tool-less agent still gets exactly an empty tool list.
+    if openai_tools:
+        from app.services.tool_result_readback import (
+            build_read_tool_result_schema,
+        )
+
+        append_openai_tool(build_read_tool_result_schema())
 
     return openai_tools
 

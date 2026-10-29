@@ -97,6 +97,37 @@ const LEGACY_CITATION_PROTOCOL_MARKER_REGEX = /\ue200cite\ue202[^\ue200]*\ue200/
 const LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX = /\ue200(?:cite(?:\ue202[^\ue200]*)?)?$/
 const CITATION_HREF_PREFIX = '#clouisle-citation='
 
+interface CompressionEventInfo {
+  stage: string | null
+  actions: string[]
+  summaryTurns: number | null
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/**
+ * Read the compression_end payload safely.
+ *
+ * Only metadata is read; message content is never part of an SSE compression
+ * event, so diagnostics built from this helper cannot leak conversation text.
+ */
+function getCompressionEventInfo(part: TaskPart): CompressionEventInfo | null {
+  if (part.taskType !== 'compression' || !part.info || typeof part.info !== 'object') {
+    return null
+  }
+  const info = part.info as Record<string, unknown>
+  const actions = Array.isArray(info.actions)
+    ? info.actions.filter((action): action is string => typeof action === 'string')
+    : []
+  return {
+    stage: typeof info.stage === 'string' ? info.stage : null,
+    actions,
+    summaryTurns: readFiniteNumber(info.summary_turns),
+  }
+}
+
 function stripCitationMarkers(text: string) {
   if (!text || (!text.includes('[[') && !text.includes('\ue200'))) {
     return text || ''
@@ -503,6 +534,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const locale = useLocale()
     const tReasoning = useTranslations('chat.reasoning')
     const tTask = useTranslations('chat.task')
+    const getToolDisplayName = React.useCallback((name: string, fallback?: string) => {
+      if (name === 'discover_tools') return tTask('discoverTools')
+      if (name === 'load_tools') return tTask('loadTools')
+      if (name === 'unload_tools') return tTask('unloadTools')
+      return fallback || name
+    }, [tTask])
     const [copied, setCopied] = React.useState(false)
     const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
@@ -933,7 +970,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (hideToolCalls) return null
         if (hasChainOfThought) return null
         const toolName = isToolCallPart(part)
-          ? (part.toolDisplayName || part.toolName)
+          ? getToolDisplayName(part.toolName, part.toolDisplayName)
           : `${part.serverName}/${part.toolName}`
         const state = part.state === 'error' ? 'output-error'
           : part.state === 'done' ? 'output-available'
@@ -962,7 +999,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isToolResultPart(part) || isMcpToolResultPart(part)) {
         if (hideToolCalls || pairedToolResultIndexes.has(index) || hasChainOfThought) return null
         const toolName = isToolResultPart(part)
-          ? (part.toolDisplayName || part.toolName)
+          ? getToolDisplayName(part.toolName, part.toolDisplayName)
           : `${part.serverName}/${part.toolName}`
         const state = part.isError ? 'output-error' : 'output-available'
         return (
@@ -1068,6 +1105,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       activeSpeechSentence,
       citedSources,
       hasIterationCapMarker,
+      getToolDisplayName,
       hasChainOfThought,
       hideToolCalls,
       isStreaming,
@@ -1238,39 +1276,28 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         return tTask('searchingKnowledge')
       }
       if (taskPart.taskType === 'compression') {
-        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
-        const beforeTokens = typeof info?.before_tokens === 'number' ? info.before_tokens : null
-        const afterTokens = typeof info?.after_tokens === 'number' ? info.after_tokens : null
-        const summarySourceTokens = typeof info?.summary_source_tokens === 'number' && info.summary_source_tokens > 0
-          ? info.summary_source_tokens
-          : null
-        const summaryResultTokens = typeof info?.summary_result_tokens === 'number' && info.summary_result_tokens > 0
-          ? info.summary_result_tokens
-          : null
-        const summarySavedTokens = typeof info?.summary_saved_tokens === 'number'
-          ? info.summary_saved_tokens
-          : null
-        const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
-        const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
-        const displayBeforeTokens = summarySourceTokens ?? beforeTokens
-        const displayAfterTokens = summaryResultTokens ?? afterTokens
-        const displaySavedTokens = summarySavedTokens ?? (
-          displayBeforeTokens !== null && displayAfterTokens !== null
-            ? Math.max(displayBeforeTokens - displayAfterTokens, 0)
-            : 0
-        )
+        const compression = getCompressionEventInfo(taskPart)
+        const summaryTurns = compression?.summaryTurns ?? null
+        const actions = compression?.actions ?? []
+        const schemasShed = actions.includes('provider_overflow_tool_schemas_shed')
+        const historyOmitted = actions.includes('provider_overflow_history_omitted')
+        const fallbackWithoutSummary = compression?.stage === 'fallback' || actions.includes('summary_fallback') || (schemasShed && historyOmitted)
+        const summarized = actions.includes('context_summary') || (summaryTurns !== null && summaryTurns > 0)
+        const compactedToolResults = actions.includes('tool_result_compacted') || compression?.stage === 'micro'
 
-        if (taskPart.state === 'completed' && displayBeforeTokens !== null && displayAfterTokens !== null) {
-          if (hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)) {
-            return tTask('compressionCompletedSummary', {
-              before: displayBeforeTokens,
-              after: displayAfterTokens,
-              saved: displaySavedTokens,
-              count: summaryTurns ?? 0,
-            })
+        if (taskPart.state === 'completed') {
+          if (fallbackWithoutSummary) {
+            if (schemasShed && !historyOmitted) return tTask('toolSchemasShed')
+            return schemasShed
+              ? tTask('compressionWithoutSummaryAndSchemas')
+              : tTask('compressionWithoutSummary')
           }
-          return tTask('compressionCompleted', { before: displayBeforeTokens, after: displayAfterTokens })
+          if (summarized && compactedToolResults) return tTask('compressionCombined')
+          if (compactedToolResults) return tTask('toolResultsCompacted')
+          return tTask('compressionCompleted')
         }
+        if (compression?.stage === 'micro') return tTask('compactingToolResults')
+        if (compression?.stage === 'fallback') return tTask('condensingContext')
         return tTask('compressingContext')
       }
       if (taskPart.taskType === 'generating') {
@@ -1293,7 +1320,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Get tool call label with state
     const getToolCallLabel = React.useCallback((toolPart: ToolCallPart | McpToolCallPart) => {
       const name = isToolCallPart(toolPart)
-        ? (toolPart.toolDisplayName || toolPart.toolName)
+        ? getToolDisplayName(toolPart.toolName, toolPart.toolDisplayName)
         : `${toolPart.serverName}/${toolPart.toolName}`
       switch (toolPart.state) {
         case 'running': return t('toolRunning', { name })
@@ -1301,7 +1328,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         case 'error': return t('toolFailed', { name })
         default: return name
       }
-    }, [t])
+    }, [getToolDisplayName, t])
 
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
       if (isReasoningPart(part) || isTaskPart(part) || isUserInstructionPart(part)) {
@@ -1367,13 +1394,29 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               </ChainOfThoughtStep>
             )
           } else if (part.taskType === 'compression') {
+            const compression = getCompressionEventInfo(part)
+            const schemasShed = compression?.actions.includes('provider_overflow_tool_schemas_shed') ?? false
+            const historyOmitted = compression?.actions.includes('provider_overflow_history_omitted') ?? false
+            const showFallbackHint = part.state === 'completed'
+              && compression !== null
+              && (compression.stage === 'fallback' || compression.actions.includes('summary_fallback') || schemasShed)
             steps.push(
               <ChainOfThoughtStep
                 key={`compression-${index}`}
                 icon={Timer}
                 label={getTaskTitle(part)}
                 status={getStepStatus(part.state)}
-              />
+              >
+                {showFallbackHint && (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                    {schemasShed && !historyOmitted
+                      ? tTask('toolSchemasShedHint')
+                      : schemasShed
+                        ? tTask('compressionWithoutSummaryAndSchemasHint')
+                        : tTask('compressionWithoutSummaryHint')}
+                  </p>
+                )}
+              </ChainOfThoughtStep>
             )
           } else if (part.taskType === 'generating') {
             steps.push(
@@ -1406,7 +1449,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
           if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
-            ? (part.toolDisplayName || part.toolName)
+            ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
           if (hideToolCalls) return
@@ -1444,7 +1487,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (isToolResultPart(part) || isMcpToolResultPart(part)) {
           if (hideToolCalls || pairedToolResultIndexes.has(index)) return
           const toolName = isToolResultPart(part)
-            ? (part.toolDisplayName || part.toolName)
+            ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
           const state = part.isError ? 'output-error' : 'output-available'
 
@@ -1489,6 +1532,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     }, [
       allSources,
       getStepStatus,
+      getToolDisplayName,
       getTaskTitle,
       getToolCallLabel,
       getToolCallStepStatus,

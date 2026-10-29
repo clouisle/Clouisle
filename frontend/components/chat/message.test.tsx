@@ -980,6 +980,21 @@ describe('message behavior', () => {
   })
 
 
+  test('localizes discovery tool names from persisted calls', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'discovery-labels', role: 'assistant', parts: [
+        { type: 'tool-call', toolCallId: 'd', toolName: 'discover_tools', toolDisplayName: 'Discover Tools', input: {}, state: 'done' },
+        { type: 'tool-call', toolCallId: 'l', toolName: 'load_tools', toolDisplayName: 'Load Tools', input: {}, state: 'done' },
+        { type: 'tool-call', toolCallId: 'u', toolName: 'unload_tools', toolDisplayName: 'Unload Tools', input: {}, state: 'done' },
+      ],
+    }} chainOfThoughtOpen />)
+    expect(html).toContain('chat.task.discoverTools')
+    expect(html).toContain('chat.task.loadTools')
+    expect(html).toContain('chat.task.unloadTools')
+    expect(html).not.toContain('Discover Tools')
+    expect(html).not.toContain('Load Tools')
+  })
+
   test('renders compression at its original reasoning timeline position', () => {
     const container = render(<Message
       message={{
@@ -1008,11 +1023,11 @@ describe('message behavior', () => {
 
     expect([...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent)).toEqual([
       expect.stringContaining('before compression'),
-      expect.stringContaining('chat.task.compressionCompletedSummary before=90000 after=1000 saved=89000 count=1'),
+      expect.stringContaining('chat.task.compressionCompleted'),
       expect.stringContaining('after compression'),
     ])
     expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(1)
-    expect(container.querySelector('[data-chat-thought-process="true"]')?.textContent).toContain('chat.task.compressionCompletedSummary')
+    expect(container.querySelector('[data-chat-thought-process="true"]')?.textContent).toContain('chat.task.compressionCompleted')
   })
 
   test('aggregates repeated reasoning blocks at the top of the message', () => {
@@ -1109,14 +1124,130 @@ describe('message behavior', () => {
       ],
     }} />)
 
-    expect(html).toContain('chat.task.compressionCompleted before=100 after=50')
-    expect(html).toContain('chat.task.compressionCompletedSummary before=90 after=40 saved=50 count=2')
-    expect(html).toContain('chat.task.compressionCompleted before=80 after=30')
-    expect(html).toContain('chat.task.compressionCompletedSummary before=70 after=20 saved=50 count=2')
-    expect(html).toContain('chat.task.compressionCompleted before=60 after=10')
+    expect(html).toContain('chat.task.compressionCompleted')
     expect(html).toContain('lookup')
     expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
+  })
+
+  test('renders stage and action aware compression states', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-actions',
+        role: 'assistant',
+        parts: [
+          { type: 'task', taskType: 'compression', state: 'running', info: { stage: 'micro' } },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'micro',
+              actions: ['tool_result_compacted'],
+              before_tokens: 1200,
+              after_tokens: 400,
+              summary_saved_tokens: 0,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary', 'tool_result_compacted'],
+              before_tokens: 900,
+              after_tokens: 300,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary'],
+              summary_turns: 2,
+              summary_source_tokens: 800,
+              summary_result_tokens: 200,
+              summary_saved_tokens: 600,
+            },
+          },
+        ],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).toContain('chat.task.compactingToolResults')
+    expect(html).toContain('chat.task.toolResultsCompacted')
+    expect(html).toContain('chat.task.compressionCombined')
+    expect(html).toContain('chat.task.compressionCompleted')
+  })
+
+  test('hides token diagnostics while preserving fallback guidance', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-diagnostics',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'macro',
+              actions: ['context_summary'],
+              before_tokens: 20000,
+              after_tokens: 6000,
+              input_budget: 24000,
+              utilization_before: 0.74,
+              utilization_after: 0.21,
+            },
+          },
+          {
+            type: 'task',
+            taskType: 'compression',
+            state: 'completed',
+            info: {
+              stage: 'fallback',
+              actions: ['summary_fallback'],
+              before_tokens: 500,
+              after_tokens: 200,
+            },
+          },
+        ],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).not.toContain('chat.task.compressionBudget')
+    expect(html).not.toContain('24000')
+    expect(html).not.toContain('before=')
+    expect(html).toContain('chat.task.compressionWithoutSummary')
+    expect(html).toContain('chat.task.compressionWithoutSummaryHint')
+  })
+
+  test('explains when fallback omitted optional tool schemas without dropping history', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-schema-shed',
+        role: 'assistant',
+        parts: [{
+          type: 'task',
+          taskType: 'compression',
+          state: 'completed',
+          info: {
+            stage: 'fallback',
+            actions: ['provider_overflow_retry', 'provider_overflow_tool_schemas_shed'],
+          },
+        }],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).toContain('chat.task.toolSchemasShed')
+    expect(html).toContain('chat.task.toolSchemasShedHint')
+    expect(html).not.toContain('chat.task.compressionWithoutSummaryHint')
   })
 
   test('renders media URLs, fallbacks, string results, and artifact metadata without file cards', () => {
