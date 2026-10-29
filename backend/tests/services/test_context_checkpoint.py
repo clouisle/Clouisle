@@ -90,6 +90,117 @@ def _build_view(exchanges):
     return messages, meta, contents
 
 
+@pytest.mark.anyio
+async def test_plan_reuses_checkpoint_before_deciding_pressure(monkeypatch):
+    messages, meta, contents = _build_view(
+        [(f"c{i}", _large_result(f"r{i}")) for i in range(4)]
+    )
+    entries = {
+        call_id: context_checkpoint.build_entry(
+            ToolResultSource(
+                tool_call_id=call_id,
+                tool_name="bash",
+                content=contents[call_id],
+                round_id=ROUND,
+            )
+        )
+        for call_id in ("c0", "c1")
+    }
+    loaded = LoadedCheckpoint(run_id=uuid4(), round_id=str(ROUND), entries=entries)
+    versions = {
+        call_id: content_version_hash(content) for call_id, content in contents.items()
+    }
+    saved = _patch_checkpoint_io(monkeypatch, loaded=loaded, versions=versions)
+    monkeypatch.setattr(chat_context, "_estimate_message_tokens", _estimate)
+
+    async def build(**kwargs):
+        return list(messages), set(), list(meta)
+
+    monkeypatch.setattr(chat_context, "_build_messages_with_file_content", build)
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), context_compression_config={})
+    conversation = SimpleNamespace(
+        id=uuid4(), context_summary_text=None, context_summary_watermark_id=None
+    )
+
+    async def prepare():
+        plan = await chat_context.build_context_plan(
+            agent=agent,
+            conversation=conversation,
+            user_message="start the task",
+            model_id="test",
+            model_context_limit=1800,
+            model_max_output_tokens=100,
+            protected_round_id=ROUND,
+            history_override=[],
+        )
+        return await plan.finalize()
+
+    first = await prepare()
+    second = await prepare()
+    assert [m.model_dump() for m in first.messages] == [
+        m.model_dump() for m in second.messages
+    ]
+    assert first.messages[3].content == context_checkpoint.omission_marker(
+        entries["c0"]["ref"]
+    )
+    assert first.compression.stage == second.compression.stage == "none"
+    assert saved == []
+    assert messages[3].content == contents["c0"]
+
+
+@pytest.mark.anyio
+async def test_extension_keeps_previously_applied_markers_identical(monkeypatch):
+    messages, meta, contents = _build_view(
+        [(f"c{i}", _large_result(f"r{i}")) for i in range(6)]
+    )
+    entries = {
+        call_id: context_checkpoint.build_entry(
+            ToolResultSource(
+                tool_call_id=call_id,
+                tool_name="bash",
+                content=contents[call_id],
+                round_id=ROUND,
+            )
+        )
+        for call_id in ("c0", "c1")
+    }
+    loaded = LoadedCheckpoint(run_id=uuid4(), round_id=str(ROUND), entries=entries)
+    versions = {
+        call_id: content_version_hash(content) for call_id, content in contents.items()
+    }
+    calls = _patch_summarizer(monkeypatch)
+    _patch_checkpoint_io(monkeypatch, loaded=loaded, versions=versions)
+    monkeypatch.setattr(chat_context, "_estimate_message_tokens", _estimate)
+    plan = _plan(messages, meta)
+
+    restored = await chat_context._restore_round_checkpoint(
+        list(messages), list(meta), uuid4(), ROUND, 1
+    )
+    compacted = await chat_context._compact_active_round(
+        list(messages),
+        list(meta),
+        agent=plan.agent,
+        conversation=plan.conversation,
+        conversation_id=plan.conversation.id,
+        current_user_index=1,
+        active_round_id=ROUND,
+        budget=plan.trigger_budget,
+        hard_budget=100_000,
+        tool_definition_tokens=0,
+        model_id="test",
+        tokenizer_model_id="test",
+        provider=None,
+    )
+
+    view = [message.content for message in compacted.messages]
+    assert len(calls) == 1
+    assert view[3] == restored[3].content
+    assert view[5] == restored[5].content
+    # The semantic marker goes to a newly covered result so the earlier prefix
+    # (already compacted results) stays byte-identical and cacheable.
+    assert view[7].startswith("[Active-round semantic checkpoint")
+
+
 def _estimate(messages, **_kwargs) -> int:
     return sum(
         len(message.content) // 10 + 1

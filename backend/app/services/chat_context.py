@@ -1768,6 +1768,137 @@ def _apply_result_markers(
     return result, applied
 
 
+def _checkpoint_transcript(messages, groups, current_user_index, entries, sources):
+    covered = set(entries)
+    synthetic = []
+    if entries and 0 <= current_user_index < len(messages):
+        synthetic.append(
+            Message(
+                role=MessageRole.USER,
+                content=(
+                    "Current user goal/instructions:\n"
+                    f"{_stringify_content(messages[current_user_index].content)}"
+                ),
+            )
+        )
+    for group in groups:
+        assistant = messages[group["assistant_index"]]
+        call_ids = [
+            call.id
+            for call in assistant.tool_calls or ()
+            if call.id in covered and call.id in sources
+        ]
+        if not call_ids:
+            continue
+        synthetic.append(
+            Message(
+                role=MessageRole.ASSISTANT,
+                content=_stringify_content(assistant.content),
+                tool_calls=[
+                    call for call in assistant.tool_calls or () if call.id in call_ids
+                ],
+            )
+        )
+        for call_id in call_ids:
+            entry = entries[call_id]
+            synthetic.append(
+                Message(
+                    role=MessageRole.TOOL,
+                    name=f"{entry.get('tool_name') or 'tool'} call={call_id} outcome={entry['status']} ref={entry['ref']}",
+                    content=sources[call_id].content,
+                    tool_call_id=call_id,
+                )
+            )
+    return synthetic
+
+
+async def _restore_round_checkpoint(
+    messages, meta, conversation_id, round_id, current_user_index
+):
+    """Restore only complete, current-branch checkpoint entries without changing records."""
+    from app.services import context_checkpoint as checkpoint
+
+    if not conversation_id or not round_id:
+        return messages
+    groups = _complete_tool_groups(
+        messages, meta, current_user_index=current_user_index, active_round_id=round_id
+    )
+    if not groups:
+        return messages
+    try:
+        loaded = await checkpoint.load_round_checkpoint(
+            conversation_id=conversation_id, round_id=UUID(str(round_id))
+        )
+        if not loaded or not loaded.entries:
+            return messages
+        indexes = [index for group in groups for index in group["result_indexes"]]
+        versions = await checkpoint.active_branch_version_hashes(
+            conversation_id=conversation_id,
+            round_id=UUID(str(round_id)),
+            tool_call_ids=list(loaded.entries),
+        )
+        sources = {}
+        entries = {}
+        for index in indexes:
+            message = messages[index]
+            entry = loaded.entries.get(message.tool_call_id)
+            if not entry or not isinstance(message.content, str):
+                continue
+            digest = checkpoint.content_version_hash(message.content)
+            if (
+                digest != entry.get("content_sha256")
+                or versions.get(message.tool_call_id) != digest
+            ):
+                continue
+            entries[message.tool_call_id] = entry
+            sources[message.tool_call_id] = checkpoint.ToolResultSource(
+                tool_call_id=message.tool_call_id,
+                tool_name=message.name,
+                content=message.content,
+                round_id=str(round_id),
+            )
+        markers = {
+            call_id: checkpoint.omission_marker(entry["ref"])
+            for call_id, entry in entries.items()
+        }
+        if (
+            loaded.mode == "semantic"
+            and loaded.summary_text
+            and len(entries) == len(loaded.entries)
+        ):
+            synthetic = _checkpoint_transcript(
+                messages, groups, current_user_index, entries, sources
+            )
+            digest = checkpoint.content_version_hash(
+                _render_summary_transcript(synthetic)
+            )
+            if digest == loaded.source_sha256:
+                coverage = [entries[call_id] for call_id in loaded.entries]
+                marker = checkpoint.semantic_marker(loaded.summary_text, coverage)
+                hosts = [
+                    i
+                    for i in indexes
+                    if messages[i].tool_call_id in entries
+                    and len(messages[i].content) > len(marker)
+                ]
+                if hosts:
+                    host = max(hosts, key=lambda i: len(messages[i].content))
+                    markers[messages[host].tool_call_id] = marker
+        if loaded.mode == "semantic" and not any(
+            value.startswith("[Active-round semantic checkpoint")
+            for value in markers.values()
+        ):
+            return messages
+        return _apply_result_markers(messages, indexes, markers)[0]
+    except Exception:
+        logger.warning(
+            "Failed to restore active-round checkpoint for conversation %s",
+            conversation_id,
+            exc_info=True,
+        )
+        return messages
+
+
 async def _compact_active_round(
     messages: list[Message],
     meta: list[dict[str, Any]],
@@ -1899,51 +2030,13 @@ async def _compact_active_round(
     # already present in this authorized model view are used.  The hash of this
     # whole ordered source — not just tool results — binds summary reuse, so a
     # changed goal/steering or changed call arguments invalidates it.
-    covered_set = set(coverage_ids)
-    synthetic: list[Message] = []
-    if coverage and 0 <= current_user_index < len(messages):
-        synthetic.append(
-            Message(
-                role=MessageRole.USER,
-                content=(
-                    "Current user goal/instructions:\n"
-                    f"{_stringify_content(messages[current_user_index].content)}"
-                ),
-            )
-        )
-    for group in groups:
-        assistant_index = group["assistant_index"]
-        assistant = messages[assistant_index]
-        call_ids = [
-            call.id
-            for call in assistant.tool_calls or ()
-            if call.id in covered_set and call.id in entries
-        ]
-        if not call_ids:
-            continue
-        synthetic.append(
-            Message(
-                role=MessageRole.ASSISTANT,
-                content=_stringify_content(assistant.content),
-                tool_calls=[
-                    call for call in assistant.tool_calls or () if call.id in call_ids
-                ],
-            )
-        )
-        for call_id in call_ids:
-            entry = entries[call_id]
-            synthetic.append(
-                Message(
-                    role=MessageRole.TOOL,
-                    name=(
-                        f"{entry.get('tool_name') or 'tool'} "
-                        f"call={entry['tool_call_id']} "
-                        f"outcome={entry['status']} ref={entry['ref']}"
-                    ),
-                    content=sources[call_id].content,
-                    tool_call_id=call_id,
-                )
-            )
+    synthetic = _checkpoint_transcript(
+        messages,
+        groups,
+        current_user_index,
+        {entry["tool_call_id"]: entry for entry in coverage},
+        sources,
+    )
     transcript = _render_summary_transcript(synthetic) if synthetic else ""
     source_sha256 = checkpoint.content_version_hash(transcript)
     same_source = (
@@ -2057,7 +2150,19 @@ async def _compact_active_round(
             and len(messages[index].content) > len(marker)
         ]
         if hosts:
-            host_index = max(hosts, key=lambda index: len(messages[index].content))
+            # Prefer a newly covered result: previously applied markers then stay
+            # byte-identical, keeping the provider request prefix cacheable.
+            fresh_hosts = [
+                index
+                for index in hosts
+                if loaded is None
+                or entries.get(result[index].tool_call_id)
+                is not loaded.entries.get(result[index].tool_call_id)
+            ]
+            host_index = max(
+                fresh_hosts or hosts,
+                key=lambda index: len(messages[index].content),
+            )
             semantic_markers = dict(readback_markers)
             semantic_markers[result[host_index].tool_call_id] = marker
             semantic_messages, applied = _apply_result_markers(
@@ -2285,6 +2390,7 @@ class ContextPlan:
     exclude_message_ids: Sequence[UUID] | None
     history_before_message_created_at: datetime | None
     protected_round_id: UUID | str | None = None
+    raw_messages: list[Message] | None = None
 
     @property
     def _new_watermark_id(self) -> UUID | None:
@@ -2311,7 +2417,7 @@ class ContextPlan:
             and self.compression.before_tokens > self.trigger_budget
         ):
             compaction = await _compact_active_round(
-                self.messages,
+                self.raw_messages or self.messages,
                 self.meta,
                 agent=self.agent,
                 conversation=self.conversation,
@@ -2643,6 +2749,25 @@ async def build_context_plan(
         context_summary_text=context_summary_text,
         history_after_message_id=history_after_message_id,
     )
+    _meta = list(_meta or [])
+    current_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if messages[index].role == MessageRole.USER
+            and not _is_context_summary_message(messages[index])
+        ),
+        -1,
+    )
+    raw_messages = messages
+    if compression_enabled and protected_round_id and _meta:
+        messages = await _restore_round_checkpoint(
+            messages,
+            _meta,
+            getattr(conversation, "id", None),
+            protected_round_id,
+            current_user_index,
+        )
     before_tokens = _estimate_message_tokens(
         messages, model_id=tokenizer_model_id, provider=provider
     ) + max(tool_definition_tokens, 0)
@@ -2666,16 +2791,6 @@ async def build_context_plan(
         context_limit=token_budget.context_limit,
         output_reserve=token_budget.output_reserve,
         safety_margin=token_budget.safety_margin,
-    )
-
-    current_user_index = next(
-        (
-            index
-            for index in range(len(messages) - 1, -1, -1)
-            if messages[index].role == MessageRole.USER
-            and not _is_context_summary_message(messages[index])
-        ),
-        -1,
     )
 
     # Recent verbatim tail: retain a bounded raw-history target,
@@ -2722,7 +2837,6 @@ async def build_context_plan(
     )
 
     previous_summary_text: str | None = context_summary_text
-    _meta = list(_meta or [])
     # Summarizable range starts right after the previous summary (index 1).
     summarize_from = 2 if previous_summary_text else 1
     if not _meta:
@@ -2809,6 +2923,7 @@ async def build_context_plan(
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
         protected_round_id=protected_round_id,
+        raw_messages=raw_messages,
     )
 
 

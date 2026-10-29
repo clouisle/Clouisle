@@ -40,6 +40,11 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Specific logic**: Persist content-free compression diagnostics with the owning run and expose them only with authorized visible conversation rounds. Preserve their order in historical chat; propagate terminal errors and retain active-conversation subscriptions without cross-conversation leakage.
 - **Validation**: Exercise authentication failure, active-run event delivery and conversation switching, plus compression history after Redis expiry and branch changes.
 
+### Stage 7: Reuse Checkpoints Before Pressure Decisions
+- **Files modified**: `backend/app/services/chat_context.py`, `backend/tests/services/test_context_checkpoint.py`, `CHANGELOG.md`.
+- **Specific logic**: Reconstruct validated active-round checkpoint markers before estimating pressure; preserve complete tool groups, current branch hashes and semantic source binding. Extend coverage only when the reconstructed view exceeds the trigger. Reuse alone must not emit a new compression event or rewrite earlier markers.
+- **Validation**: Exercise repeated model views with unchanged and newly appended results, genuine pressure, changed result versions and changed semantic source; verify stable request prefixes, event counts and unchanged source records. Run focused backend tests and a real context preparation smoke scenario; browser verification requires a restarted worker.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.
@@ -48,6 +53,7 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - Durable visibility changes: 151 backend and 134 frontend targeted tests passed; frontend TypeScript and ESLint and backend Ruff passed. After restarting API and worker, browser verification covered the cases below.
 - Browser run `cde0fa3f-363b-4432-bbec-0fa8dfd915ed` completed and, after refresh and expanding the execution timeline, displayed persisted compression events including 8502 → 7691 tokens. A normal new chat displayed its live response.
 - Real invalid credentials now classify as `AuthenticationError` and display “API Key 无效” in the chat. A history reload could omit the failed assistant message; the frontend preserves the current persisted-ID error message during reload. A focused regression test, ESLint and TypeScript passed.
+- Checkpoint reuse: `build_context_plan` now replays only complete, current-branch, hash-verified entries before estimating pressure, so a previously compacted view no longer re-triggers compaction; the earlier duplicate event sequence (8 events, `before_tokens` climbing 8,502 → 12,444 while every `after_tokens` stayed ≤ 7,973) came from deciding on the raw history. On real run `cde0fa3f…` the raw view measures 13,153 tokens against 8,938 restored; the excess over the 8,000 trigger comes only from results appended after the last checkpoint, so it is one genuine extension instead of a decision made against the raw history. Extensions keep applied markers byte-identical and place a new semantic marker on newly covered results, so the provider prefix stays cacheable.
 
 ## Testing Strategy
 
