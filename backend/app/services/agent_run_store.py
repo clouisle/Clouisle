@@ -372,10 +372,9 @@ async def park_run_waiting(
         "first_token_ms": run.first_token_ms,
     }
     if worker_payload is not None:
-        # The caller builds the resume payload from an instance read earlier.
-        # Writing it whole would drop keys persisted since then (notably the
-        # active-round checkpoint written concurrently by context preparation).
-        # Merge the fresh row value inside the same locked write instead.
+        # The caller snapshot is authoritative for resume state, including
+        # deletions. Preserve only concurrently persisted checkpoint and
+        # compression-event data from the locked row.
         async with in_transaction() as conn:
             fresh = (
                 await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING)
@@ -388,21 +387,15 @@ async def park_run_waiting(
             from app.services.context_checkpoint import CHECKPOINT_KEY
 
             current = getattr(fresh, "worker_payload", None)
-            merged = dict(current) if isinstance(current, dict) else {}
-            # The caller's snapshot may already contain an older checkpoint.
-            # Context preparation writes that key directly to the row, so the
-            # locked row value is authoritative and must not be overwritten by
-            # a stale copy carried inside the resume payload.
-            merged.update(
-                {
-                    key: value
-                    for key, value in worker_payload.items()
-                    if key not in {CHECKPOINT_KEY, "compression_events"}
-                }
-            )
-            if isinstance(current, dict) and CHECKPOINT_KEY in current:
-                merged[CHECKPOINT_KEY] = current[CHECKPOINT_KEY]
-            fresh.worker_payload = merged
+            stored = current if isinstance(current, dict) else {}
+            merged = dict(worker_payload)
+            # Resume state is a snapshot: omitted keys may have been consumed
+            # in memory and must not be resurrected from the stored payload.
+            # Preserve only data written concurrently by context preparation
+            # and compression event persistence.
+            for key in (CHECKPOINT_KEY, "compression_events"):
+                if key in stored:
+                    merged[key] = stored[key]
             fresh.status = AgentRunStatus.WAITING
             fresh.pending_tool_call_id = tool_call_id
             fresh.pending_tool_name = tool_name
@@ -412,7 +405,7 @@ async def park_run_waiting(
             fresh.pending_tool_iteration_index = iteration_index
             fresh.updated_at = updated_at
             fresh.message_started_at = run.message_started_at
-            fresh.first_token_ms = run.first_token_ms
+            fresh.worker_payload = merged
             await fresh.save(
                 using_db=conn,
                 update_fields=[

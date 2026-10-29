@@ -505,9 +505,26 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (previous && areChatMessagesEqual(previous, resolvedMessage)) return previous
       return resolvedMessage
     })
-    for (const previous of messagesRef.current) {
-      if (preserveTransientState && previous.metadata?.isError && isValidUUID(previous.id) && !nextMessages.some((message) => message.id === previous.id)) {
-        nextMessages.push(previous)
+    if (preserveTransientState) {
+      for (const previous of messagesRef.current) {
+        const failedRunConversationId = previous.metadata?.failedRunConversationId
+        if (previous.id.startsWith('assistant-run-') && failedRunConversationId !== targetConversationId) continue
+        const failedRunAnchorMessageId = previous.metadata?.failedRunAnchorMessageId
+        const anchorIndex = typeof failedRunAnchorMessageId === 'string'
+          ? convertedMessages.findIndex((message) => message.id === failedRunAnchorMessageId)
+          : -1
+        const branchStillCurrent = anchorIndex === convertedMessages.length - 1
+          || (typeof failedRunAnchorMessageId !== 'string' && convertedMessages.length === 0)
+        const belongsToTargetRun = previous.id.startsWith('assistant-run-')
+          && failedRunConversationId === targetConversationId
+          && branchStillCurrent
+        if (
+          previous.metadata?.isError
+          && !nextMessages.some((message) => message.id === previous.id)
+          && (isValidUUID(previous.id) || belongsToTargetRun)
+        ) {
+          nextMessages.push(previous)
+        }
       }
     }
     if (
@@ -598,12 +615,18 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       session.state.taskState.compression = 'error'
       updateLatestTimelineTask(session.state.segments, 'compression', 'error')
     }
+    const messageId = session.displayMessageId || session.backendMessageId
     const errorText = getErrorMessage(chatError, tError, tAuth)
     const { parts, preservedProgress } = buildErroredMessageParts({
       ...session.state,
       errorText,
     })
-    const messageId = session.displayMessageId || session.backendMessageId
+    const failedRunContext = messageId?.startsWith('assistant-run-')
+      ? {
+          failedRunConversationId: session.conversationId,
+          failedRunAnchorMessageId: [...messagesRef.current].reverse().find((message) => message.role === 'user')?.id,
+        }
+      : {}
     if (messageId) {
       setMessages((previous) => previous.map((message) => (
         message.id === messageId
@@ -617,6 +640,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 errorMessage: errorText,
                 errorCode: chatError.code,
                 preservedPartialProgress: preservedProgress,
+                ...failedRunContext,
               },
             }
           : message

@@ -812,6 +812,67 @@ describe('useChat', () => {
     expect(result.messages.find((message) => message.id === assistantId)?.metadata?.errorMessage).toBe('Invalid API key')
   })
 
+  it('keeps a failed synthetic run message on reload only for its conversation and active branch', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 4 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    } })
+    try {
+      getRunStatus.mockResolvedValue({ id: 'run-1', status: 'failed', error_message: 'Invalid API key' })
+      getConversation.mockResolvedValue({ messages: [
+        { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+      ] })
+      renderHookHarness()
+      result.setConversationId('conversation-1')
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+      renderHookHarness()
+      const failed = result.messages.find((message) => message.id === 'assistant-run-run-1')
+      expect(failed?.metadata).toMatchObject({ isError: true, errorMessage: 'Invalid API key' })
+
+      getConversation.mockResolvedValueOnce({ messages: [
+        { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+      ] })
+      result.reconnect()
+      await flush()
+      expect(result.messages.map((message) => message.id)).toContain('assistant-run-run-1')
+
+      result.setConversationId('conversation-2')
+      await flush()
+      getConversation.mockResolvedValueOnce({ messages: [] })
+      result.reconnect()
+      await flush()
+      expect(result.messages.map((message) => message.id)).not.toContain('assistant-run-run-1')
+
+      result.setConversationId('conversation-1')
+      await flush()
+      const branchMessage = { id: 'assistant-branch', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'new branch' }] }
+      result.setMessages([
+        { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+        branchMessage,
+        failed!,
+      ])
+      await flush()
+      getConversation.mockResolvedValueOnce({ messages: [
+        { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+        branchMessage,
+      ] })
+      result.reconnect()
+      await flush()
+      expect(result.messages.map((message) => message.id)).not.toContain('assistant-run-run-1')
+    } finally {
+      result.reset()
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    }
+  })
+
   it('reconciles the optimistic user ID from durable start before message_start', async () => {
     const userMessageId = '11111111-1111-1111-1111-111111111111'
     const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({

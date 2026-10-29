@@ -1521,6 +1521,117 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
     }
 
 
+@pytest.mark.anyio
+async def test_active_branch_version_hashes_json_custom_tool_model_view(monkeypatch):
+    from app.models import agent as agent_module
+    from app.services.chat_context import summarize_tool_result_for_llm
+
+    conversation_id = uuid4()
+    content = '{ "answer": 42, "items": [1, 2] }'
+    model_view = summarize_tool_result_for_llm("custom_mcp_tool", content)
+    rows = [
+        SimpleNamespace(
+            conversation_id=conversation_id,
+            round_index=1,
+            created_at=1,
+            id=1,
+            round_id=ROUND,
+            role=MessageRole.TOOL,
+            tool_call_id="call-mcp",
+            tool_name="custom_mcp_tool",
+            content=content,
+            is_active=True,
+        )
+    ]
+
+    class FakeMessage:
+        @classmethod
+        def filter(cls, **kwargs):
+            return _FakeMessageQuery(rows, kwargs)
+
+    monkeypatch.setattr(agent_module, "Message", FakeMessage)
+
+    versions = await context_checkpoint.active_branch_version_hashes(
+        conversation_id=conversation_id,
+        round_id=ROUND,
+        tool_call_ids=["call-mcp"],
+    )
+
+    assert model_view == '{"answer":42,"items":[1,2]}'
+    assert versions == {"call-mcp": content_version_hash(model_view)}
+    assert versions["call-mcp"] != content_version_hash(content)
+
+
+@pytest.mark.anyio
+async def test_active_branch_version_hash_preserves_persisted_model_result(monkeypatch):
+    from app.models import agent as agent_module
+    from app.services.tool_result_readback import model_visible_tool_result
+    from app.utils.tool_output import (
+        persistable_model_result,
+        persisted_asset_view_result,
+    )
+
+    conversation_id = uuid4()
+    explicit_display = '{"result": {"count": 3}}'
+    explicit_llm_result = "Found three matching records."
+    explicit = persistable_model_result(
+        "custom_mcp_tool", explicit_display, explicit_llm_result, explicit=True
+    )
+    asset_view = persisted_asset_view_result(
+        {"kind": "asset.view", "asset_ref": "asset-1"}, "Viewed asset asset-1"
+    )
+    rows = [
+        SimpleNamespace(
+            conversation_id=conversation_id,
+            round_index=1,
+            created_at=1,
+            id=1,
+            round_id=ROUND,
+            role=MessageRole.TOOL,
+            tool_call_id="explicit",
+            tool_name="custom_mcp_tool",
+            content=explicit,
+            is_active=True,
+        ),
+        SimpleNamespace(
+            conversation_id=conversation_id,
+            round_index=2,
+            created_at=2,
+            id=2,
+            round_id=ROUND,
+            role=MessageRole.TOOL,
+            tool_call_id="asset",
+            tool_name="view_asset",
+            content=asset_view,
+            is_active=True,
+        ),
+    ]
+
+    class FakeMessage:
+        @classmethod
+        def filter(cls, **kwargs):
+            return _FakeMessageQuery(rows, kwargs)
+
+    monkeypatch.setattr(agent_module, "Message", FakeMessage)
+
+    versions = await context_checkpoint.active_branch_version_hashes(
+        conversation_id=conversation_id,
+        round_id=ROUND,
+        tool_call_ids=["explicit", "asset"],
+    )
+
+    assert explicit is not None
+    assert versions == {
+        "explicit": content_version_hash(
+            model_visible_tool_result(explicit, "custom_mcp_tool")
+        ),
+        "asset": content_version_hash(
+            model_visible_tool_result(asset_view, "view_asset")
+        ),
+    }
+    assert versions["explicit"] == content_version_hash(explicit_llm_result)
+
+
 # ---------------------------------------------------------------------------
 # Historical summary boundary
 # ---------------------------------------------------------------------------

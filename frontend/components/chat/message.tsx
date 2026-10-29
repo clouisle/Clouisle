@@ -1279,11 +1279,19 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         const compression = getCompressionEventInfo(taskPart)
         const summaryTurns = compression?.summaryTurns ?? null
         const actions = compression?.actions ?? []
+        const schemasShed = actions.includes('provider_overflow_tool_schemas_shed')
+        const historyOmitted = actions.includes('provider_overflow_history_omitted')
+        const fallbackWithoutSummary = compression?.stage === 'fallback' || actions.includes('summary_fallback') || (schemasShed && historyOmitted)
         const summarized = actions.includes('context_summary') || (summaryTurns !== null && summaryTurns > 0)
         const compactedToolResults = actions.includes('tool_result_compacted') || compression?.stage === 'micro'
 
         if (taskPart.state === 'completed') {
-          if (compression?.stage === 'fallback' || actions.includes('summary_fallback')) return tTask('compressionWithoutSummary')
+          if (fallbackWithoutSummary) {
+            if (schemasShed && !historyOmitted) return tTask('toolSchemasShed')
+            return schemasShed
+              ? tTask('compressionWithoutSummaryAndSchemas')
+              : tTask('compressionWithoutSummary')
+          }
           if (summarized && compactedToolResults) return tTask('compressionCombined')
           if (compactedToolResults) return tTask('toolResultsCompacted')
           return tTask('compressionCompleted')
@@ -1387,9 +1395,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )
           } else if (part.taskType === 'compression') {
             const compression = getCompressionEventInfo(part)
+            const schemasShed = compression?.actions.includes('provider_overflow_tool_schemas_shed') ?? false
+            const historyOmitted = compression?.actions.includes('provider_overflow_history_omitted') ?? false
             const showFallbackHint = part.state === 'completed'
               && compression !== null
-              && (compression.stage === 'fallback' || compression.actions.includes('summary_fallback'))
+              && (compression.stage === 'fallback' || compression.actions.includes('summary_fallback') || schemasShed)
             steps.push(
               <ChainOfThoughtStep
                 key={`compression-${index}`}
@@ -1399,7 +1409,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               >
                 {showFallbackHint && (
                   <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-                    {tTask('compressionWithoutSummaryHint')}
+                    {schemasShed && !historyOmitted
+                      ? tTask('toolSchemasShedHint')
+                      : schemasShed
+                        ? tTask('compressionWithoutSummaryAndSchemasHint')
+                        : tTask('compressionWithoutSummaryHint')}
                   </p>
                 )}
               </ChainOfThoughtStep>

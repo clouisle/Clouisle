@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 import ast
 import asyncio
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -681,12 +682,23 @@ async def build_message_round_payloads(messages: list[Message]) -> list[dict[str
     }
     events_by_message: dict[str, list[dict[str, Any]]] = {}
     if final_rounds:
-        runs = await _AgentRunModel.filter(
-            canonical_message_id__in=list(final_rounds)
-        ).values("canonical_message_id", "active_round_id", "worker_payload")
+        runs = await (
+            _AgentRunModel.filter(canonical_message_id__in=list(final_rounds))
+            .annotate(compression_events=F("worker_payload__compression_events"))
+            .values("canonical_message_id", "active_round_id", "compression_events")
+        )
         for run in runs:
-            payload = run.get("worker_payload") or {}
-            for event in payload.get("compression_events", []):
+            compression_events = run.get("compression_events") or []
+            if isinstance(compression_events, str):
+                try:
+                    compression_events = json.loads(compression_events)
+                except (TypeError, ValueError):
+                    compression_events = []
+            if not isinstance(compression_events, list):
+                continue
+            for event in compression_events:
+                if not isinstance(event, dict):
+                    continue
                 if event.get("message_id") == str(
                     run["canonical_message_id"]
                 ) and event.get("round_id") == str(

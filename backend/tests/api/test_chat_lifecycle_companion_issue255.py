@@ -130,7 +130,11 @@ async def test_round_payloads_skip_steps_and_nest_them_under_final_message():
         patch.object(
             chat._AgentRunModel,
             "filter",
-            return_value=SimpleNamespace(values=AsyncMock(return_value=[])),
+            return_value=MagicMock(
+                annotate=MagicMock(
+                    return_value=SimpleNamespace(values=AsyncMock(return_value=[]))
+                )
+            ),
         ),
         patch.object(chat, "MessageOut", message_out),
     ):

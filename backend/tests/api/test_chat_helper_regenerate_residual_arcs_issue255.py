@@ -116,6 +116,7 @@ async def test_message_payload_residual_arcs(monkeypatch):
     validated.model_dump.side_effect = [{"id": "regular"}, {"id": "final"}]
     monkeypatch.setattr(chat.MessageOut, "model_validate", Mock(return_value=validated))
     query = MagicMock()
+    query.annotate.return_value = query
     query.values = AsyncMock(return_value=[])
     monkeypatch.setattr(chat._AgentRunModel, "filter", Mock(return_value=query))
 

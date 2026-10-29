@@ -33,6 +33,17 @@ WHERE status IN ('pending', 'sending');
 
 Verify the due-binding and recovery queries with `EXPLAIN (ANALYZE, BUFFERS)` on representative data. Match polling limits across replicas; raising replicas does not raise the global `WECHAT_POLL_MAX_BATCHES` cap. Validate new-message intake, empty-message behavior, Agent replies, feature disable/re-enable and worker-loss recovery before reopening traffic.
 
+## AgentRun compression-history lookup index
+
+Chat history reads durable compression events from `agent_runs` by `canonical_message_id`. The model declares this index for new databases. On existing PostgreSQL installations, build it before deploying the optimized history query, outside a transaction and without blocking writes:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_runs_canonical_50478e
+ON agent_runs (canonical_message_id);
+```
+
+Run the PostgreSQL command in autocommit mode. `IF NOT EXISTS` does not repair a failed/invalid index; inspect index validity and retry a failed build before rollout. On an existing SQLite database, create the same index with `CREATE INDEX IF NOT EXISTS idx_agent_runs_canonical_50478e ON agent_runs (canonical_message_id);` during a maintenance window; SQLite does not support `CONCURRENTLY`.
+
 ## Messaging delivery queue cutover
 
 Feishu and WeChat Agent chat now share one durable outbound table, `integration_deliveries`. On first startup, the API copies rows from `feishu_agent_deliveries` and `wechat_agent_deliveries`, then drops both tables. Deploy the API and every worker (including Celery Beat hosts) to the matching version before accepting traffic or allowing queued work to resume: an older worker would insert into a table that no longer exists. Roll back only together with the database backup taken before the upgrade; restoring the old image alone cannot recreate the dropped queue.

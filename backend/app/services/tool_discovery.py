@@ -427,15 +427,19 @@ class ToolDiscoveryState:
                 continue
             requested.append(name)
 
-        # A single request larger than the cap keeps the requested order and
-        # tools are evicted to make room for the requested batch.
-        if len(requested) > self.max_loaded:
-            deferred = requested[self.max_loaded :]
-            requested = requested[: self.max_loaded]
-        overflow = len(self.loaded) + len(requested) - self.max_loaded
-        if overflow > 0:
-            evicted = self.loaded[:overflow]
-            del self.loaded[:overflow]
+        # A tool declared already visible in this request must remain loaded;
+        # otherwise the response would claim it is visible while evicting it.
+        protected = set(already).intersection(self.loaded)
+        available = max(0, self.max_loaded - len(protected))
+        if len(requested) > available:
+            deferred = requested[available:]
+            requested = requested[:available]
+        overflow = max(0, len(self.loaded) + len(requested) - self.max_loaded)
+        if overflow:
+            evictable = [name for name in self.loaded if name not in protected]
+            evicted = evictable[:overflow]
+            evicted_names = set(evicted)
+            self.loaded = [name for name in self.loaded if name not in evicted_names]
         self.loaded.extend(requested)
         added = requested
 

@@ -323,7 +323,12 @@ async def active_branch_version_hashes(
 ) -> dict[str, str | None]:
     """Hash the current active-branch result generation per call id."""
     from app.models.agent import Message, MessageRole
+    from app.services.chat_context import summarize_tool_result_for_llm
     from app.services.tool_result_readback import model_visible_tool_result
+    from app.utils.tool_output import (
+        ASSET_VIEW_PERSISTED_KIND,
+        ASSET_VIEW_PERSISTED_VERSION,
+    )
 
     wanted = [call_id for call_id in dict.fromkeys(tool_call_ids) if call_id]
     if not wanted:
@@ -343,12 +348,27 @@ async def active_branch_version_hashes(
     for row in rows:
         call_id = getattr(row, "tool_call_id", None)
         if call_id in versions and versions[call_id] is None:
-            versions[call_id] = content_version_hash(
-                model_visible_tool_result(
-                    getattr(row, "content", None),
-                    getattr(row, "tool_name", None),
-                )
+            content = getattr(row, "content", None)
+            tool_name = getattr(row, "tool_name", None)
+            payload = None
+            if isinstance(content, str) and content.lstrip().startswith("{"):
+                try:
+                    payload = json.loads(content)
+                except (TypeError, ValueError):
+                    pass
+            is_asset_view_envelope = (
+                isinstance(payload, dict)
+                and payload.get("kind") == ASSET_VIEW_PERSISTED_KIND
+                and payload.get("version") == ASSET_VIEW_PERSISTED_VERSION
+                and isinstance(payload.get("marker"), str)
             )
+            if is_asset_view_envelope:
+                model_content = model_visible_tool_result(content, tool_name)
+            else:
+                model_content = summarize_tool_result_for_llm(
+                    tool_name, content if isinstance(content, str) else ""
+                )
+            versions[call_id] = content_version_hash(model_content)
     return versions
 
 

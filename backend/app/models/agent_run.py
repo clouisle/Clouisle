@@ -137,6 +137,7 @@ class AgentRun(models.Model):
 
     class Meta:
         table = "agent_runs"
+        indexes = ["canonical_message_id"]
 
     def __str__(self) -> str:
         return f"AgentRun {self.id} ({self.status.value})"

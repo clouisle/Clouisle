@@ -1227,6 +1227,29 @@ describe('message behavior', () => {
     expect(html).toContain('chat.task.compressionWithoutSummaryHint')
   })
 
+  test('explains when fallback omitted optional tool schemas without dropping history', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'compression-schema-shed',
+        role: 'assistant',
+        parts: [{
+          type: 'task',
+          taskType: 'compression',
+          state: 'completed',
+          info: {
+            stage: 'fallback',
+            actions: ['provider_overflow_retry', 'provider_overflow_tool_schemas_shed'],
+          },
+        }],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    expect(html).toContain('chat.task.toolSchemasShed')
+    expect(html).toContain('chat.task.toolSchemasShedHint')
+    expect(html).not.toContain('chat.task.compressionWithoutSummaryHint')
+  })
+
   test('renders media URLs, fallbacks, string results, and artifact metadata without file cards', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'media-variants',

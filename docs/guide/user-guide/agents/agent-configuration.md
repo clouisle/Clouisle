@@ -256,7 +256,7 @@ Long conversations are kept within the model's context window automatically. In 
 - **Summary Token Budget** (`summary_max_tokens`, 128–8000): target size of the generated history summary. Larger summaries preserve more detail but leave less room for the current round.
 - **Show compression progress** (`emit_sse_events`): emit `compression_start` / `compression_end` events. When off, compression still happens but stays silent in chat and the SSE stream.
 
-Compression never rewrites stored messages or tool records; it only changes the view sent to the model for that request. When older history is summarized or completed tool output is compacted, chat shows a short progress step with token counts, and the SSE `compression_end` event reports `stage` (`macro`, `micro`, or `fallback`) and `actions` (`context_summary`, `tool_result_compacted`, `summary_fallback`).
+Compression never rewrites stored messages or tool records; it only changes the view sent to the model for that request. When older history is summarized or completed tool output is compacted, chat shows a short progress step describing the compression action; the timeline does not display token counts. The SSE `compression_end` event reports `stage` (`macro`, `micro`, or `fallback`) and `actions` (`context_summary`, `tool_result_compacted`, `summary_fallback`), along with token-budget metadata.
 
 If the summarizer is unavailable, compression falls back to omitting summarized history while keeping current instructions and the recent tail, and the chat step states that earlier history was omitted. If even the protected content (system prompt, current turn, tool definitions, retained recent exchanges) cannot fit, the run fails with an explicit error instead of dropping your instructions.
 

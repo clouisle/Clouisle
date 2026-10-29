@@ -18,6 +18,10 @@ export type ChatMessages = {
       toolResultsCompacted: string
       compressionWithoutSummary: string
       compressionWithoutSummaryHint: string
+      compressionWithoutSummaryAndSchemas: string
+      compressionWithoutSummaryAndSchemasHint: string
+      toolSchemasShed: string
+      toolSchemasShedHint: string
       executingTools: string
       toolsExecuted: string
     }

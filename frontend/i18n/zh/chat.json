@@ -16,6 +16,10 @@
       "toolResultsCompacted": "已压缩较早的工具结果",
       "compressionWithoutSummary": "上下文已在没有摘要的情况下精简",
       "compressionWithoutSummaryHint": "本次请求已省略较早的历史。如果回答缺少上下文，请重新说明关键信息或开启新对话。",
+      "compressionWithoutSummaryAndSchemas": "上下文已精简并省略可选工具定义",
+      "compressionWithoutSummaryAndSchemasHint": "为缩小请求，已省略可选工具定义。如果工具不可用，请缩小请求范围后重试。",
+      "toolSchemasShed": "为适应请求大小限制，已省略可选工具定义",
+      "toolSchemasShedHint": "为适应请求大小限制，已省略可选工具定义，对话历史仍予以保留。",
       "executingTools": "执行工具",
       "toolsExecuted": "已执行 {count} 个工具"
     },

@@ -652,6 +652,31 @@ async def test_load_reports_already_visible_core_meta_and_duplicate_names():
 
 
 @pytest.mark.asyncio
+async def test_load_does_not_evict_tools_already_visible_in_same_request():
+    state = await build_tool_discovery(_mcp_catalog(25), min_discoverable=5)
+    assert state is not None
+    state.max_loaded = 2
+
+    first, second, requested = (
+        "mcp_calendar_server_tool_0",
+        "mcp_calendar_server_tool_1",
+        "mcp_calendar_server_tool_2",
+    )
+    await state.execute(LOAD_TOOLS_TOOL, {"names": [first, second]})
+
+    result = json.loads(
+        await state.execute(LOAD_TOOLS_TOOL, {"names": [first, second, requested]})
+    )
+
+    assert result["already_visible"] == [first, second]
+    assert result["loaded"] == []
+    assert result["not_loaded_limit_reached"] == [requested]
+    assert result.get("evicted", []) == []
+    assert state.loaded == [first, second]
+    assert len(state.loaded) <= state.max_loaded
+
+
+@pytest.mark.asyncio
 async def test_loading_a_skill_loads_its_sandbox_companions():
     tools = [
         _schema("ask_user", "Ask the user"),

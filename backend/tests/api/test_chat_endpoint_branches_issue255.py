@@ -175,6 +175,7 @@ async def test_build_message_round_payloads_skips_steps_and_attaches_them(monkey
         AsyncMock(return_value={round_id: [{"content": "tool result"}]}),
     )
     query = MagicMock()
+    query.annotate.return_value = query
     query.values = AsyncMock(return_value=[])
     monkeypatch.setattr(chat._AgentRunModel, "filter", MagicMock(return_value=query))
     validated = MagicMock()
@@ -220,12 +221,13 @@ async def test_history_attaches_only_events_bound_to_visible_message_and_round(
     }
     stale = {**valid, "round_id": str(uuid4())}
     query = MagicMock()
+    query.annotate.return_value = query
     query.values = AsyncMock(
         return_value=[
             {
                 "canonical_message_id": message_id,
                 "active_round_id": round_id,
-                "worker_payload": {"compression_events": [valid, stale]},
+                "compression_events": [valid, stale],
             }
         ]
     )

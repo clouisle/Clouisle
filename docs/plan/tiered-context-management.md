@@ -69,6 +69,12 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Validation**: Exercise streaming and nonstream retries, legacy and discovery-transition resumes, worker reconstruction, repeated CJK input and chat history. Run focused tests and pre-push gates; do not start services or browsers. Revert the specific change if authorization or resume behavior regresses.
 - Verification: 166 focused backend tests and 56 frontend hook tests passed; Ruff and frontend ESLint passed. A search smoke check retained the calendar bigram after repeated CJK input. No application services or browsers were started.
 
+### Stage 12: Review Corrections
+- **Files modified**: run store, checkpoint and discovery services, chat history query and database index configuration, chat hook and message renderer, targeted tests, user guides and changelog.
+- **Specific logic**: Preserve concurrent checkpoint writes without restoring consumed resume fields; hash the model-visible result consistently; keep requested tools accurately represented after eviction. Preserve recovered failure messages, distinguish actual history omission, and constrain indexed compression-event retrieval.
+- **Validation**: Exercise repeated pauses, JSON tool checkpoint versions, capacity-bound discovery, failed-run reloads and both fallback types; verify history retrieval and database index behavior. Run focused backend and frontend tests and smoke checks without starting services or a browser. Revert the relevant changes if recovery or history behavior regresses.
+- Verification: 165 focused backend tests and 122 frontend tests passed; Ruff, TypeScript and ESLint passed. SQLite ORM tests exercised pause persistence and compression-event history; a direct JSON rendering smoke check confirmed checkpoint hash input. No service or browser was started; existing PostgreSQL indexes require the documented concurrent upgrade step.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.

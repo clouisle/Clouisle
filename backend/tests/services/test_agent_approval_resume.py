@@ -326,7 +326,13 @@ async def test_park_run_waiting_merges_checkpoint_with_real_database(monkeypatch
             round_id=round_id,
             payload={
                 "history_override": [{"role": "user", "content": "fresh"}],
+                "resume_tool_result": {"tool_call_id": "consumed"},
+                "pending_tool_calls_cipher": "consumed-ciphertext",
+                "pending_tool_visible_names": ["consumed-tool"],
                 "active_round_checkpoint": checkpoint,
+                "compression_events": [
+                    {"type": "compression_end", "payload": {"before_tokens": 900}}
+                ],
             },
         )
         # The worker's in-memory instance predates the checkpoint and carries a
@@ -343,6 +349,7 @@ async def test_park_run_waiting_merges_checkpoint_with_real_database(monkeypatch
             worker_payload={
                 "history_override": [{"role": "user", "content": "stale"}],
                 "resume": True,
+                "compression_events": [],
                 "active_round_checkpoint": {
                     "mode": "readback_only",
                     "summary_text": None,
@@ -355,6 +362,12 @@ async def test_park_run_waiting_merges_checkpoint_with_real_database(monkeypatch
         # everything the caller actually supplies.
         assert fresh.worker_payload["active_round_checkpoint"] == checkpoint
         assert fresh.worker_payload["resume"] is True
+        assert fresh.worker_payload["compression_events"] == [
+            {"type": "compression_end", "payload": {"before_tokens": 900}}
+        ]
+        assert "resume_tool_result" not in fresh.worker_payload
+        assert "pending_tool_calls_cipher" not in fresh.worker_payload
+        assert "pending_tool_visible_names" not in fresh.worker_payload
         assert fresh.worker_payload["history_override"] == [
             {"role": "user", "content": "stale"}
         ]
