@@ -1008,11 +1008,11 @@ describe('message behavior', () => {
 
     expect([...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent)).toEqual([
       expect.stringContaining('before compression'),
-      expect.stringContaining('chat.task.compressionCompletedSummary before=90000 after=1000 saved=89000 count=1'),
+      expect.stringContaining('chat.task.compressionCompleted'),
       expect.stringContaining('after compression'),
     ])
     expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(1)
-    expect(container.querySelector('[data-chat-thought-process="true"]')?.textContent).toContain('chat.task.compressionCompletedSummary')
+    expect(container.querySelector('[data-chat-thought-process="true"]')?.textContent).toContain('chat.task.compressionCompleted')
   })
 
   test('aggregates repeated reasoning blocks at the top of the message', () => {
@@ -1109,11 +1109,7 @@ describe('message behavior', () => {
       ],
     }} />)
 
-    expect(html).toContain('chat.task.compressionCompleted before=100 after=50')
-    expect(html).toContain('chat.task.compressionCompletedSummary before=90 after=40 saved=50 count=2')
-    expect(html).toContain('chat.task.compressionCompleted before=80 after=30')
-    expect(html).toContain('chat.task.compressionCompletedSummary before=70 after=20 saved=50 count=2')
-    expect(html).toContain('chat.task.compressionCompleted before=60 after=10')
+    expect(html).toContain('chat.task.compressionCompleted')
     expect(html).toContain('lookup')
     expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
@@ -1168,12 +1164,12 @@ describe('message behavior', () => {
     />)
 
     expect(html).toContain('chat.task.compactingToolResults')
-    expect(html).toContain('chat.task.toolResultsCompacted before=1200 after=400 saved=800')
-    expect(html).toContain('chat.task.compressionCombined before=900 after=300 saved=600')
-    expect(html).toContain('chat.task.compressionCompletedSummary before=800 after=200 saved=600 count=2')
+    expect(html).toContain('chat.task.toolResultsCompacted')
+    expect(html).toContain('chat.task.compressionCombined')
+    expect(html).toContain('chat.task.compressionCompleted')
   })
 
-  test('shows budget diagnostics and fallback guidance only for applicable events', () => {
+  test('hides token diagnostics while preserving fallback guidance', () => {
     const html = renderToStaticMarkup(<Message
       message={{
         id: 'compression-diagnostics',
@@ -1209,10 +1205,11 @@ describe('message behavior', () => {
       chainOfThoughtOpen
     />)
 
-    expect(html).toContain('chat.task.compressionBudget budget=24000 before=74 after=21')
-    expect(html).toContain('chat.task.compressionWithoutSummary before=500 after=200 saved=300')
+    expect(html).not.toContain('chat.task.compressionBudget')
+    expect(html).not.toContain('24000')
+    expect(html).not.toContain('before=')
+    expect(html).toContain('chat.task.compressionWithoutSummary')
     expect(html).toContain('chat.task.compressionWithoutSummaryHint')
-    expect(html.match(/chat\.task\.compressionBudget/g)).toHaveLength(1)
   })
 
   test('renders media URLs, fallbacks, string results, and artifact metadata without file cards', () => {

@@ -11,12 +11,10 @@ export type ChatMessages = {
       compactingToolResults: string
       condensingContext: string
       compressionCompleted: string
-      compressionCompletedSummary: string
       compressionCombined: string
       toolResultsCompacted: string
       compressionWithoutSummary: string
       compressionWithoutSummaryHint: string
-      compressionBudget: string
       executingTools: string
       toolsExecuted: string
     }

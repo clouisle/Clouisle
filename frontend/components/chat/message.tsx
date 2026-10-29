@@ -100,15 +100,7 @@ const CITATION_HREF_PREFIX = '#clouisle-citation='
 interface CompressionEventInfo {
   stage: string | null
   actions: string[]
-  beforeTokens: number | null
-  afterTokens: number | null
-  summarySourceTokens: number | null
-  summaryResultTokens: number | null
-  summarySavedTokens: number | null
   summaryTurns: number | null
-  inputBudget: number | null
-  utilizationBefore: number | null
-  utilizationAfter: number | null
 }
 
 function readFiniteNumber(value: unknown): number | null {
@@ -132,15 +124,7 @@ function getCompressionEventInfo(part: TaskPart): CompressionEventInfo | null {
   return {
     stage: typeof info.stage === 'string' ? info.stage : null,
     actions,
-    beforeTokens: readFiniteNumber(info.before_tokens),
-    afterTokens: readFiniteNumber(info.after_tokens),
-    summarySourceTokens: readFiniteNumber(info.summary_source_tokens),
-    summaryResultTokens: readFiniteNumber(info.summary_result_tokens),
-    summarySavedTokens: readFiniteNumber(info.summary_saved_tokens),
     summaryTurns: readFiniteNumber(info.summary_turns),
-    inputBudget: readFiniteNumber(info.input_budget),
-    utilizationBefore: readFiniteNumber(info.utilization_before),
-    utilizationAfter: readFiniteNumber(info.utilization_after),
   }
 }
 
@@ -1286,60 +1270,19 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
       if (taskPart.taskType === 'compression') {
         const compression = getCompressionEventInfo(taskPart)
-        const summarySourceTokens = compression !== null
-          && compression.summarySourceTokens !== null
-          && compression.summarySourceTokens > 0
-          ? compression.summarySourceTokens
-          : null
-        const summaryResultTokens = compression !== null
-          && compression.summaryResultTokens !== null
-          && compression.summaryResultTokens > 0
-          ? compression.summaryResultTokens
-          : null
-        const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
-        const displayBeforeTokens = summarySourceTokens ?? compression?.beforeTokens ?? null
-        const displayAfterTokens = summaryResultTokens ?? compression?.afterTokens ?? null
-        const displaySavedTokens = (hasSummaryTokenStats ? compression?.summarySavedTokens : null) ?? (
-          displayBeforeTokens !== null && displayAfterTokens !== null
-            ? Math.max(displayBeforeTokens - displayAfterTokens, 0)
-            : 0
-        )
         const summaryTurns = compression?.summaryTurns ?? null
         const actions = compression?.actions ?? []
-        const summarized = actions.includes('context_summary') || hasSummaryTokenStats || (summaryTurns !== null && summaryTurns > 0)
+        const summarized = actions.includes('context_summary') || (summaryTurns !== null && summaryTurns > 0)
         const compactedToolResults = actions.includes('tool_result_compacted') || compression?.stage === 'micro'
 
-        if (taskPart.state === 'completed' && displayBeforeTokens !== null && displayAfterTokens !== null) {
-          const counts = {
-            before: displayBeforeTokens,
-            after: displayAfterTokens,
-            saved: displaySavedTokens,
-          }
-          if (compression?.stage === 'fallback' || actions.includes('summary_fallback')) {
-            return tTask('compressionWithoutSummary', counts)
-          }
-          if (summarized && compactedToolResults) {
-            return tTask('compressionCombined', counts)
-          }
-          if (compactedToolResults) {
-            return tTask('toolResultsCompacted', counts)
-          }
-          if (summarized) {
-            return tTask('compressionCompletedSummary', {
-              ...counts,
-              count: summaryTurns ?? 0,
-            })
-          }
-          return tTask('compressionCompleted', counts)
+        if (taskPart.state === 'completed') {
+          if (compression?.stage === 'fallback' || actions.includes('summary_fallback')) return tTask('compressionWithoutSummary')
+          if (summarized && compactedToolResults) return tTask('compressionCombined')
+          if (compactedToolResults) return tTask('toolResultsCompacted')
+          return tTask('compressionCompleted')
         }
-        if (taskPart.state !== 'completed') {
-          if (compression?.stage === 'micro') {
-            return tTask('compactingToolResults')
-          }
-          if (compression?.stage === 'fallback') {
-            return tTask('condensingContext')
-          }
-        }
+        if (compression?.stage === 'micro') return tTask('compactingToolResults')
+        if (compression?.stage === 'fallback') return tTask('condensingContext')
         return tTask('compressingContext')
       }
       if (taskPart.taskType === 'generating') {
@@ -1437,11 +1380,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             )
           } else if (part.taskType === 'compression') {
             const compression = getCompressionEventInfo(part)
-            const budget = compression?.inputBudget ?? null
-            const utilizationBefore = compression?.utilizationBefore ?? null
-            const utilizationAfter = compression?.utilizationAfter ?? null
-            const beforePercent = utilizationBefore === null ? null : Math.max(0, Math.round(utilizationBefore * 100))
-            const afterPercent = utilizationAfter === null ? null : Math.max(0, Math.round(utilizationAfter * 100))
             const showFallbackHint = part.state === 'completed'
               && compression !== null
               && (compression.stage === 'fallback' || compression.actions.includes('summary_fallback'))
@@ -1452,15 +1390,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                 label={getTaskTitle(part)}
                 status={getStepStatus(part.state)}
               >
-                {part.state === 'completed' && budget !== null && beforePercent !== null && afterPercent !== null && (
-                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-                    {tTask('compressionBudget', {
-                      budget,
-                      before: beforePercent,
-                      after: afterPercent,
-                    })}
-                  </p>
-                )}
                 {showFallbackHint && (
                   <p className="text-[11px] leading-relaxed text-muted-foreground/80">
                     {tTask('compressionWithoutSummaryHint')}
