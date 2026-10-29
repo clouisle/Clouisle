@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Citation sources with non-HTTP or invalid URLs are displayed as text rather than links.
 - Preserve small upward scrolls during streaming; fix closed trace visibility, touch copy controls, localized accessibility labels and scroll direction indicators.
 - Chat follows newly added content when the reader was at the bottom before it grew, while preserving deliberate scrolling into history.
 - The scroll-to-bottom button stays above sticky thought-process headers.

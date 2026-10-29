@@ -267,6 +267,15 @@ export const InlineCitationCarouselNext = ({
   );
 };
 
+function isHttpCitationUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export type InlineCitationSourceProps = ComponentProps<"div"> & {
   title?: string;
   url?: string;
@@ -289,10 +298,12 @@ export const InlineCitationSource = ({
     )}
     {url && (
       <p className="truncate break-all text-muted-foreground text-xs">
-        <a href={url} target="_blank" rel="noreferrer">
-          {url}
-          <span className="sr-only">{newTabLabel ?? " (opens in a new tab)"}</span>
-        </a>
+        {isHttpCitationUrl(url) ? (
+          <a href={url} target="_blank" rel="noreferrer">
+            {url}
+            <span className="sr-only">{newTabLabel ?? " (opens in a new tab)"}</span>
+          </a>
+        ) : url}
       </p>
     )}
     {description && (

@@ -114,3 +114,16 @@ test("citation source links preserve the English hint when no label is provided"
 
   expect(newTabHint?.props.children).toBe(" (opens in a new tab)");
 });
+
+test("citation source links only absolute HTTP and HTTPS URLs", () => {
+  for (const url of ["http://example.org/path", "https://example.org/path"]) {
+    const source = InlineCitationSource({ url }) as ElementNode;
+    expect(findElement(source, (element) => element.type === "a")?.props.href).toBe(url);
+  }
+
+  for (const url of ["javascript:alert(1)", "data:text/html,hello", "mailto:test@example.org", "/relative", "not a url"]) {
+    const source = InlineCitationSource({ url }) as ElementNode;
+    expect(findElement(source, (element) => element.type === "a")).toBeUndefined();
+    expect(findElement(source, (element) => element.type === "p")?.props.children).toBe(url);
+  }
+});
