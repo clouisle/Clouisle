@@ -1299,7 +1299,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         const hasSummaryTokenStats = summarySourceTokens !== null && summaryResultTokens !== null
         const displayBeforeTokens = summarySourceTokens ?? compression?.beforeTokens ?? null
         const displayAfterTokens = summaryResultTokens ?? compression?.afterTokens ?? null
-        const displaySavedTokens = compression?.summarySavedTokens ?? (
+        const displaySavedTokens = (hasSummaryTokenStats ? compression?.summarySavedTokens : null) ?? (
           displayBeforeTokens !== null && displayAfterTokens !== null
             ? Math.max(displayBeforeTokens - displayAfterTokens, 0)
             : 0

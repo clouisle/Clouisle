@@ -1135,6 +1135,7 @@ describe('message behavior', () => {
               actions: ['tool_result_compacted'],
               before_tokens: 1200,
               after_tokens: 400,
+              summary_saved_tokens: 0,
             },
           },
           {
