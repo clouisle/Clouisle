@@ -799,6 +799,19 @@ describe('useChat', () => {
     }
   })
 
+  it('keeps a failed assistant message when reconnect reload omits it', async () => {
+    const assistantId = '11111111-1111-4111-8111-111111111111'
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([{ id: assistantId, role: 'assistant', parts: [{ type: 'text', text: 'Invalid API key' }], createdAt: new Date(), metadata: { isError: true, errorMessage: 'Invalid API key' } }])
+    await flush()
+    getConversation.mockResolvedValue({ messages: [] })
+    result.reconnect()
+    for (let i = 0; i < 5; i += 1) await flush()
+    expect(result.messages.find((message) => message.id === assistantId)?.metadata?.errorMessage).toBe('Invalid API key')
+  })
+
   it('reconciles the optimistic user ID from durable start before message_start', async () => {
     const userMessageId = '11111111-1111-1111-1111-111111111111'
     const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({

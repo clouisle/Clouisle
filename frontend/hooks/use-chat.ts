@@ -500,6 +500,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (previous && areChatMessagesEqual(previous, resolvedMessage)) return previous
       return resolvedMessage
     })
+    for (const previous of messagesRef.current) {
+      if (previous.metadata?.isError && isValidUUID(previous.id) && !nextMessages.some((message) => message.id === previous.id)) {
+        nextMessages.push(previous)
+      }
+    }
     if (
       nextMessages.length === messagesRef.current.length &&
       nextMessages.every((msg, idx) => msg === messagesRef.current[idx])
