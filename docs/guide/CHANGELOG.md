@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The scroll-to-bottom button stays above sticky thought-process headers.
 - Thought-process and tool details now use a short fade on expansion instead of conflicting height and visibility transitions.
 - Thought-process steps use distinct icons for tools, Skills and other actions, with error states still highlighted.
 - Long thought processes keep their header available while scrolling for easy collapse.

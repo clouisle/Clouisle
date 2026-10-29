@@ -672,7 +672,7 @@ export function ChatContainer({
         <Button
           variant="outline"
           size="icon"
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full shadow-md bg-background/95 backdrop-blur-sm border-border/50 hover:bg-accent"
+          className="absolute z-20 bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full shadow-md bg-background/95 backdrop-blur-sm border-border/50 hover:bg-accent"
           onClick={() => scrollToBottom()}
         >
           <ArrowDown className="h-4 w-4" />
