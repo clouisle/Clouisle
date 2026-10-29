@@ -27,8 +27,6 @@ type ChainOfThoughtContextValue = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   isStreaming: boolean;
-  headerRef: React.RefObject<HTMLButtonElement | null>;
-  collapseFromFooter: () => void;
   contentId: string;
 };
 
@@ -64,33 +62,30 @@ export const ChainOfThought = memo(
   }: ChainOfThoughtProps) => {
     const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
     const rootRef = useRef<HTMLDivElement>(null);
-    const headerRef = useRef<HTMLButtonElement>(null);
     const contentId = useId();
     const isOpen = open ?? uncontrolledOpen;
     const setIsOpen = useCallback((nextOpen: boolean) => {
       if (open === undefined) setUncontrolledOpen(nextOpen);
       onOpenChange?.(nextOpen);
     }, [open, onOpenChange]);
-    const collapse = useCallback((restoreFocus: boolean) => {
+    const collapse = useCallback(() => {
       const root = rootRef.current;
       const scroller = root?.closest<HTMLElement>('[data-chat-scroller]');
       if (root && scroller) {
         const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
         if (offset < 0) scroller.scrollBy({ top: offset, behavior: "instant" });
       }
-      if (restoreFocus) headerRef.current?.focus({ preventScroll: true });
       setIsOpen(false);
     }, [setIsOpen]);
-    const collapseFromFooter = useCallback(() => collapse(true), [collapse]);
     const handleOpenChange = useCallback((nextOpen: boolean) => {
       if (nextOpen) setIsOpen(true);
-      else collapse(false);
+      else collapse();
     }, [collapse, setIsOpen]);
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const contextValue = useMemo(
-      () => ({ isOpen, setIsOpen, isStreaming, contentId, headerRef, collapseFromFooter }),
-      [isOpen, setIsOpen, isStreaming, contentId, collapseFromFooter]
+      () => ({ isOpen, setIsOpen, isStreaming, contentId }),
+      [isOpen, setIsOpen, isStreaming, contentId]
     );
 
     // Auto-close when streaming ends (once only)
@@ -137,12 +132,11 @@ export const ChainOfThoughtHeader = memo(
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
-    const { isOpen, isStreaming, contentId, headerRef } = useChainOfThought();
+    const { isOpen, isStreaming, contentId } = useChainOfThought();
     const t = useTranslations('chat.reasoning');
 
     return (
       <TraceCollapsibleTrigger
-        ref={headerRef}
         className={cn(
           "sticky top-0 z-10 group flex w-full items-center gap-2 bg-background py-1 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
@@ -168,8 +162,7 @@ export type ChainOfThoughtContentProps = ComponentProps<"div"> & {
 
 export const ChainOfThoughtContent = memo(
   ({ className, children, containScroll = false, onWheel, ...props }: ChainOfThoughtContentProps) => {
-    const { isOpen, contentId, collapseFromFooter } = useChainOfThought();
-    const t = useTranslations('chat.reasoning');
+    const { isOpen, contentId } = useChainOfThought();
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -208,9 +201,6 @@ export const ChainOfThoughtContent = memo(
           {...props}
         >
           <Trace>{children}</Trace>
-          <button type="button" onClick={collapseFromFooter} className="mt-3 rounded-md px-1 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            {t('collapse')}
-          </button>
         </div>
       </TraceCollapsibleContent>
     );
@@ -224,6 +214,7 @@ export type StepStatus = "pending" | "active" | "complete" | "error";
 // Single step
 export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
   icon?: LucideIcon;
+  iconContent?: ReactNode;
   label: string;
   status?: StepStatus;
   collapsible?: boolean;
@@ -240,18 +231,20 @@ export const ChainOfThoughtStep = memo(
   ({
     className,
     icon: Icon,
+    iconContent,
     label,
     status = "pending",
     collapsible = false,
     children,
     ...props
   }: ChainOfThoughtStepProps) => {
+    const stepIcon = iconContent ?? (Icon ? <Icon className="size-3.5" /> : statusIcons[status]);
     if (collapsible) {
       return (
         <TraceCollapsible className={className} {...props}>
           <TraceCollapsibleTrigger>
             <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
-              <TraceIcon>{statusIcons[status]}</TraceIcon>
+              <TraceIcon className={cn(status === "error" && "text-destructive", status === "active" && "text-primary")}>{stepIcon}</TraceIcon>
               <TraceTitle>{label}</TraceTitle>
             </TraceLine>
           </TraceCollapsibleTrigger>
@@ -262,8 +255,7 @@ export const ChainOfThoughtStep = memo(
     return (
       <div className={cn("text-muted-foreground", className)} {...props}>
         <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
-          <TraceIcon>{statusIcons[status]}</TraceIcon>
-          {Icon && <TraceIcon><Icon className="size-3.5" /></TraceIcon>}
+          <TraceIcon className={cn(status === "error" && "text-destructive", status === "active" && "text-primary")}>{stepIcon}</TraceIcon>
           <TraceTitle className="text-xs">{label}</TraceTitle>
         </TraceLine>
         {children && <div className="ml-5 mt-1.5">{children}</div>}

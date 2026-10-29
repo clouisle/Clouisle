@@ -32,7 +32,6 @@ export type ChatMessages = {
       processing: string
       thinkingDefault: string
       thoughtDefault: string
-      collapse: string
       thinkingActive: string
       thinkingCompleted: string
       toolCallExecuting: string

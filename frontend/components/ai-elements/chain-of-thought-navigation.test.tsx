@@ -23,7 +23,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-test('footer collapse restores focus and only scrolls when the thought starts above the viewport', () => {
+test('sticky header collapses and only scrolls when the thought starts above the viewport', () => {
   const scroller = document.createElement('div')
   scroller.setAttribute('data-chat-scroller', '')
   document.body.appendChild(scroller)
@@ -37,25 +37,18 @@ test('footer collapse restores focus and only scrolls when the thought starts ab
 
   const trace = container.querySelector('[data-slot="trace"]') as HTMLElement
   const header = container.querySelector('button')!
-  const footer = [...container.querySelectorAll('button')].find(button => button.textContent === 'collapse')!
   const scrollBy = mock(() => {})
   scroller.scrollBy = scrollBy
   scroller.getBoundingClientRect = () => ({ top: 100 } as DOMRect)
   trace.getBoundingClientRect = () => ({ top: 30 } as DOMRect)
-  act(() => footer.click())
+  act(() => header.click())
   expect(scrollBy).toHaveBeenCalledWith({ top: -70, behavior: 'instant' })
   expect(header.getAttribute('aria-expanded')).toBe('false')
-  expect(document.activeElement).toBe(header)
 
   act(() => header.click())
   scrollBy.mockClear()
-  act(() => header.click())
-  expect(scrollBy).toHaveBeenCalledWith({ top: -70, behavior: 'instant' })
-  expect(header.getAttribute('aria-expanded')).toBe('false')
-  act(() => header.click())
-  scrollBy.mockClear()
   trace.getBoundingClientRect = () => ({ top: 120 } as DOMRect)
-  act(() => footer.click())
+  act(() => header.click())
   expect(scrollBy).not.toHaveBeenCalled()
   expect(header.getAttribute('aria-expanded')).toBe('false')
 })

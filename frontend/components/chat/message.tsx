@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare, BookOpen, Terminal, FileText, FilePen, FolderOpen, Calculator, ImageIcon, Download, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -78,7 +78,8 @@ import {
   isIterationCapReachedPart,
   isUserInstructionPart,
 } from './types'
-import { getActiveToolActions } from './tool-action-utils'
+import { renderToolIcon, TOOL_MARKS } from '@/components/tools/tool-icons'
+import { categorizeTool, getActiveToolActions } from './tool-action-utils'
 import { SourceContent } from './message-parts'
 import {
   getImageAssetUrl,
@@ -174,6 +175,22 @@ const chatStreamdownPlugins: PluginConfig = {
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
+function getTraceToolIcon(name: string, isMcp: boolean, input?: Record<string, unknown>, displayName?: string) {
+  if (!isMcp && name === 'ask_user') return <MessageSquare className="size-3.5" />
+  if (!isMcp && name.startsWith('skill_')) return <BookOpen className="size-3.5" />
+  if (isMcp || name.startsWith('mcp_')) return renderToolIcon({ name, type: 'mcp', size: 14 })
+  if (TOOL_MARKS[name]) return renderToolIcon({ name, size: 14 })
+  const category = categorizeTool(name, input, displayName)
+  const icons = {
+    reading_file: FileText, editing_file: FilePen, browsing_dir: FolderOpen,
+    running_code: Terminal, executing_command: Terminal, calculating: Calculator,
+    searching_web: Globe, searching_kb: SearchIcon, generating_media: ImageIcon,
+    collecting_artifacts: Download,
+  }
+  const Icon = icons[category as keyof typeof icons]
+  return Icon ? <Icon className="size-3.5" /> : renderToolIcon({ name, size: 14 })
+}
+
 
 
 const MCP_TOOL_NAME_PREFIX = 'mcp_'
@@ -1447,6 +1464,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             <ChainOfThoughtStep
               key={`tool-${part.toolCallId}-${index}`}
               collapsible
+              iconContent={getTraceToolIcon(part.toolName, isMcpToolCallPart(part), part.input, isToolCallPart(part) ? part.toolDisplayName : undefined)}
               label={isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
                 ? t('askUserSkipped')
                 : getToolCallLabel(part)}
@@ -1472,6 +1490,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             <ChainOfThoughtStep
               key={`tool-result-${part.toolCallId}-${index}`}
               collapsible
+              iconContent={getTraceToolIcon(part.toolName, isMcpToolResultPart(part), undefined, isToolResultPart(part) ? part.toolDisplayName : undefined)}
               label={part.isError ? t('toolFailed', { name: toolName }) : t('toolCompleted', { name: toolName })}
               status={part.isError ? 'error' : 'complete'}
             >
