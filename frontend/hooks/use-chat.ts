@@ -868,7 +868,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         } else if (!terminalSession.receivedMessageEnd) {
           finishAssistantMessage(terminalSession)
         }
-        if (terminalSession.reloadAfterTerminal && terminalConversationId) {
+        if (terminalSession.reloadAfterTerminal && terminalConversationId && terminalStatus !== 'failed') {
           void reloadConversationMessages(
             terminalConversationId,
             () => conversationIdRef.current === terminalConversationId,

@@ -46,6 +46,7 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - Retained browser run `f5cc071b-fd51-437a-b715-b2577e16937c` completed with a `readback_only` checkpoint covering 10 results; 9 model requests contained omission markers. Live UI showed compaction with incorrect zero saved tokens, subsequently corrected. New compression events are persisted with the run and restored on history reload; earlier events without persisted diagnostics cannot be reconstructed.
 - Provider overflow retries reduce only provably unprotected assistant text or optional tool schemas, before any streamed chunk, with a bounded retry count. Active-round semantic checkpoints summarize complete tool groups, bind source hashes, retain original records and survive approval pauses.
 - Durable visibility changes: 151 backend and 134 frontend targeted tests passed; frontend TypeScript and ESLint and backend Ruff passed. Real browser validation of the latest changes requires restarting API and worker processes.
+- A real invalid-key run produced HTTP 401 classified as `ProviderError` and no visible frontend error; 401 classification and new-conversation URL reload suppression were corrected afterward. The corrected worker requires restart before re-verification.
 
 ## Testing Strategy
 
