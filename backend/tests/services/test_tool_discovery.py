@@ -85,6 +85,21 @@ async def test_large_catalog_keeps_core_and_adds_discovery_tools():
 
 
 @pytest.mark.asyncio
+async def test_only_configured_sandbox_tools_are_visible_in_large_catalog():
+    tools = [
+        *_mcp_catalog(30),
+        _schema("bash", "Run commands in the sandbox"),
+        _schema("read", "Read a sandbox file"),
+    ]
+    state = await build_tool_discovery(tools)
+    assert state is not None
+    visible = {tool["function"]["name"] for tool in state.tools_for_turn()}
+    assert {"bash", "read"} <= visible
+    assert "edit" not in visible and "write" not in visible
+    assert not any(name.startswith("mcp_") for name in visible)
+
+
+@pytest.mark.asyncio
 async def test_discover_then_load_makes_tool_visible_and_persists():
     persisted: list[list[str]] = []
 
@@ -556,13 +571,7 @@ async def test_loading_a_skill_loads_its_sandbox_companions():
     result = json.loads(
         await state.execute(LOAD_TOOLS_TOOL, {"names": ["skill_data_analyst"]})
     )
-    assert result["loaded"] == [
-        "skill_data_analyst",
-        "read",
-        "edit",
-        "write",
-        "bash",
-    ]
+    assert result["loaded"] == ["skill_data_analyst"]
     for name in ("skill_data_analyst", "read", "edit", "write", "bash"):
         assert state.is_visible(name) is True
 
@@ -827,17 +836,9 @@ async def test_loading_a_skill_evicts_old_tools_not_its_companions():
     result = json.loads(
         await state.execute(LOAD_TOOLS_TOOL, {"names": ["skill_data_analyst"]})
     )
-    # Room is made by evicting previously loaded tools, never the Skill batch.
-    assert result["evicted"] == old
-    assert result["loaded"] == [
-        "skill_data_analyst",
-        "read",
-        "edit",
-        "write",
-        "bash",
-    ]
-    assert state.loaded == result["loaded"]
-    for name in result["loaded"]:
+    assert result["evicted"] == old[:1]
+    assert result["loaded"] == ["skill_data_analyst"]
+    for name in ("skill_data_analyst", "read", "edit", "write", "bash"):
         assert state.is_visible(name) is True
 
 

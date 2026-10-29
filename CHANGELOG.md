@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Agent runs progressively compact conversation history and completed tool results when context pressure grows, retaining original records and an authorized paginated readback; summary failures fall back without advancing the history watermark.
 - Large Agent tool catalogs use authorized on-demand discovery and loading, reducing tool schema overhead; model-window diagnostics and bilingual compression settings are available in chat and Agent configuration.
+- Configured sandbox file and command tools remain visible to the model in discovery mode; discovery tool names are localized in chat, including historical calls.
 - Active Agent rounds can persist source-bound semantic checkpoints for completed tool exchanges across approval pauses; provider context-overflow retries are bounded and preserve user instructions and tool results.
 - Chat compression notices use concise descriptions instead of token counts and budget percentages; diagnostic event data remains available.
 - New AgentRun compression diagnostics persist across approval pauses and reappear in authorized conversation history; missed terminal errors recover on reconnect, and active stream updates restore a replaced assistant placeholder.

@@ -9,6 +9,9 @@ export type ChatMessages = {
       generating: string
       compressingContext: string
       compactingToolResults: string
+      discoverTools: string
+      loadTools: string
+      unloadTools: string
       condensingContext: string
       compressionCompleted: string
       compressionCombined: string

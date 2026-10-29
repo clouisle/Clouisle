@@ -534,6 +534,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const locale = useLocale()
     const tReasoning = useTranslations('chat.reasoning')
     const tTask = useTranslations('chat.task')
+    const getToolDisplayName = React.useCallback((name: string, fallback?: string) => {
+      if (name === 'discover_tools') return tTask('discoverTools')
+      if (name === 'load_tools') return tTask('loadTools')
+      if (name === 'unload_tools') return tTask('unloadTools')
+      return fallback || name
+    }, [tTask])
     const [copied, setCopied] = React.useState(false)
     const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
@@ -964,7 +970,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (hideToolCalls) return null
         if (hasChainOfThought) return null
         const toolName = isToolCallPart(part)
-          ? (part.toolDisplayName || part.toolName)
+          ? getToolDisplayName(part.toolName, part.toolDisplayName)
           : `${part.serverName}/${part.toolName}`
         const state = part.state === 'error' ? 'output-error'
           : part.state === 'done' ? 'output-available'
@@ -993,7 +999,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isToolResultPart(part) || isMcpToolResultPart(part)) {
         if (hideToolCalls || pairedToolResultIndexes.has(index) || hasChainOfThought) return null
         const toolName = isToolResultPart(part)
-          ? (part.toolDisplayName || part.toolName)
+          ? getToolDisplayName(part.toolName, part.toolDisplayName)
           : `${part.serverName}/${part.toolName}`
         const state = part.isError ? 'output-error' : 'output-available'
         return (
@@ -1099,6 +1105,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       activeSpeechSentence,
       citedSources,
       hasIterationCapMarker,
+      getToolDisplayName,
       hasChainOfThought,
       hideToolCalls,
       isStreaming,
@@ -1305,7 +1312,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Get tool call label with state
     const getToolCallLabel = React.useCallback((toolPart: ToolCallPart | McpToolCallPart) => {
       const name = isToolCallPart(toolPart)
-        ? (toolPart.toolDisplayName || toolPart.toolName)
+        ? getToolDisplayName(toolPart.toolName, toolPart.toolDisplayName)
         : `${toolPart.serverName}/${toolPart.toolName}`
       switch (toolPart.state) {
         case 'running': return t('toolRunning', { name })
@@ -1313,7 +1320,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         case 'error': return t('toolFailed', { name })
         default: return name
       }
-    }, [t])
+    }, [getToolDisplayName, t])
 
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
       if (isReasoningPart(part) || isTaskPart(part) || isUserInstructionPart(part)) {
@@ -1428,7 +1435,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
           if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
-            ? (part.toolDisplayName || part.toolName)
+            ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
           if (hideToolCalls) return
@@ -1466,7 +1473,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (isToolResultPart(part) || isMcpToolResultPart(part)) {
           if (hideToolCalls || pairedToolResultIndexes.has(index)) return
           const toolName = isToolResultPart(part)
-            ? (part.toolDisplayName || part.toolName)
+            ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
           const state = part.isError ? 'output-error' : 'output-available'
 
@@ -1511,6 +1518,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     }, [
       allSources,
       getStepStatus,
+      getToolDisplayName,
       getTaskTitle,
       getToolCallLabel,
       getToolCallStepStatus,

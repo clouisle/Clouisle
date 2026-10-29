@@ -980,6 +980,21 @@ describe('message behavior', () => {
   })
 
 
+  test('localizes discovery tool names from persisted calls', () => {
+    const html = renderToStaticMarkup(<Message message={{
+      id: 'discovery-labels', role: 'assistant', parts: [
+        { type: 'tool-call', toolCallId: 'd', toolName: 'discover_tools', toolDisplayName: 'Discover Tools', input: {}, state: 'done' },
+        { type: 'tool-call', toolCallId: 'l', toolName: 'load_tools', toolDisplayName: 'Load Tools', input: {}, state: 'done' },
+        { type: 'tool-call', toolCallId: 'u', toolName: 'unload_tools', toolDisplayName: 'Unload Tools', input: {}, state: 'done' },
+      ],
+    }} chainOfThoughtOpen />)
+    expect(html).toContain('chat.task.discoverTools')
+    expect(html).toContain('chat.task.loadTools')
+    expect(html).toContain('chat.task.unloadTools')
+    expect(html).not.toContain('Discover Tools')
+    expect(html).not.toContain('Load Tools')
+  })
+
   test('renders compression at its original reasoning timeline position', () => {
     const container = render(<Message
       message={{

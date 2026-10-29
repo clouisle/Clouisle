@@ -10,6 +10,7 @@
   - [ ] 5. Complete regression and browser verification
   - [ ] 6. Persist compression history and repair live run/error visibility
   - [x] 7. Reuse validated active-round checkpoints before pressure decisions
+  - [x] 8. Localize discovery tools and expose configured sandbox capabilities
 
 - **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
   - [x] 1. Add team-level view of individual tool approval settings

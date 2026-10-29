@@ -46,18 +46,15 @@ DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
     {DISCOVER_TOOLS_TOOL, LOAD_TOOLS_TOOL, UNLOAD_TOOLS_TOOL}
 )
 
-#: Human-readable labels for SSE tool_call events. Stage 4 owns localized
-#: product copy; these keep discovery calls legible until then.
+#: Fallback labels for event consumers; chat localizes these by internal name.
 DISCOVERY_TOOL_DISPLAY_NAMES: dict[str, str] = {
     DISCOVER_TOOLS_TOOL: "Discover Tools",
     LOAD_TOOLS_TOOL: "Load Tools",
     UNLOAD_TOOLS_TOOL: "Unload Tools",
 }
 
-#: Tools that stay in every model turn: the interaction protocol, retrieval
-#: entry points, attachment inspection, and result read-back. Everything else
-#: (builtin actions, MCP, custom, skills) is discoverable when the catalog is
-#: large enough to justify the indirection.
+#: Keep configured interaction, retrieval, asset, and sandbox primitives visible.
+#: All other authorized tools remain discoverable in large catalogs.
 CORE_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "ask_user",
@@ -69,6 +66,10 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "search_asset",
         "materialize_asset",
         "view_asset",
+        "read",
+        "edit",
+        "write",
+        "bash",
     }
 )
 
@@ -79,8 +80,6 @@ DEFAULT_SCHEMA_TOKEN_BUDGET = 4096
 DEFAULT_SEARCH_LIMIT = 8
 MAX_SEARCH_LIMIT = 20
 MAX_LOADED_TOOLS = 24
-#: Sandbox primitives a Skill needs in the same turn as its skill tool.
-SKILL_SANDBOX_COMPANIONS: tuple[str, ...] = ("read", "edit", "write", "bash")
 _DESCRIPTION_LIMIT = 180
 
 #: Latin words/digits and CJK runs. Chinese queries are common, so tokenizing
@@ -405,24 +404,8 @@ class ToolDiscoveryState:
                 continue
             requested.append(name)
 
-        # A Skill is useless without its sandbox primitives, so loading the
-        # skill tool requests the companions that are part of this catalog.
-        for name in list(requested):
-            if not name.startswith("skill_"):
-                continue
-            for companion in SKILL_SANDBOX_COMPANIONS:
-                if (
-                    companion in self.catalog
-                    and companion not in self.core_names
-                    and companion not in self.loaded
-                    and companion not in requested
-                ):
-                    requested.append(companion)
-
         # A single request larger than the cap keeps the requested order and
-        # defers the tail instead of silently dropping it. Within the cap, old
-        # tools (never the ones requested now) are evicted to make room, so
-        # loading a Skill can never evict the Skill or its companions.
+        # tools are evicted to make room for the requested batch.
         if len(requested) > self.max_loaded:
             deferred = requested[self.max_loaded :]
             requested = requested[: self.max_loaded]
