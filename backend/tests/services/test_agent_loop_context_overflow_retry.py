@@ -522,6 +522,44 @@ async def test_retries_are_bounded_and_each_one_reduces_the_view():
 
 
 @pytest.mark.asyncio
+async def test_empty_stream_fallback_shares_overflow_retry_budget():
+    stream_calls = []
+    fallback_calls = []
+
+    async def _empty_stream():
+        if False:
+            yield None
+
+    def _stream(**kwargs):
+        stream_calls.append(kwargs)
+        if len(stream_calls) == 1:
+            raise OVERFLOW
+        return _empty_stream()
+
+    async def _fallback(**kwargs):
+        fallback_calls.append(kwargs)
+        raise OVERFLOW
+
+    async def _build(**kwargs):
+        return ContextTurn(prepared=_prepared(messages=_long_messages()))
+
+    loop = AgentLoop(
+        _context(
+            build_turn=_build,
+            streaming=True,
+            team_chat_stream=_stream,
+            team_chat=_fallback,
+        )
+    )
+    with pytest.raises(ContextLengthError):
+        await _drain(loop)
+
+    assert len(stream_calls) + len(fallback_calls) == 2 + CONTEXT_OVERFLOW_MAX_RETRIES
+    assert len(stream_calls) == 2
+    assert len(fallback_calls) == CONTEXT_OVERFLOW_MAX_RETRIES
+
+
+@pytest.mark.asyncio
 async def test_protected_active_round_instructions_survive_reduction():
     calls = []
     messages = [

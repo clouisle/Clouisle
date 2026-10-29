@@ -473,18 +473,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     targetConversationId = conversationIdRef.current,
     isCurrent?: () => boolean,
     prefetched?: { messages: ChatMessage[] },
+    preserveTransientState = true,
   ) => {
     if (!targetConversationId) return
     const { messages: convertedMessages } = prefetched ?? await api.getConversation(targetConversationId)
     if (isCurrent && !isCurrent()) return
     const currentById = new Map(messagesRef.current.map((message) => [message.id, message]))
+    const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
     const nextMessages = convertedMessages.map((message) => {
       const previous = currentById.get(message.id)
+      if (!preserveTransientState) {
+        if (previous && areChatMessagesEqual(previous, message)) return previous
+        return message
+      }
       if (!previous?.metadata) {
         if (previous && areChatMessagesEqual(previous, message)) return previous
         return message
       }
-      const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
       const transientMetadata = Object.fromEntries(
         transientKeys
           .filter((key) => {
@@ -501,7 +506,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       return resolvedMessage
     })
     for (const previous of messagesRef.current) {
-      if (previous.metadata?.isError && isValidUUID(previous.id) && !nextMessages.some((message) => message.id === previous.id)) {
+      if (preserveTransientState && previous.metadata?.isError && isValidUUID(previous.id) && !nextMessages.some((message) => message.id === previous.id)) {
         nextMessages.push(previous)
       }
     }
@@ -1562,12 +1567,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const switchVersion = useCallback(async (messageId: string, versionIndex: number) => {
     if (statusRef.current !== 'idle' || isReconnectableRunStatus(runStatusRef.current)) return
     const message = messagesRef.current.find((item) => item.id === messageId)
-    if (!message) return
+    const targetConversationId = conversationIdRef.current
+    if (!message || !targetConversationId) return
     try {
       const versions = await api.getMessageVersions(agentId, messageId)
-      if (versionIndex < 0 || versionIndex >= versions.length) return
+      if (conversationIdRef.current !== targetConversationId || versionIndex < 0 || versionIndex >= versions.length) return
       await api.switchMessageVersion(agentId, messageId, versions[versionIndex].id)
-      await reloadConversationMessages()
+      if (conversationIdRef.current !== targetConversationId) return
+      await reloadConversationMessages(targetConversationId, () => conversationIdRef.current === targetConversationId, undefined, false)
     } catch (reason) {
       console.error('Failed to switch version:', reason)
     }
@@ -1592,7 +1599,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           : [{ type: 'text' as const, text: content }, ...message.parts]
         return { ...message, parts }
       })
-      return [...beforeAndEditedUser, {
+      const retainedErrorMessages = previous.filter((message) => (
+        message.metadata?.isError === true
+        && isValidUUID(message.id)
+        && !beforeAndEditedUser.some((retained) => retained.id === message.id)
+      ))
+      return [...beforeAndEditedUser, ...retainedErrorMessages, {
         id: placeholderId,
         role: 'assistant',
         parts: [],

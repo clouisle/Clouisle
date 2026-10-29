@@ -160,7 +160,7 @@ test('covers terms, translated API validation, and captcha callbacks', async () 
   register.mockRejectedValueOnce({ errors: { password: ['password_min_length:8'], username: ['custom:fake'] } })
   await submit()
   expect(container.textContent).toContain('password_min_length')
-  expect(container.textContent).toContain('custom')
+  expect(container.textContent).toContain('custom:fake')
 })
 
 test('submits accepted terms and the solved captcha in the registration contract', async () => {

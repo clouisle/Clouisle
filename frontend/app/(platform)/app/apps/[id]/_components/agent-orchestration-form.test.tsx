@@ -211,6 +211,12 @@ describe('AgentOrchestrationForm', () => {
 
     expect(onUpdate.mock.calls.at(-1)?.[0].enable_user_input_request).toBe(true)
   })
+  test('gives the context-compression toggle an accessible name', () => {
+    const tree = render().tree
+    const toggle = (findByTestId(tree, 'agent-compression-section').props.action as Node)
+
+    expect(toggle.props['aria-label']).toBe('compression.title')
+  })
 
 
   test('loads only current-team resources and tolerates a rejected resource request', async () => {

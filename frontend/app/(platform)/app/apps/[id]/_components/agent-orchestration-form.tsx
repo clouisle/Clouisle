@@ -812,6 +812,7 @@ export function AgentOrchestrationForm({
         action={
           canUpdate ? (
             <Switch
+              aria-label={t('compression.title')}
               checked={compressionConfig.enabled}
               onCheckedChange={(checked) => {
                 setCompressionConfig({
@@ -835,9 +836,10 @@ export function AgentOrchestrationForm({
             <div className="space-y-4 pt-2 border-t">
               {/* Summary token budget */}
               <div className="space-y-2">
-                <Label className="text-xs">{t('compression.summaryMaxTokens')}</Label>
+                <Label htmlFor="compression-summary-max-tokens" className="text-xs">{t('compression.summaryMaxTokens')}</Label>
                 <div className="flex items-center gap-2">
                   <Input
+                    id="compression-summary-max-tokens"
                     type="number"
                     value={compressionConfig.summary_max_tokens}
                     onChange={(e) => {
@@ -877,6 +879,7 @@ export function AgentOrchestrationForm({
                   </p>
                 </div>
                 <Switch
+                  aria-label={t('compression.emitEvents')}
                   checked={compressionConfig.emit_sse_events}
                   onCheckedChange={(checked) => {
                     setCompressionConfig({

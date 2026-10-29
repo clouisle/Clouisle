@@ -129,6 +129,141 @@ async def test_undiscovered_authorized_tool_is_rejected_until_loaded(monkeypatch
     base.assert_awaited_once_with("mcp_ops_server_action_0", {})
 
 
+@pytest.mark.asyncio
+async def test_load_tools_only_exposes_tool_to_the_next_model_turn(monkeypatch):
+    from app.api.v1.endpoints import chat_tools
+    from app.services import agent_run_store
+
+    monkeypatch.setattr(agent_run_store, "remember_discovered_tools", AsyncMock())
+    base = AsyncMock(return_value="base-result")
+    monkeypatch.setattr(chat_tools, "execute_tool_call", base)
+    state = await _build_tool_discovery_state(
+        _tools_definitions(_large_tools()),
+        payload={"run_id": str(uuid4())},
+        agent=SimpleNamespace(team_id=None, tools_config=[]),
+        user_id=None,
+    )
+    assert state is not None
+    runner = _bind_execute_tool_call(state)
+
+    # Model response schemas are fixed for this turn, even after load_tools.
+    state.tools_for_turn()
+    loaded_name = "mcp_ops_server_action_0"
+    await state.execute("load_tools", {"names": [loaded_name]})
+    rejected = json.loads(await runner(loaded_name, {}))
+    assert rejected["success"] is False
+    base.assert_not_awaited()
+
+    # The next model request snapshots the updated selection and can call it.
+    state.tools_for_turn()
+    assert await runner(loaded_name, {}) == "base-result"
+    base.assert_awaited_once_with(loaded_name, {})
+
+
+def test_approval_history_with_result_reference_restores_readback_tool():
+    from app.services.agent_run_worker import _history_override_has_tool_result_ref
+
+    history = [
+        {"role": "user", "content": "continue"},
+        {
+            "role": "tool",
+            "content": (
+                "Earlier tool result omitted; use read_tool_result "
+                f"ref=tr1:{uuid4()}:call-1"
+            ),
+        },
+    ]
+    assert _history_override_has_tool_result_ref(history) is True
+    assert (
+        _history_override_has_tool_result_ref(
+            [{"role": "user", "content": "no prior result"}]
+        )
+        is False
+    )
+    assert _history_override_has_tool_result_ref([]) is False
+    assert (
+        _history_override_has_tool_result_ref(
+            [{"role": "tool", "content": "malformed tr1:not-a-ref"}]
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_result_reference_restores_readback_when_agent_has_no_tools(monkeypatch):
+    from app.services import agent_run_worker as worker
+
+    async def no_tools(agent, user_id=None):
+        return []
+
+    async def no_discovery(tools, *, payload, agent, user_id):
+        assert tools is not None and [tool.function.name for tool in tools] == [
+            "read_tool_result"
+        ]
+        return None
+
+    monkeypatch.setattr(worker, "_load_tools", no_tools)
+    monkeypatch.setattr(worker, "_build_tool_discovery_state", no_discovery)
+    tools_openai, tools, _ = await worker._load_authorized_tools(
+        {
+            "run_id": str(uuid4()),
+            "history_override": [
+                {"role": "tool", "content": f"ref=tr1:{uuid4()}:call-1"}
+            ],
+        },
+        SimpleNamespace(team_id="team-1"),
+        user_id="user-1",
+        non_stream=False,
+    )
+    assert [tool["function"]["name"] for tool in tools_openai] == ["read_tool_result"]
+    assert tools is not None and [tool.function.name for tool in tools] == [
+        "read_tool_result"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_readback_schema_is_available_for_markers_created_during_recovery(
+    monkeypatch,
+):
+    from app.services import agent_run_worker as worker
+
+    async def no_tools(agent, user_id=None):
+        return []
+
+    async def no_discovery(tools, *, payload, agent, user_id):
+        assert tools is not None
+        return None
+
+    monkeypatch.setattr(worker, "_load_tools", no_tools)
+    monkeypatch.setattr(worker, "_build_tool_discovery_state", no_discovery)
+    tools_openai, tools, _ = await worker._load_authorized_tools(
+        {
+            "run_id": str(uuid4()),
+            "history_override": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "clock", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call-1", "content": "result"},
+            ],
+        },
+        SimpleNamespace(team_id="team-1"),
+        user_id="user-1",
+        non_stream=False,
+    )
+    # A complete exchange can be compacted into a new marker during recovery.
+    assert [tool["function"]["name"] for tool in tools_openai] == ["read_tool_result"]
+    assert tools is not None and [tool.function.name for tool in tools] == [
+        "read_tool_result"
+    ]
+
+
 def test_without_discovery_the_boundary_is_unchanged(monkeypatch):
     from app.api.v1.endpoints import chat_tools
 
@@ -217,6 +352,33 @@ async def test_discovery_build_reuses_the_run_tool_identity_scope(monkeypatch):
     assert [tool["function"]["name"] for tool in tools_openai] == ["mcp_server_tool"]
     assert tools is not None and len(tools) == 1
 
+    # A reference in approval history restores readback; ordinary history does not.
+    resumed, _, _ = await worker._load_authorized_tools(
+        dict(
+            payload,
+            history_override=[{"role": "tool", "content": f"ref=tr1:{uuid4()}:call-1"}],
+        ),
+        SimpleNamespace(team_id="team-1"),
+        user_id="user-1",
+        non_stream=False,
+    )
+    assert [tool["function"]["name"] for tool in resumed] == [
+        "ask_user",
+        "mcp_server_tool",
+        "read_tool_result",
+    ]
+    no_reference, _, _ = await worker._load_authorized_tools(
+        dict(payload, history_override=[{"role": "tool", "content": "plain result"}]),
+        SimpleNamespace(team_id="team-1"),
+        user_id="user-1",
+        non_stream=False,
+    )
+    assert [tool["function"]["name"] for tool in no_reference] == [
+        "ask_user",
+        "mcp_server_tool",
+    ]
+    assert [tool["function"]["name"] for tool in tools_openai] == ["mcp_server_tool"]
+    assert tools is not None and len(tools) == 1
     # A streaming run keeps ask_user in the same identity scope.
     streaming_openai, _, _ = await worker._load_authorized_tools(
         payload,
@@ -229,6 +391,33 @@ async def test_discovery_build_reuses_the_run_tool_identity_scope(monkeypatch):
         "mcp_server_tool",
     ]
     assert current_tool_identity() is None
+
+
+@pytest.mark.asyncio
+async def test_no_tools_and_no_result_reference_keeps_tool_list_empty(monkeypatch):
+    from app.services import agent_run_worker as worker
+
+    async def no_tools(agent, user_id=None):
+        return []
+
+    async def no_discovery(tools, *, payload, agent, user_id):
+        assert tools is None
+        return None
+
+    monkeypatch.setattr(worker, "_load_tools", no_tools)
+    monkeypatch.setattr(worker, "_build_tool_discovery_state", no_discovery)
+    tools_openai, tools, discovery = await worker._load_authorized_tools(
+        {
+            "run_id": str(uuid4()),
+            "history_override": [{"role": "user", "content": "ordinary"}],
+        },
+        SimpleNamespace(team_id="team-1"),
+        user_id="user-1",
+        non_stream=False,
+    )
+    assert tools_openai == []
+    assert tools is None
+    assert discovery is None
 
 
 @pytest.mark.asyncio
@@ -245,6 +434,7 @@ async def test_build_state_without_a_run_id_has_no_persistence_callback(monkeypa
         await state.execute("load_tools", {"names": ["mcp_ops_server_action_0"]})
     )
     assert result["loaded"] == ["mcp_ops_server_action_0"]
+    assert state.loaded == ["mcp_ops_server_action_0"]
 
 
 @pytest_asyncio.fixture
@@ -341,4 +531,5 @@ async def test_discovery_load_survives_a_failed_payload_save(monkeypatch):
     )
     # The tool remains usable for this run; a later rebuild revalidates it.
     assert result["loaded"] == ["mcp_ops_server_action_0"]
+    assert state.loaded == ["mcp_ops_server_action_0"]
     assert state.is_visible("mcp_ops_server_action_0") is True

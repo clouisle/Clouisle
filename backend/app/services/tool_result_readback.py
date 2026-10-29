@@ -228,6 +228,10 @@ def _pagination(arguments: dict[str, Any]) -> tuple[int, int] | str:
         limit = int(raw_limit)
     except (TypeError, ValueError):
         return _error(INVALID_PAGINATION_ERROR, "offset and limit must be integers")
+    if (not isinstance(raw_offset, str) and raw_offset != offset) or (
+        not isinstance(raw_limit, str) and raw_limit != limit
+    ):
+        return _error(INVALID_PAGINATION_ERROR, "offset and limit must be integers")
     if offset < 0:
         return _error(INVALID_PAGINATION_ERROR, "offset must be >= 0")
     if limit < 1:

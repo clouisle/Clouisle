@@ -1318,6 +1318,63 @@ describe('useChat', () => {
     await result.switchVersion('missing', 0)
     expect(switchMessageVersion).toHaveBeenCalledTimes(1)
   })
+  it('does not preserve stale errored messages when switching versions', async () => {
+    const failedMessageId = '11111111-1111-1111-1111-111111111111'
+    const switchedMessageId = '22222222-2222-2222-2222-222222222222'
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([
+      {
+        id: failedMessageId,
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'old failure' }],
+        metadata: { isError: true, errorMessage: 'old failure' },
+      },
+      { id: switchedMessageId, role: 'assistant', parts: [{ type: 'text', text: 'old version' }] },
+    ] as ChatMessage[])
+    await flush()
+    getMessageVersions.mockResolvedValue([{ id: 'version-2' }])
+    switchMessageVersion.mockResolvedValue(undefined)
+    getConversation.mockResolvedValue({
+      messages: [{
+        id: switchedMessageId,
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'new version' }],
+      } as ChatMessage],
+    })
+
+    await result.switchVersion(switchedMessageId, 0)
+    await flush()
+
+    expect(result.messages.map((message) => message.id)).toEqual([switchedMessageId])
+    expect(result.messages[0].parts).toEqual([{ type: 'text', text: 'new version' }])
+  })
+
+  it('does not apply a version-switch reload after changing conversations', async () => {
+    const messageId = '11111111-1111-1111-1111-111111111111'
+    const history = Promise.withResolvers<{ messages: ChatMessage[] }>()
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages([{ id: messageId, role: 'assistant', parts: [{ type: 'text', text: 'old' }] }] as ChatMessage[])
+    await flush()
+    getMessageVersions.mockResolvedValue([{ id: 'version-2' }])
+    switchMessageVersion.mockResolvedValue(undefined)
+    getConversation.mockReturnValue(history.promise)
+
+    const switching = result.switchVersion(messageId, 0)
+    await flush()
+    result.setConversationId('conversation-2')
+    const currentMessages = [{ id: 'current', role: 'assistant', parts: [{ type: 'text', text: 'current conversation' }] }] as ChatMessage[]
+    result.setMessages(currentMessages)
+    await flush()
+    history.resolve({ messages: [{ id: 'stale', role: 'assistant', parts: [{ type: 'text', text: 'stale history' }] }] as ChatMessage[] })
+    await switching
+    await flush()
+
+    expect(result.messages).toEqual(currentMessages)
+  })
 
   it('edits a user message, streams its replacement, and reloads authoritative history', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'
@@ -1467,6 +1524,42 @@ describe('useChat', () => {
     expect(getConversation).toHaveBeenCalledWith('conversation-1')
     expect(result.messages).toEqual(recovered)
     expect(result.status).toBe('idle')
+  })
+
+  it('preserves errored messages during an ordinary history refresh', async () => {
+    const errorId = '22222222-2222-2222-2222-222222222222'
+    const userId = '11111111-1111-1111-1111-111111111111'
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    const failedMessage: ChatMessage = {
+      id: errorId,
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'request failed' }],
+      metadata: { isError: true, errorMessage: 'request failed' },
+    }
+    result.setMessages([
+      { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+      failedMessage,
+    ])
+    await flush()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: '33333333-3333-3333-3333-333333333333', edited_message_id: userId } },
+      { event: 'content_delta', data: { delta: 'updated' } },
+      { event: 'message_end', data: {} },
+    ]
+    editMessageStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    getConversation.mockResolvedValue({
+      messages: [
+        { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+        { id: '33333333-3333-3333-3333-333333333333', role: 'assistant', parts: [{ type: 'text', text: 'updated' }] },
+      ] as ChatMessage[],
+    })
+
+    await result.editMessage(userId, 'edited')
+
+    expect(result.messages.map((message) => message.id)).toContain(errorId)
+    expect(result.messages.find((message) => message.id === errorId)).toBe(failedMessage)
   })
 
   it('preserves existing message references during history reload to prevent UI flicker', async () => {

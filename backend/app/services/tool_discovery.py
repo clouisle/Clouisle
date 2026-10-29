@@ -81,6 +81,7 @@ DEFAULT_SEARCH_LIMIT = 8
 MAX_SEARCH_LIMIT = 20
 MAX_LOADED_TOOLS = 24
 _DESCRIPTION_LIMIT = 180
+_MAX_PRIMARY_TERMS = 12
 
 #: Latin words/digits and CJK runs. Chinese queries are common, so tokenizing
 #: must not drop CJK text; CJK runs are also expanded into bigrams for partial
@@ -157,13 +158,17 @@ def _source_label(name: str) -> str:
 
 
 def _search_terms(query: str) -> tuple[list[str], list[str]]:
-    """Split a query into match terms and the primary terms.
+    """Split a bounded query into match terms and the primary terms.
 
     Latin words and CJK runs are primary terms; CJK runs longer than two
     characters also contribute bigrams so a natural-language Chinese query
     (「创建日历事件」) matches a shorter tool description (「日历 事件」).
     """
-    primary = _TERM_RE.findall(query.lower())
+    primary: list[str] = []
+    for match in _TERM_RE.finditer(query.lower()):
+        primary.append(match.group())
+        if len(primary) == _MAX_PRIMARY_TERMS:
+            break
     expanded: list[str] = []
     seen: set[str] = set()
     for run in primary:
@@ -174,7 +179,9 @@ def _search_terms(query: str) -> tuple[list[str], list[str]]:
             if term and term not in seen:
                 seen.add(term)
                 expanded.append(term)
-    return expanded[:_MAX_QUERY_TERMS], primary
+                if len(expanded) >= _MAX_QUERY_TERMS:
+                    return expanded, primary
+    return expanded, primary
 
 
 def _name_words(name: str) -> list[str]:
@@ -188,6 +195,7 @@ class ToolCatalogEntry:
 
     name: str
     description: str
+    search_description: str
     group: str
     required_parameters: list[str]
     raw: Any
@@ -219,6 +227,8 @@ class ToolDiscoveryState:
     max_loaded: int = MAX_LOADED_TOOLS
     #: Awaited after a load changes the visible set so the run can persist it.
     on_loaded_change: Callable[[list[str]], Awaitable[None]] | None = None
+    #: Names declared to the model in the current iteration.
+    turn_visible_names: set[str] | None = None
 
     @property
     def loaded_names(self) -> list[str]:
@@ -228,17 +238,12 @@ class ToolDiscoveryState:
         return tool_name in DISCOVERY_TOOL_NAMES
 
     def is_visible(self, tool_name: str) -> bool:
-        """Whether this tool is currently declared to the model.
-
-        Discovery mode must not become a shortcut: a call for an authorized but
-        not-yet-loaded tool is rejected until ``load_tools`` exposes it. Core
-        and discovery tools are always visible.
-        """
-        return (
-            tool_name in DISCOVERY_TOOL_NAMES
-            or tool_name in self.core_names
-            or tool_name in self.loaded
-        )
+        """Whether this tool was declared to the model in the current turn."""
+        if tool_name in DISCOVERY_TOOL_NAMES or tool_name in self.core_names:
+            return True
+        if self.turn_visible_names is not None:
+            return tool_name in self.turn_visible_names
+        return tool_name in self.loaded
 
     def touch(self, tool_name: str) -> None:
         """Refresh a loaded tool's recency after it was actually called.
@@ -291,18 +296,22 @@ class ToolDiscoveryState:
         )
 
     def tools_for_turn(self) -> list[Any]:
-        """Return the exact schema list for the next model call."""
+        """Return and snapshot the exact schema list for this model call."""
         visible: list[Any] = list(self.meta_tools)
+        visible_names = set(DISCOVERY_TOOL_NAMES)
         for name in self.core_names:
             entry = self.catalog.get(name)
             if entry is not None:
                 visible.append(entry.raw)
+                visible_names.add(name)
         for name in self.loaded:
             if name in self.core_names:
                 continue
             entry = self.catalog.get(name)
             if entry is not None:
                 visible.append(entry.raw)
+                visible_names.add(name)
+        self.turn_visible_names = visible_names
         return visible
 
     # ------------------------------------------------------------------
@@ -506,7 +515,7 @@ def _score_entry(
         score += 50
     words = set(_name_words(entry.name))
     group_lower = entry.group.lower()
-    description_lower = entry.description.lower()
+    description_lower = entry.search_description.lower()
     for term in terms:
         if term == name_lower:
             score += 100
@@ -728,11 +737,13 @@ async def build_tool_discovery(
             )
             return None
         function = _function_dict(tool)
-        description = _short_description(function.get("description"))
+        search_description = " ".join(str(function.get("description") or "").split())
+        description = _short_description(search_description)
         group = _source_label(name)
         entries[name] = ToolCatalogEntry(
             name=name,
             description=description,
+            search_description=search_description,
             group=group,
             required_parameters=_parameter_names(function.get("parameters")),
             raw=tool,

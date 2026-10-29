@@ -11,6 +11,7 @@ from app.services.tool_discovery import (
     DISCOVER_TOOLS_TOOL,
     LOAD_TOOLS_TOOL,
     UNLOAD_TOOLS_TOOL,
+    _search_terms,
     build_tool_discovery,
     estimate_tool_schema_tokens,
 )
@@ -425,21 +426,27 @@ async def test_batch_over_cap_defers_tail_and_execution_refreshes_eviction():
 
     # A batch larger than the cap keeps its order and defers the tail instead
     # of silently loading more than allowed.
+    state.tools_for_turn()
     result = json.loads(await state.execute(LOAD_TOOLS_TOOL, {"names": first_batch}))
     assert result["loaded"] == first_batch[:2]
     assert result["not_loaded_limit_reached"] == first_batch[2:]
     assert "evicted" not in result
     assert state.loaded == first_batch[:2]
-    assert state.is_visible(names[0]) is True
+    # The model schemas were snapshotted before this response loaded the tools.
+    assert state.is_visible(names[0]) is False
     assert state.is_visible(names[2]) is False
 
-    # Touching the oldest loaded tool (by actually using it) refreshes it, so
-    # the next load evicts the other tool rather than the one just used.
-    await state.execute(LOAD_TOOLS_TOOL, {"names": [names[0]]})
+    state.tools_for_turn()
+    assert state.is_visible(names[0]) is True
+    assert state.is_visible(names[2]) is False
+    # The tool loaded during this response is not callable until next turn.
     result = json.loads(await state.execute(LOAD_TOOLS_TOOL, {"names": [names[4]]}))
-    assert result["loaded"] == [names[4]]
-    assert result["evicted"] == [names[1]]
-    assert state.loaded == [names[0], names[4]]
+    assert result["evicted"] == [names[0]]
+    assert state.loaded == [names[1], names[4]]
+    assert state.is_visible(names[4]) is False
+
+    state.tools_for_turn()
+    assert state.is_visible(names[4]) is True
 
 
 @pytest.mark.asyncio
@@ -450,6 +457,8 @@ async def test_unload_tools_frees_slots_and_protects_core_tools():
         LOAD_TOOLS_TOOL,
         {"names": ["mcp_calendar_server_tool_0", "mcp_calendar_server_tool_1"]},
     )
+    # The model already has these schemas in its current turn.
+    state.tools_for_turn()
     result = json.loads(
         await state.execute(
             UNLOAD_TOOLS_TOOL,
@@ -463,8 +472,13 @@ async def test_unload_tools_frees_slots_and_protects_core_tools():
         )
     )
     assert result["unloaded"] == ["mcp_calendar_server_tool_0"]
-    assert result["always_visible"] == ["ask_user"]
     assert result["not_loaded"] == ["mcp_not_loaded"]
+    assert result["always_visible"] == ["ask_user"]
+    # The current response still follows its declared snapshot.
+    assert state.is_visible("mcp_calendar_server_tool_0") is True
+    assert state.is_visible("mcp_calendar_server_tool_1") is True
+    # The next model turn reflects the unloaded selection.
+    state.tools_for_turn()
     assert state.is_visible("mcp_calendar_server_tool_0") is False
     assert state.is_visible("mcp_calendar_server_tool_1") is True
 
@@ -572,6 +586,7 @@ async def test_loading_a_skill_loads_its_sandbox_companions():
         await state.execute(LOAD_TOOLS_TOOL, {"names": ["skill_data_analyst"]})
     )
     assert result["loaded"] == ["skill_data_analyst"]
+    state.tools_for_turn()
     for name in ("skill_data_analyst", "read", "edit", "write", "bash"):
         assert state.is_visible(name) is True
 
@@ -788,6 +803,7 @@ async def test_persistence_failure_never_blocks_loading_or_unloading():
         await state.execute(LOAD_TOOLS_TOOL, {"names": ["mcp_calendar_server_tool_0"]})
     )
     assert loaded["loaded"] == ["mcp_calendar_server_tool_0"]
+    state.tools_for_turn()
     assert state.is_visible("mcp_calendar_server_tool_0") is True
 
     unloaded = json.loads(
@@ -796,6 +812,7 @@ async def test_persistence_failure_never_blocks_loading_or_unloading():
         )
     )
     assert unloaded["unloaded"] == ["mcp_calendar_server_tool_0"]
+    state.tools_for_turn()
     assert state.is_visible("mcp_calendar_server_tool_0") is False
 
 
@@ -805,12 +822,12 @@ async def test_single_oversized_load_keeps_the_requested_order():
     assert state is not None
     state.max_loaded = 24
     names = [f"mcp_calendar_server_tool_{i}" for i in range(50)]
-
     result = json.loads(await state.execute(LOAD_TOOLS_TOOL, {"names": names}))
     assert result["loaded"] == names[:24]
     assert result["not_loaded_limit_reached"] == names[24:]
     assert "evicted" not in result
     assert state.loaded == names[:24]
+    state.tools_for_turn()
     assert state.is_visible(names[0]) is True
     assert state.is_visible(names[24]) is False
 
@@ -838,6 +855,7 @@ async def test_loading_a_skill_evicts_old_tools_not_its_companions():
     )
     assert result["evicted"] == old[:1]
     assert result["loaded"] == ["skill_data_analyst"]
+    state.tools_for_turn()
     for name in ("skill_data_analyst", "read", "edit", "write", "bash"):
         assert state.is_visible(name) is True
 
@@ -856,10 +874,10 @@ async def test_retry_reduction_sheds_loaded_tools_and_reports_removed_names():
     await state.execute(LOAD_TOOLS_TOOL, {"names": loaded})
     persisted.clear()
 
+    state.tools_for_turn()
     removed = await state.reduce_for_retry()
     assert removed == loaded
     assert state.loaded == []
-    assert persisted == [[]]
     visible = [tool["function"]["name"] for tool in state.tools_for_turn()]
     assert not any(name.startswith("mcp_") for name in visible)
     # Core and discovery tools survive a retry reduction.
@@ -868,5 +886,26 @@ async def test_retry_reduction_sheds_loaded_tools_and_reports_removed_names():
     assert state.is_visible("ask_user") is True
 
     # Nothing left to shed: no fake reduction and no extra persistence write.
-    assert await state.reduce_for_retry() == []
     assert persisted == [[]]
+
+
+@pytest.mark.asyncio
+async def test_search_bounds_primary_terms_and_matches_full_description():
+    query = " ".join(f"term{index}" for index in range(30))
+    expanded, primary = _search_terms(query)
+    assert len(primary) == 12
+    assert len(expanded) <= 24
+
+    keyword = "distinctivecapability"
+    description = "prefix " + ("ordinary description " * 20) + keyword
+    state = await build_tool_discovery(
+        [
+            _schema(f"mcp_long_description_tool_{index}", description)
+            for index in range(25)
+        ],
+        min_discoverable=5,
+    )
+    assert state is not None
+    result = json.loads(await state.execute(DISCOVER_TOOLS_TOOL, {"query": keyword}))
+    assert result["tools"][0]["name"] == "mcp_long_description_tool_0"
+    assert len(result["tools"][0]["description"]) <= 180

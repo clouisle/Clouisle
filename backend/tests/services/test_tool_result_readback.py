@@ -190,6 +190,28 @@ async def test_readback_pagination_boundaries_and_numeric_coercion(database):
 
 
 @pytest.mark.asyncio
+async def test_readback_rejects_fractional_pagination(database):
+    owner, _other, agent, conversation = await _seed()
+    message = await _tool_result(conversation, content="abcde")
+    ref = tool_result_ref(message.round_id, message.tool_call_id)
+
+    for arguments in (
+        {"ref": ref, "offset": 1.5},
+        {"ref": ref, "limit": 2.5},
+    ):
+        result = json.loads(
+            await read_tool_result(
+                arguments,
+                agent=agent,
+                user=owner,
+                conversation_id=conversation.id,
+            )
+        )
+        assert result["error"] == "invalid_pagination"
+        assert result["message"] == "offset and limit must be integers"
+
+
+@pytest.mark.asyncio
 async def test_readback_prefers_the_latest_duplicate_result(database):
     owner, _other, agent, conversation = await _seed()
     round_id = uuid4()

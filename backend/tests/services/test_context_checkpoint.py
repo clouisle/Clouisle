@@ -1416,8 +1416,19 @@ async def test_load_validates_round_and_payload_mode(monkeypatch):
 
 
 class _FakeMessageQuery:
-    def __init__(self, rows):
-        self._rows = rows
+    def __init__(self, rows, filters):
+        self._rows = [
+            row
+            for row in rows
+            if all(
+                (
+                    getattr(row, key.removesuffix("__in")) in value
+                    if key.endswith("__in")
+                    else getattr(row, key) == value
+                )
+                for key, value in filters.items()
+            )
+        ]
 
     def order_by(self, *_args):
         return self
@@ -1437,27 +1448,60 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
     from app.models import agent as agent_module
     from app.services.tool_result_readback import model_visible_tool_result
 
+    conversation_id = uuid4()
     newest = '{"success": true, "version": 2}'
+    wrong_round_id = uuid4()
     rows = [
-        SimpleNamespace(tool_call_id="call-1", tool_name="bash", content=newest),
         SimpleNamespace(
+            conversation_id=conversation_id,
+            round_id=ROUND,
+            role=MessageRole.TOOL,
+            tool_call_id="call-1",
+            tool_name="bash",
+            content=newest,
+            is_active=True,
+        ),
+        SimpleNamespace(
+            conversation_id=conversation_id,
+            round_id=wrong_round_id,
+            role=MessageRole.TOOL,
+            tool_call_id="call-1",
+            tool_name="bash",
+            content='{"success": true, "version": 99}',
+            is_active=True,
+        ),
+        SimpleNamespace(
+            conversation_id=conversation_id,
+            round_id=ROUND,
+            role=MessageRole.TOOL,
             tool_call_id="call-1",
             tool_name="bash",
             content='{"success": true, "version": 1}',
+            is_active=True,
         ),
     ]
 
     class FakeMessage:
         @classmethod
-        def filter(cls, **_kwargs):
-            return _FakeMessageQuery(rows)
+        def filter(cls, **kwargs):
+            return _FakeMessageQuery(rows, kwargs)
 
     monkeypatch.setattr(agent_module, "Message", FakeMessage)
     versions = await context_checkpoint.active_branch_version_hashes(
-        conversation_id=uuid4(), round_id=ROUND, tool_call_ids=["call-1"]
+        conversation_id=conversation_id, round_id=ROUND, tool_call_ids=["call-1"]
     )
     assert versions == {
         "call-1": content_version_hash(model_visible_tool_result(newest, "bash"))
+    }
+    versions = await context_checkpoint.active_branch_version_hashes(
+        conversation_id=conversation_id,
+        round_id=wrong_round_id,
+        tool_call_ids=["call-1"],
+    )
+    assert versions == {
+        "call-1": content_version_hash(
+            model_visible_tool_result('{"success": true, "version": 99}', "bash")
+        )
     }
 
 

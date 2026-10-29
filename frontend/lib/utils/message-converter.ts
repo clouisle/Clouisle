@@ -353,6 +353,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
           if (part.type === 'tool-call') {
             const toolResultMsg = takeToolResult(part.toolCallId, i)
             if (toolResultMsg) {
+              appendCompressionBefore(Date.parse(toolResultMsg.created_at))
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
               const isError = inferToolResultIsError(parsedOutput)
               if (part.state !== 'error' && isError) {

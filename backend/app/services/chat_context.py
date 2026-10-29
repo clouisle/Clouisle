@@ -2756,6 +2756,7 @@ async def build_context_plan(
             for index in range(len(messages) - 1, -1, -1)
             if messages[index].role == MessageRole.USER
             and not _is_context_summary_message(messages[index])
+            and (index >= len(_meta) or _meta[index].get("source_role") != "asset_view")
         ),
         -1,
     )
@@ -2798,8 +2799,18 @@ async def build_context_plan(
     system_tokens = _estimate_message_tokens(
         messages[:1], model_id=tokenizer_model_id, provider=provider
     )
+    protected_round_start_index = next(
+        (
+            index
+            for index, entry in enumerate(_meta)
+            if protected_round_id is not None
+            and entry.get("round_id") is not None
+            and str(entry.get("round_id")) == str(protected_round_id)
+        ),
+        current_user_index,
+    )
     current_tokens = _estimate_message_tokens(
-        messages[current_user_index:],
+        messages[protected_round_start_index:],
         model_id=tokenizer_model_id,
         provider=provider,
     )

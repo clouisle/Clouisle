@@ -420,6 +420,7 @@ class _OverflowRetryResult:
 
     value: Any
     notice_index: int | None = None
+    retry_count: int = 0
 
 
 @dataclass(slots=True)
@@ -1398,6 +1399,7 @@ class AgentLoop:
         finalize: Callable[[str, str | None], Any],
         on_retry: Callable[[list[dict[str, Any]], list[Any] | None, set[int]], Any],
         notice_index: int | None = None,
+        initial_retries: int = 0,
     ) -> AsyncIterator[Any]:
         """Run one request with bounded overflow retries before any output.
 
@@ -1406,7 +1408,7 @@ class AgentLoop:
         one ``_OverflowRetryResult``. ``finalize`` closes a failed attempt and
         ``on_retry`` re-arms per-attempt accounting before the next one.
         """
-        attempt = 0
+        attempt = initial_retries
         while True:
             try:
                 value = await request(messages, tools)
@@ -1438,7 +1440,7 @@ class AgentLoop:
                 if events:
                     yield events
                 continue
-            yield _OverflowRetryResult(value, notice_index)
+            yield _OverflowRetryResult(value, notice_index, attempt)
             return
 
     async def run(self) -> AsyncIterator[str | None]:
@@ -1685,6 +1687,7 @@ class AgentLoop:
                 first_chunk: Any = None
                 timed_stream: AsyncIterator[Any] | None = None
                 stream_notice_index: int | None = None
+                stream_retry_count = 0
 
                 async def _on_stream_retry(
                     retry_messages: list[dict[str, Any]],
@@ -1721,6 +1724,7 @@ class AgentLoop:
                     if isinstance(item, _OverflowRetryResult):
                         first_chunk, timed_stream = item.value
                         stream_notice_index = item.notice_index
+                        stream_retry_count = item.retry_count
                     else:
                         for event in item:
                             yield event
@@ -1900,6 +1904,7 @@ class AgentLoop:
                         finalize=finalize_model,
                         on_retry=_on_fallback_retry,
                         notice_index=stream_notice_index,
+                        initial_retries=stream_retry_count,
                     ):
                         if isinstance(item, _OverflowRetryResult):
                             fallback_response = item.value

@@ -51,6 +51,12 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Validation**: Exercise large and small catalogs, absent sandbox tools, authorized sandbox visibility, and localized historical and live tool calls. Run focused backend and frontend tests and inspect the actual chat timeline.
 - Verification: browser history renders “发现工具” and “加载工具”; focused backend and frontend suites pass. After worker restart, browser run `55e57109-3287-4743-8f6d-f3e276c230ad` sent discovery tools plus configured `read`, `write`, `edit`, and `bash` on its first model request. The model called `bash`; the recorded execution exited 0 with `sandbox-check-ok`, which appeared in the chat.
 
+### Stage 9: PR Review Corrections
+- **Files modified**: Agent loop, worker, discovery, context planning and readback services; chat hook, message conversion and Agent settings; relevant behavior tests and referenced guides.
+- **Specific logic**: Preserve readback in resumed runs; bind tool execution to schemas declared for the current turn; share overflow retry budget; identify real user goals and the entire protected round; reject invalid pagination; keep error messages on their active branch and maintain timeline order; label controls and correct documentation.
+- **Validation**: Exercise resumed runs, same-turn tool load, empty stream overflow, asset views, steering, stale branches, fractional pagination, accessibility and event ordering; run focused suites and pre-push checks. Roll back individual changes by reverting their commits without altering saved conversation records.
+- Verification: after correcting the test fixture, 150 focused backend tests passed and Ruff passed; a worker tool-loading smoke scenario exposed `read_tool_result` for a recovered complete tool exchange. Frontend focused tests: 95 passed; TypeScript and ESLint passed. No browser session was started for this review pass.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.

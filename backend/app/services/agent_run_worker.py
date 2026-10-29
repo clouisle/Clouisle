@@ -598,6 +598,25 @@ async def _visible_messages(conversation_id: UUID):
     return await get_visible_conversation_messages(conversation_id)
 
 
+def _history_override_has_tool_result_ref(history: Any) -> bool:
+    if not isinstance(history, list):
+        return False
+    from app.services.tool_result_readback import parse_tool_result_ref
+
+    for message in history:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            continue
+        for suffix in content.split("tr1:")[1:]:
+            candidate = "tr1:" + suffix.split(maxsplit=1)[0].rstrip(".,;)]}")
+            try:
+                parse_tool_result_ref(candidate)
+            except (TypeError, ValueError):
+                continue
+            return True
+    return False
+
+
 async def _load_tools(agent: Agent, user_id: UUID | str | None = None):
     from app.api.v1.endpoints.chat import get_agent_tools
 
@@ -608,6 +627,36 @@ async def _load_tool_display_names(agent: Agent, locale: str = "en"):
     from app.api.v1.endpoints.chat import get_tool_display_names
 
     return await get_tool_display_names(agent, locale, enumerate_mcp_tools=False)
+
+
+def _history_override_has_tool_result(history: Any) -> bool:
+    """Whether recovery history contains a result that compaction can omit."""
+    if not isinstance(history, list):
+        return False
+    assistant_calls: dict[str, str] = {}
+    tool_results: dict[str, str] = {}
+    for message in history:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "assistant":
+            calls = message.get("tool_calls")
+            if isinstance(calls, list):
+                for call in calls:
+                    if not isinstance(call, dict) or not isinstance(
+                        call.get("id"), str
+                    ):
+                        continue
+                    function = call.get("function")
+                    name = function.get("name") if isinstance(function, dict) else None
+                    assistant_calls[call["id"]] = name or ""
+        elif message.get("role") == "tool":
+            call_id = message.get("tool_call_id")
+            if isinstance(call_id, str) and isinstance(message.get("content"), str):
+                tool_results[call_id] = message["content"]
+    return any(
+        call_id in tool_results and name not in {"ask_user", "view_asset"}
+        for call_id, name in assistant_calls.items()
+    )
 
 
 def _run_tool_identity(payload: dict[str, Any]):
@@ -645,6 +694,16 @@ async def _load_authorized_tools(
 
     with tool_identity_scope(_run_tool_identity(payload)):
         tools_openai = await _load_tools(agent, user_id=user_id)
+        if _history_override_has_tool_result_ref(
+            payload.get("history_override")
+        ) or _history_override_has_tool_result(payload.get("history_override")):
+            from app.services.tool_result_readback import build_read_tool_result_schema
+
+            if not any(
+                tool.get("function", {}).get("name") == "read_tool_result"
+                for tool in tools_openai
+            ):
+                tools_openai.append(build_read_tool_result_schema())
         if non_stream and tools_openai:
             # ask_user pauses the run for an interactive answer; a non-stream
             # API caller has no UI to answer, so the model must never see it.
