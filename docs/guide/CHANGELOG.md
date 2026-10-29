@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Preserve small upward scrolls during streaming; fix closed trace visibility, touch copy controls, localized accessibility labels and scroll direction indicators.
 - Chat follows newly added content when the reader was at the bottom before it grew, while preserving deliberate scrolling into history.
 - The scroll-to-bottom button stays above sticky thought-process headers.
 - Thought-process and tool details now use a short fade on expansion instead of conflicting height and visibility transitions.

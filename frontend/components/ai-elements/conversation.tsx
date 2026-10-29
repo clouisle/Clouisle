@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import {
   MessageScroller,
@@ -76,16 +77,20 @@ export const ConversationScrollButton = ({
   onClick,
   ref,
   ...buttonProps
-}: ConversationScrollButtonProps) => (
-  <MessageScrollerButton
-    direction={direction}
-    behavior={behavior}
-    onClick={onClick}
-    ref={ref}
-    className={cn("absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full", className)}
-    render={<Button variant={variant} size={size} {...buttonProps} />}
-  />
-);
+}: ConversationScrollButtonProps) => {
+  const t = useTranslations("chat.message");
+  return (
+    <MessageScrollerButton
+      direction={direction}
+      behavior={behavior}
+      onClick={onClick}
+      ref={ref}
+      label={t(direction === "start" ? "scrollToStart" : "scrollToEnd")}
+      className={cn("absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full", className)}
+      render={<Button variant={variant} size={size} {...buttonProps} />}
+    />
+  );
+};
 
 export type ConversationEmptyStateProps = ComponentProps<"div"> & {
   title?: string;

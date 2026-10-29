@@ -119,7 +119,7 @@ mock.module('@/components/ai-elements/inline-citation', () => ({
   InlineCitationCardBody: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
   InlineCitationCardTrigger: ({ label, sources, ...props }: React.ComponentProps<'button'> & { label?: React.ReactNode; sources: string[] }) => <button type="button" data-source-count={sources.length} {...props}>{label}</button>,
   InlineCitationQuote: ({ children, ...props }: React.ComponentProps<'blockquote'>) => <blockquote {...props}>{children}</blockquote>,
-  InlineCitationSource: ({ children, title, url, ...props }: React.ComponentProps<'div'> & { title?: string; url?: string }) => <div {...props}>{title && <h4>{title}</h4>}{url && <p>{url}</p>}{children}</div>,
+  InlineCitationSource: ({ children, title, url, newTabLabel, ...props }: React.ComponentProps<'div'> & { title?: string; url?: string; newTabLabel?: string }) => <div data-new-tab-label={newTabLabel} {...props}>{title && <h4>{title}</h4>}{url && <p>{url}</p>}<span className="sr-only">{newTabLabel}</span>{children}</div>,
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: Array<{ sourceId?: string }> }) => <aside>sources:{sources.length}:{sources.map(source => source.sourceId).join(',')}</aside> }))
@@ -357,6 +357,36 @@ describe('message rendering', () => {
     }} hideToolCalls />)
     expect(hidden).not.toContain('Where?')
     expect(hidden).not.toContain('chat.message.askUserWaiting')
+  })
+  test('omits assistant actions when tool calls are hidden', () => {
+    const html = renderToStaticMarkup(<Message
+      message={{
+        id: 'hidden-tool-actions',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-call',
+            toolCallId: 'ask-user',
+            toolName: 'ask_user',
+            input: { questions: [{ id: 'target', question: 'Where?' }] },
+            state: 'pending',
+          },
+          {
+            type: 'mcp-tool-result',
+            toolCallId: 'lookup',
+            serverName: 'docs',
+            toolName: 'lookup',
+            output: 'Hidden tool result',
+          },
+        ],
+      }}
+      hideToolCalls
+      onRegenerate={() => {}}
+    />)
+
+    expect(html).not.toContain('chat.message.copy')
+    expect(html).not.toContain('chat.message.regenerate')
+    expect(html).not.toContain('Hidden tool result')
   })
 
   test('renders iteration cap and stopped markers once', () => {
@@ -1475,6 +1505,8 @@ describe('message behavior', () => {
     expect(card).toContain('News')
     expect(card).toContain('https://example.test/news')
     expect(card).toContain('Latest update')
+    expect(card).toContain('data-new-tab-label="chat.source.opensInNewTab"')
+    expect(card).toContain('chat.source.opensInNewTab')
 
     renderToStaticMarkup(<Message
       isStreaming

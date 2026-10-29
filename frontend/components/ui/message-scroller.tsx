@@ -88,9 +88,12 @@ function MessageScrollerButton({
   render,
   variant = "secondary",
   size = "icon-sm",
+  label,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Button> &
-  Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
+  Pick<React.ComponentProps<typeof Button>, "variant" | "size"> & {
+    label?: string
+  }) {
   return (
     <MessageScrollerPrimitive.Button
       data-slot="message-scroller-button"
@@ -107,9 +110,9 @@ function MessageScrollerButton({
     >
       {children ?? (
         <>
-          <ArrowDownIcon className="size-4" />
+          <ArrowDownIcon className={cn("size-4", direction === "start" && "rotate-180")} />
           <span className="sr-only">
-            {direction === "end" ? "Scroll to end" : "Scroll to start"}
+            {label ?? (direction === "end" ? "Scroll to end" : "Scroll to start")}
           </span>
         </>
       )}

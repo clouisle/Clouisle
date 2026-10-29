@@ -32,6 +32,12 @@ Use shadcn/ui Base UI primitives and patterns from the official migration guidan
 
 Verification: 140 targeted component and chat tests passed, TypeScript and ESLint passed, and a server-side render smoke check confirmed an open Trace disclosure displays its result. No browser or application server was started; visual validation remains unverified. Conversation uses Message Scroller's API rather than unsupported legacy spring configuration. The shared Collapsible primitive remains Radix-based, so Trace adapts the shadcn pattern to the project's existing primitive.
 
+### Stage 5: PR review corrections
+- **Files modified**: `frontend/components/chat/chat-container.tsx`, `message.tsx`, `frontend/components/ai-elements/inline-citation.tsx`, `conversation.tsx`, `frontend/components/ui/{trace,code-block,message-scroller}.tsx`, corresponding tests and chat translations.
+- **Specific logic**: Preserve deliberate upward scrolling, hide closed mounted disclosures, localize accessibility text, and repair copy-button and touch interactions.
+- **Validation**: Exercise small upward scroll races, content growth, collapsed and expanded states, copy callbacks, source links and scroll controls; run targeted tests, lint, types and pre-push gates.
+- **Result**: 102 targeted tests, TypeScript, ESLint and translation catalog checks passed; a server-render smoke check covered the closed mounted trace and localized start control. Browser layout remains unverified.
+
 ## Testing Strategy
 
 - Happy path: chat messages, thought steps, tool calls, questions, citations, code and attachments.

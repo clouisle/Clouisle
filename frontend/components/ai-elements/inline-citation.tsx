@@ -271,12 +271,14 @@ export type InlineCitationSourceProps = ComponentProps<"div"> & {
   title?: string;
   url?: string;
   description?: string;
+  newTabLabel?: string;
 };
 
 export const InlineCitationSource = ({
   title,
   url,
   description,
+  newTabLabel,
   className,
   children,
   ...props
@@ -289,7 +291,7 @@ export const InlineCitationSource = ({
       <p className="truncate break-all text-muted-foreground text-xs">
         <a href={url} target="_blank" rel="noreferrer">
           {url}
-          <span className="sr-only"> (opens in a new tab)</span>
+          <span className="sr-only">{newTabLabel ?? " (opens in a new tab)"}</span>
         </a>
       </p>
     )}

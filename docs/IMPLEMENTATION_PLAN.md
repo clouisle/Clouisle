@@ -7,6 +7,7 @@
   - [x] 2. Migrate message, citation, code and chat patterns
   - [x] 3. Remove obsolete CLI dependency and verify chat behavior
   - [x] 4. Update changelogs and complete regression verification
+  - [x] 5. Address PR review findings and verify chat interactions
 
 - **tiered-context-management** — In progress. See `docs/plan/tiered-context-management.md`.
   - [x] 1. Budget diagnostics and resilient history compaction

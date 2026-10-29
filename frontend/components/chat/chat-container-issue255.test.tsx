@@ -349,6 +349,73 @@ describe('ChatContainer issue #255 coverage', () => {
     expect(scrollTo).not.toHaveBeenCalled()
   })
 
+  test('preserves a small upward scroll during streaming before the scroll event', () => {
+    const scrollTo = mock()
+    const cleanups: Array<() => void> = []
+    globalThis.ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(1)
+      return 9
+    }) as typeof requestAnimationFrame
+
+    const history = Array.from({ length: 100 }, (_, index) => message(`m-${index}`, index % 2 === 0 ? 'user' : 'assistant'))
+    const streamed = (n: number) => [...history.slice(0, -1), message('last', 'assistant', `answer ${'x'.repeat(n)}`)]
+    let tree = render({ messages: history, conversationId: 'c1' })
+    let divs = findAll(tree, 'div')
+    const scroller = { scrollHeight: 10000, scrollTop: 9600, clientHeight: 400, scrollTo }
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    cleanups.push(...effects.map((effect) => effect()).filter(Boolean) as Array<() => void>)
+    scrollTo.mockClear()
+
+    // A tiny upward movement stays within the bottom threshold. A streamed
+    // chunk arrives before the browser dispatches the corresponding scroll event.
+    scroller.scrollTop = 9590
+    scroller.scrollHeight = 10005
+    tree = render({ messages: streamed(10), conversationId: 'c1', isStreaming: true })
+    divs = findAll(tree, 'div')
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    cleanups.push(...effects.map((effect) => effect()).filter(Boolean) as Array<() => void>)
+    expect(scrollTo).not.toHaveBeenCalled()
+    cleanups.forEach((cleanup) => cleanup())
+  })
+
+  test('preserves a small upward scroll during content resize before the scroll event', () => {
+    const scrollTo = mock()
+    const resizeCallbacks: Array<() => void> = []
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) { resizeCallbacks.push(callback) }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(1)
+      return 9
+    }) as typeof requestAnimationFrame
+
+    const history = Array.from({ length: 100 }, (_, index) => message(`m-${index}`, index % 2 === 0 ? 'user' : 'assistant'))
+    const tree = render({ messages: history, conversationId: 'c1' })
+    const divs = findAll(tree, 'div')
+    const scroller = { scrollHeight: 10000, scrollTop: 9600, clientHeight: 400, scrollTo }
+    ;(divs[1].props.ref as { current: unknown }).current = scroller
+    ;(divs[2].props.ref as { current: unknown }).current = {}
+    const cleanups = effects.map((effect) => effect()).filter(Boolean) as Array<() => void>
+    scrollTo.mockClear()
+
+    scroller.scrollTop = 9590
+    scroller.scrollHeight = 10005
+    resizeCallbacks[0]?.()
+
+    expect(scrollTo).not.toHaveBeenCalled()
+    cleanups.forEach((cleanup) => cleanup())
+  })
+
   test('keeps the reading position stable when loading older messages', () => {
     const scrollTo = mock()
     const messages = Array.from({ length: 45 }, (_, index) => message(`m-${index}`))

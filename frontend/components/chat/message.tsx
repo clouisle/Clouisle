@@ -1162,9 +1162,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         isReasoningPart(part)
         || isUserInstructionPart(part)
         || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
-        || isToolCallPart(part)
-        || isMcpToolCallPart(part)
-        || isMcpToolResultPart(part)
+        || (!hideToolCalls && (
+          isToolCallPart(part)
+          || isMcpToolCallPart(part)
+          || isMcpToolResultPart(part)
+        ))
       ))
       || isErroredMessage
     const isLoadingMessage = Boolean(message.metadata?.isLoading && !hasVisibleTimelineContent)
@@ -2358,6 +2360,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   onOpenImage?: (src: string, alt?: string) => void
 }) {
+  const tSource = useTranslations('chat.source')
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   const processedText = React.useMemo(() => (
@@ -2494,7 +2497,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
               aria-label={title || source.sourceId}
             />
             <InlineCitationCardBody className="p-3.5 max-w-[24rem]">
-              <InlineCitationSource title={title} url={url}>
+              <InlineCitationSource title={title} url={url} newTabLabel={tSource('opensInNewTab')}>
                 {description && <InlineCitationQuote>{description}</InlineCitationQuote>}
               </InlineCitationSource>
             </InlineCitationCardBody>
@@ -2528,7 +2531,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [onOpenCodePreview, onOpenImage, sources])
+  }), [onOpenCodePreview, onOpenImage, sources, tSource])
 
   const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
     <PreviewableMarkdownBlock

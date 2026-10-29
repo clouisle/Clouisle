@@ -77,7 +77,7 @@ function TraceCollapsibleContent({ className, children, ...props }: React.Compon
   return (
     <CollapsibleContent
       data-slot="trace-collapsible-content"
-      className="min-w-0 overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-150 motion-reduce:animate-none"
+      className="min-w-0 overflow-hidden data-[state=closed]:hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-150 motion-reduce:animate-none"
       {...props}
     >
       <div data-slot="trace-collapsible-content-inner" className={cn("mt-2 mb-1 ml-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground", className)}>

@@ -10,7 +10,7 @@ mock.module('@/components/ui/trace', () => {
     Trace: ({ children, ...props }: React.ComponentProps<'div'>) => <div data-slot="trace" {...props}>{children}</div>,
     TraceCollapsible: ({ children, open = false, onOpenChange, ...props }: React.ComponentProps<'div'> & { open?: boolean; onOpenChange?: (open: boolean) => void }) => <Context.Provider value={{ open, toggle: () => onOpenChange?.(!open) }}><div data-slot="trace-collapsible" {...props}>{children}</div></Context.Provider>,
     TraceCollapsibleTrigger: ({ children, onClick, ...props }: React.ComponentProps<'button'>) => { const context = React.useContext(Context); return <button data-slot="trace-collapsible-trigger" aria-expanded={context.open} onClick={(event) => { context.toggle(); onClick?.(event) }} {...props}>{children}</button> },
-    TraceCollapsibleContent: ({ children, forceMount, ...props }: React.ComponentProps<'div'> & { forceMount?: boolean }) => { void forceMount; return <div data-slot="trace-collapsible-content" {...props}>{children}</div> },
+    TraceCollapsibleContent: ({ children, forceMount, ...props }: React.ComponentProps<'div'> & { forceMount?: boolean }) => { const { open } = React.useContext(Context); return open || forceMount ? <div data-slot="trace-collapsible-content" hidden={!open} {...props}>{children}</div> : null },
     TraceIcon: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-icon" {...props}>{children}</span>,
     TraceLine: ({ children, status, ...props }: React.ComponentProps<'span'> & { status?: string }) => <span data-slot="trace-line" data-status={status} {...props}>{children}</span>,
     TraceTitle: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-title" {...props}>{children}</span>,
@@ -60,8 +60,10 @@ describe('chain of thought AI element', () => {
 
     expect(trigger.props['aria-expanded']).toBe(false)
     expect(text(renderer)).toContain('Reasoning')
+    expect(text(renderer)).not.toContain('Hidden details')
     act(() => trigger.props.onClick())
     expect(renderer.root.findByType('button').props['aria-expanded']).toBe(true)
+    expect(text(renderer)).toContain('Hidden details')
     expect(changes).toEqual([true])
   })
 
@@ -138,6 +140,7 @@ describe('chain of thought AI element', () => {
       </ChainOfThought>,
     )
 
+    act(() => renderer.root.findByType('button').props.onClick())
     expect(text(renderer)).toContain('Working')
     expect(text(renderer)).toContain('Result')
     expect(renderer.root.findAllByType('figcaption')).toHaveLength(1)

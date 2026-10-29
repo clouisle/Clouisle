@@ -75,6 +75,7 @@ export type ChatMessages = {
       document: string
       documentDefault: string
       url: string
+      opensInNewTab: string
       page: string
       segment: string
       segmentCount: string
@@ -134,6 +135,8 @@ export type ChatMessages = {
       copied: string
       loadOlderMessages: string
       userMessageScaleTick: string
+      scrollToStart: string
+      scrollToEnd: string
       retry: string
       user: string
       assistant: string

@@ -76,7 +76,7 @@ function CodeBlockActions({
         "flex shrink-0 items-center gap-1",
         "group-has-[[data-slot=code-block-header]]/code-block:static group-has-[[data-slot=code-block-header]]/code-block:ml-auto",
         "absolute top-1.5 right-1.5 z-10 opacity-0 transition-opacity group-hover/code-block:opacity-100 focus-within:opacity-100",
-        "supports-hover:[@media(hover:none)]:opacity-100",
+        "[@media(hover:none)]:opacity-100",
         className
       )}
       {...props}
@@ -179,6 +179,7 @@ function CodeBlockCopyButton({
   value = "",
   onCopy,
   onError,
+  onClick,
   timeout = 2000,
   children,
   className,
@@ -218,7 +219,10 @@ function CodeBlockCopyButton({
       data-slot="code-block-copy-button"
       aria-label="Copy code"
       className={cn("shrink-0", className)}
-      onClick={copyToClipboard}
+      onClick={(event) => {
+        onClick?.(event)
+        void copyToClipboard()
+      }}
       size="icon"
       variant="ghost"
       {...props}

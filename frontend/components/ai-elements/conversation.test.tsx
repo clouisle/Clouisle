@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { createElement } from 'react'
+import { NextIntlClientProvider } from 'next-intl'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   Conversation,
@@ -13,7 +14,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 mock.module('@/components/ui/message-scroller', () => ({
   MessageScroller: ({ className, children, ...props }: Record<string, unknown>) =>
     createElement('div', { 'data-slot': 'message-scroller', className, ...props }, children as React.ReactNode),
-  MessageScrollerButton: ({ children, render, onClick, className, ref, ...props }: Record<string, unknown>) => {
+  MessageScrollerButton: ({ children, label, render, onClick, className, ref, ...props }: Record<string, unknown>) => {
     const renderProps = (render as { props?: Record<string, unknown> } | undefined)?.props ?? {}
     const { ref: renderedRef, ...buttonProps } = renderProps
     return createElement(
@@ -25,7 +26,7 @@ mock.module('@/components/ui/message-scroller', () => ({
         className,
         ref: ref ?? renderedRef,
       },
-      children as React.ReactNode,
+      (children ?? label) as React.ReactNode,
     )
   },
   MessageScrollerItem: ({ children, ...props }: Record<string, unknown>) =>
@@ -104,11 +105,10 @@ describe('Conversation', () => {
     expect(items[1].props.scrollAnchor).toBe(true)
     expect(items[1].props.children).toBe(second)
   })
-  test('forwards button callback and direction to the scroller primitive', () => {
-    const callback = mock(() => {})
-    const button = ConversationScrollButton({ onClick: callback, direction: 'start' })
-
-    expect(button.props.onClick).toBe(callback)
-    expect(button.props.direction).toBe('start')
+  test('renders the localized scroll control', () => {
+    const html = renderToStaticMarkup(createElement(NextIntlClientProvider, {
+      locale: 'zh', messages: { chat: { message: { scrollToStart: '滚动到开头', scrollToEnd: '滚动到底部' } } },
+    }, createElement(ConversationScrollButton, { direction: 'start' })))
+    expect(html).toContain('滚动到开头')
   })
 })

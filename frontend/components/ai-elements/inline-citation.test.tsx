@@ -84,11 +84,12 @@ test("citation trigger keeps hostname labels and source counts", () => {
   expect(unavailable.props.children).toBe("unknown");
 });
 
-test("citation source links open externally and retain accessible context", () => {
+test("citation source links open externally and localize accessible context", () => {
   const source = InlineCitationSource({
     title: "Documentation",
     url: "https://docs.example.org/page",
     description: "A short source summary.",
+    newTabLabel: "在新标签页中打开",
   }) as ElementNode;
   const link = findElement(source, (element) => element.type === "a");
   const newTabHint = findElement(
@@ -99,5 +100,17 @@ test("citation source links open externally and retain accessible context", () =
   expect(link?.props.href).toBe("https://docs.example.org/page");
   expect(link?.props.target).toBe("_blank");
   expect(link?.props.rel).toBe("noreferrer");
+  expect(newTabHint?.props.children).toBe("在新标签页中打开");
+});
+
+test("citation source links preserve the English hint when no label is provided", () => {
+  const source = InlineCitationSource({
+    url: "https://docs.example.org/page",
+  }) as ElementNode;
+  const newTabHint = findElement(
+    source,
+    (element) => element.type === "span" && element.props.className === "sr-only",
+  );
+
   expect(newTabHint?.props.children).toBe(" (opens in a new tab)");
 });
