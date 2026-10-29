@@ -272,14 +272,24 @@ describe('ChatContainer issue #255 coverage', () => {
 
     const tree = render({ messages: [message('a'), message('b')] })
     const divs = findAll(tree, 'div')
-    ;(divs[1].props.ref as { current: unknown }).current = { scrollHeight: 200, scrollTop: 100, clientHeight: 100, scrollTo }
+    const scroller = { scrollHeight: 200, scrollTop: 100, clientHeight: 100, scrollTo }
+    const scrollerRef = divs[1].props.ref
+    if (!scrollerRef || typeof scrollerRef !== 'object' || !('current' in scrollerRef)) throw new Error('missing scroller ref')
+    scrollerRef.current = scroller
     ;(divs[2].props.ref as { current: unknown }).current = {}
     const cleanups = effects.map((effect) => effect()).filter(Boolean) as Array<() => void>
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 201, behavior: 'auto' })
     expect(observe).toHaveBeenCalledTimes(1)
+    scroller.scrollHeight = 400
     resize?.()
     expect(scrollTo).toHaveBeenCalledTimes(2)
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 401, behavior: 'auto' })
+    scrollTo.mockClear()
+    scroller.scrollTop = 0
+    scroller.scrollHeight = 600
+    resize?.()
+    expect(scrollTo).not.toHaveBeenCalled()
     cleanups.forEach((cleanup) => cleanup())
     expect(cancel).toHaveBeenCalledWith(9)
     expect(disconnect).toHaveBeenCalledTimes(1)

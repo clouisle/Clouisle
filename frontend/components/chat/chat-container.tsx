@@ -263,6 +263,7 @@ export function ChatContainer({
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
   const shouldAutoFollowRef = useRef(true);
+  const previousScrollHeightRef = useRef<number | null>(null);
   // Set once the container has positioned itself at the newest message on mount.
   const hasPositionedRef = useRef(false);
   // Scroll anchor captured when "load older" is clicked, to keep the reading
@@ -339,6 +340,7 @@ export function ChatContainer({
 
     const atBottom = isScrollerAtBottom();
     isAtBottomRef.current = atBottom;
+    previousScrollHeightRef.current = scroller.scrollHeight;
     shouldAutoFollowRef.current = atBottom;
 
     const nextShowButton = !atBottom && messages.length > 0;
@@ -353,6 +355,7 @@ export function ChatContainer({
     if (!scroller) return;
 
     const bottom = scroller.scrollHeight + 1;
+    previousScrollHeightRef.current = scroller.scrollHeight;
     scroller.scrollTo({ top: bottom, behavior });
     isAtBottomRef.current = true;
     shouldAutoFollowRef.current = true;
@@ -366,6 +369,7 @@ export function ChatContainer({
 
     if (conversationChanged) {
       shouldAutoFollowRef.current = false;
+      previousScrollHeightRef.current = null;
       hasPositionedRef.current = false;
       return;
     }
@@ -406,21 +410,19 @@ export function ChatContainer({
       return;
     }
 
-    // Follow the stream only while the user is actually at the bottom. The
-    // scroll event is delivered asynchronously after the user's wheel input,
-    // so shouldAutoFollowRef can lag by one frame; checking the live position
-    // here prevents a chunk commit from yanking the view back down while the
-    // user is reading history.
-    if (!isScrollerAtBottom()) {
-      return;
-    }
+    // Compare against the previous height: new content may already have pushed
+    // the old bottom outside the threshold before this effect runs.
+    const scroller = scrollerRef.current;
+    if (!scroller || !shouldAutoFollowRef.current) return;
+    const previousHeight = previousScrollHeightRef.current ?? scroller.scrollHeight;
+    if (previousHeight - scroller.scrollTop - scroller.clientHeight > atBottomThreshold) return;
     scrollToBottom('auto');
   }, [autoScroll, isStreaming, lastMessageText, lastMessageId, scrollToBottom, updateAtBottomState, isScrollerAtBottom]);
 
   useIsomorphicLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const content = contentRef.current;
-    if (!scroller || !content || !autoScroll || !shouldAutoFollowRef.current) return;
+    if (!scroller || !content || !autoScroll) return;
 
     let frameId: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
@@ -431,11 +433,10 @@ export function ChatContainer({
       frameId = requestAnimationFrame(() => {
         const currentScroller = scrollerRef.current;
         if (!currentScroller) return;
-        // Same live-position check as the streaming follow: never pull the
-        // view down when the user has scrolled away from the bottom.
-        if (currentScroller.scrollHeight - currentScroller.scrollTop - currentScroller.clientHeight > atBottomThreshold) {
-          return;
-        }
+        const previousHeight = previousScrollHeightRef.current ?? currentScroller.scrollHeight;
+        const wasAtBottom = previousHeight - currentScroller.scrollTop - currentScroller.clientHeight <= atBottomThreshold;
+        previousScrollHeightRef.current = currentScroller.scrollHeight;
+        if (!shouldAutoFollowRef.current || !wasAtBottom) return;
         currentScroller.scrollTo({ top: currentScroller.scrollHeight + 1, behavior: 'auto' });
       });
     });
