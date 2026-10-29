@@ -160,6 +160,26 @@ async def test_discover_matches_final_bigram_of_long_cjk_query():
 
 
 @pytest.mark.asyncio
+async def test_discover_deduplicates_repeated_cjk_bigrams_before_ranking():
+    query = "甲乙" * 20 + " 庚辛壬"
+    state = await build_tool_discovery(
+        [
+            _schema("mcp_repeated_bigram", "甲乙"),
+            _schema("mcp_suffix_bigram", "辛壬"),
+            *[
+                _schema(f"mcp_unrelated_tool_{index}", "Unrelated")
+                for index in range(23)
+            ],
+        ],
+        min_discoverable=5,
+    )
+    assert state is not None
+
+    result = json.loads(await state.execute(DISCOVER_TOOLS_TOOL, {"query": query}))
+    assert "mcp_suffix_bigram" in [tool["name"] for tool in result["tools"]]
+
+
+@pytest.mark.asyncio
 async def test_discover_matches_terms_after_the_first_twelve():
     query = "calendar event create update delete search history user profile account settings report export"
     state = await build_tool_discovery(
@@ -960,7 +980,7 @@ async def test_search_bounds_primary_terms_and_matches_full_description():
 
     bounded_expanded, bounded_primary = _search_terms("中" * 10000)
     assert len(bounded_primary) == 1
-    assert len(bounded_expanded) <= 24
+    assert len(bounded_primary[0]) == 512
 
     keyword = "distinctivecapability"
     description = "prefix " + ("ordinary description " * 20) + keyword

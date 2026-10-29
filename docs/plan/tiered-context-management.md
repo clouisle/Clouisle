@@ -63,6 +63,12 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Validation**: Exercise long and mixed queries, pause/replay with newly loaded tools, edited-branch reloads, and ordering. Run focused tests and pre-push gates; no browser or service startup. Revert individual commits if recovery or search behavior regresses.
 - Verification: after reassessing the recovery control flow, 144 focused backend tests passed, including replay and approval coverage; 72 frontend hook tests passed, as did Ruff, ESLint and TypeScript. Search smoke checks found both a long CJK suffix and a later query keyword. No browser or application service was started.
 
+### Stage 11: Resume Snapshot and Search Review
+- **Files modified**: Agent loop and worker, tool discovery, affected backend and frontend behavior tests, changelog.
+- **Specific logic**: Bind pending calls to the actual submitted tool schemas after retries and across discovery transitions; allow only authorized core tools for legacy missing snapshots. Deduplicate CJK search terms within the existing budget and strengthen boundary tests.
+- **Validation**: Exercise streaming and nonstream retries, legacy and discovery-transition resumes, worker reconstruction, repeated CJK input and chat history. Run focused tests and pre-push gates; do not start services or browsers. Revert the specific change if authorization or resume behavior regresses.
+- Verification: 166 focused backend tests and 56 frontend hook tests passed; Ruff and frontend ESLint passed. A search smoke check retained the calendar bigram after repeated CJK input. No application services or browsers were started.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.

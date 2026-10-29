@@ -718,7 +718,7 @@ async def _load_authorized_tools(
                 for tool in tools_openai
             ):
                 tools_openai.append(build_read_tool_result_schema())
-        if non_stream and tools_openai:
+        if non_stream:
             # ask_user pauses the run for an interactive answer; a non-stream
             # API caller has no UI to answer, so the model must never see it.
             tools_openai = [
@@ -1529,15 +1529,12 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             discovery = getattr(loop_context, "tool_discovery", None)
             if discovery is not None:
                 resume_payload["discovered_tools"] = discovery.loaded_names
-                resume_tool_visible_names = interaction.get("resume_tool_visible_names")
-                if remaining_calls and isinstance(resume_tool_visible_names, list):
-                    resume_payload["pending_tool_visible_names"] = (
-                        resume_tool_visible_names
-                    )
-                else:
-                    resume_payload.pop("pending_tool_visible_names", None)
             else:
                 resume_payload.pop("discovered_tools", None)
+            resume_tool_visible_names = interaction.get("resume_tool_visible_names")
+            if remaining_calls and isinstance(resume_tool_visible_names, list):
+                resume_payload["pending_tool_visible_names"] = resume_tool_visible_names
+            else:
                 resume_payload.pop("pending_tool_visible_names", None)
             resume_payload["pending_tool_display_name"] = str(
                 interaction.get("display_name") or interaction["tool_name"]

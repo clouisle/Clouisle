@@ -160,6 +160,101 @@ async def test_load_tools_only_exposes_tool_to_the_next_model_turn(monkeypatch):
     base.assert_awaited_once_with(loaded_name, {})
 
 
+@pytest.mark.asyncio
+async def test_rebuilt_worker_discovery_uses_persisted_response_snapshot(monkeypatch):
+    from app.services import agent_round, agent_run_store
+    from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
+    from app.llm.types import (
+        ChatResponse,
+        FinishReason,
+        FunctionCall,
+        Message as LLMMessage,
+        MessageRole,
+        ToolCall,
+        Usage,
+    )
+
+    monkeypatch.setattr(agent_run_store, "remember_discovered_tools", AsyncMock())
+    monkeypatch.setattr(
+        agent_round, "persist_assistant_step", AsyncMock(return_value=1)
+    )
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=2))
+    payload = {
+        "run_id": str(uuid4()),
+        "discovered_tools": ["mcp_ops_server_action_1"],
+        "pending_tool_visible_names": [
+            "discover_tools",
+            "load_tools",
+            "unload_tools",
+            "ask_user",
+            "knowledge_search",
+        ],
+    }
+    schemas = _tools_definitions(_large_tools())
+    rebuilt = await _build_tool_discovery_state(
+        schemas,
+        payload=payload,
+        agent=SimpleNamespace(team_id=None, tools_config=[]),
+        user_id=None,
+    )
+    assert rebuilt is not None
+    executed = []
+
+    async def _provider(**kwargs):
+        return ChatResponse(
+            id="done",
+            model="m",
+            content="done",
+            finish_reason=FinishReason.STOP,
+            usage=Usage(),
+        )
+
+    async def _build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="resume")]
+            )
+        )
+
+    async def _execute(name, _arguments, **_kwargs):
+        executed.append(name)
+        return "unexpectedly executed"
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="resume",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=1,
+        streaming=False,
+        working_history_override=[],
+        round_id=uuid4(),
+        team_chat=_provider,
+        build_turn=_build_turn,
+        execute_tool_call=_execute,
+        tool_discovery=rebuilt,
+        resume_tool_calls=[
+            ToolCall(
+                id="pending-call",
+                function=FunctionCall(name="mcp_ops_server_action_1", arguments="{}"),
+            )
+        ],
+        resume_tool_call_ids={"pending-call"},
+        resume_tool_visible_names=set(payload["pending_tool_visible_names"]),
+        formatter=None,
+    )
+    async for _ in AgentLoop(context).run():
+        pass
+
+    assert executed == []
+
+
 def test_approval_history_with_result_reference_restores_readback_tool():
     from app.services.agent_run_worker import _history_override_has_tool_result_ref
 

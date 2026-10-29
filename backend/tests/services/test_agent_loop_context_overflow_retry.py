@@ -678,6 +678,89 @@ async def test_first_retry_sheds_optional_tool_schemas_and_recomputes_the_list()
 
 
 @pytest.mark.asyncio
+async def test_overflow_retry_visibility_snapshot_matches_reduced_schema_list(
+    monkeypatch,
+):
+    from app.api.v1.endpoints import chat_tools
+    from app.services import agent_round
+    from app.services.agent_run_worker import _bind_execute_tool_call
+
+    monkeypatch.setattr(
+        agent_round, "persist_assistant_step", AsyncMock(return_value=1)
+    )
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=2))
+    base = AsyncMock(return_value="ok")
+    monkeypatch.setattr(chat_tools, "execute_tool_call", base)
+
+    class Discovery:
+        core_names = ("core_tool",)
+
+        def __init__(self):
+            self.loaded = ["optional_tool"]
+            self.turn_visible_names = None
+            self.catalog = {name: object() for name in ("core_tool", "optional_tool")}
+
+        def tools_for_turn(self):
+            from types import SimpleNamespace
+
+            names = ["core_tool", *self.loaded]
+            self.turn_visible_names = set(names)
+            return [
+                SimpleNamespace(function=SimpleNamespace(name=name)) for name in names
+            ]
+
+        def handles(self, name):
+            return False
+
+        async def reduce_for_retry(self):
+            removed = list(self.loaded)
+            self.loaded.clear()
+            return removed
+
+        def is_visible(self, name):
+            return name in (self.turn_visible_names or set())
+
+        def touch(self, _name):
+            pass
+
+        def undiscovered_error(self, name):
+            return json.dumps({"success": False, "error": name})
+
+    calls = []
+    discovery = Discovery()
+
+    async def _build(**_kwargs):
+        return ContextTurn(prepared=_prepared(messages=_long_messages()))
+
+    async def _chat(**kwargs):
+        calls.append(kwargs["tools"])
+        if len(calls) == 1:
+            raise OVERFLOW
+        return _response(
+            tool_calls=[
+                _call("core-call", "core_tool"),
+                _call("optional-call", "optional_tool"),
+            ]
+        )
+
+    context = _context(
+        max_iterations=1,
+        build_turn=_build,
+        team_chat=_chat,
+        execute_tool_call=_bind_execute_tool_call(discovery),
+        tool_discovery=discovery,
+    )
+    await _drain(AgentLoop(context))
+
+    assert [[tool.function.name for tool in turn] for turn in calls] == [
+        ["core_tool", "optional_tool"],
+        ["core_tool"],
+    ]
+    assert [call.args[0] for call in base.await_args_list] == ["core_tool"]
+    assert context.active_resume_tool_visible_names == {"core_tool"}
+
+
+@pytest.mark.asyncio
 async def test_retry_never_reexecutes_an_already_completed_tool(monkeypatch):
     from app.services import agent_round
 

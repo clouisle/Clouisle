@@ -276,6 +276,25 @@ def _tool_call_changed(previous: Any, current: Any) -> bool:
     )
 
 
+def _tool_schema_names(tools: list[Any] | None) -> set[str]:
+    """Return the names from the exact schema list passed to a model call."""
+    names: set[str] = set()
+    for tool in tools or []:
+        function = (
+            tool.get("function", {})
+            if isinstance(tool, dict)
+            else getattr(tool, "function", None)
+        )
+        name = (
+            function.get("name")
+            if isinstance(function, dict)
+            else getattr(function, "name", None)
+        )
+        if isinstance(name, str) and name:
+            names.add(name)
+    return names
+
+
 def _message_role(message: dict[str, Any]) -> str:
     """Return a provider-view message's role as a plain string."""
     role = message.get("role")
@@ -628,10 +647,26 @@ class AgentLoop:
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
 
         if str(tc.id) in ctx.replay_tool_call_ids and ctx.tool_discovery is not None:
-            visible_names = ctx.active_resume_tool_visible_names or set()
-            if tool_name not in visible_names or not ctx.tool_discovery.is_visible(
+            visible_names = ctx.active_resume_tool_visible_names
+            catalog = getattr(ctx.tool_discovery, "catalog", {})
+            currently_authorized = tool_name in catalog or ctx.tool_discovery.handles(
                 tool_name
-            ):
+            )
+            legacy_core_fallback = (
+                visible_names is None
+                and tool_name in getattr(ctx.tool_discovery, "core_names", ())
+                and tool_name in catalog
+                and ctx.tool_discovery.is_visible(tool_name)
+            )
+            visible = currently_authorized and (
+                legacy_core_fallback
+                or (
+                    visible_names is not None
+                    and tool_name in visible_names
+                    and ctx.tool_discovery.is_visible(tool_name)
+                )
+            )
+            if not visible:
                 error = ctx.tool_discovery.undiscovered_error(tool_name)
                 return (
                     self._build_tool_call_sse(tc),
@@ -1594,10 +1629,8 @@ class AgentLoop:
                 if ctx.tool_discovery is not None and not ctx.resume_tool_calls
                 else ctx.tools
             )
-            if ctx.tool_discovery is not None and not ctx.resume_tool_calls:
-                ctx.active_resume_tool_visible_names = set(
-                    getattr(ctx.tool_discovery, "turn_visible_names", None) or ()
-                )
+            if not ctx.resume_tool_calls:
+                ctx.active_resume_tool_visible_names = _tool_schema_names(turn_tools)
             messages_for_llm: list[dict[str, Any]] = []
             prepared: Any = None
             if not ctx.resume_tool_calls:
@@ -1656,8 +1689,6 @@ class AgentLoop:
                 )
             else:
                 replay_visible_names = ctx.active_resume_tool_visible_names
-            if resuming_calls and replay_visible_names is None:
-                replay_visible_names = set()
             ctx.active_resume_tool_visible_names = replay_visible_names
             ctx.replay_tool_call_ids = (
                 set(ctx.resume_tool_call_ids) if resuming_calls else set()
@@ -1753,6 +1784,9 @@ class AgentLoop:
                     messages_for_llm = retry_messages
                     turn_tools = retry_tools
                     stream_protected = retry_protected
+                    ctx.active_resume_tool_visible_names = _tool_schema_names(
+                        retry_tools
+                    )
                     stream_usage = None
                     model_state.update(
                         handle=await self._begin_model_trajectory(
@@ -1933,6 +1967,9 @@ class AgentLoop:
                         messages_for_llm = retry_messages
                         turn_tools = retry_tools
                         stream_protected = retry_protected
+                        ctx.active_resume_tool_visible_names = _tool_schema_names(
+                            retry_tools
+                        )
                         stream_usage = None
                         model_state.update(
                             handle=await self._begin_model_trajectory(
@@ -2015,6 +2052,9 @@ class AgentLoop:
                     nonlocal messages_for_llm, turn_tools, stream_usage
                     messages_for_llm = retry_messages
                     turn_tools = retry_tools
+                    ctx.active_resume_tool_visible_names = _tool_schema_names(
+                        retry_tools
+                    )
                     stream_usage = None
                     model_state.update(
                         handle=await self._begin_model_trajectory(
@@ -2438,8 +2478,7 @@ class AgentLoop:
                         display_name=pause_record["display_name"],
                         resume_tool_visible_names=(
                             sorted(ctx.active_resume_tool_visible_names)
-                            if ctx.tool_discovery is not None
-                            and ctx.active_resume_tool_visible_names is not None
+                            if ctx.active_resume_tool_visible_names is not None
                             else None
                         ),
                         remaining_tool_calls=remaining_calls,

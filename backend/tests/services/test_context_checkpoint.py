@@ -1461,9 +1461,9 @@ async def test_active_branch_version_uses_newest_result_generation(monkeypatch):
     rows = [
         SimpleNamespace(
             conversation_id=conversation_id,
-            round_index=1,
-            created_at=1,
-            id=1,
+            round_index=3,
+            created_at=3,
+            id=3,
             round_id=ROUND,
             role=MessageRole.TOOL,
             tool_call_id="call-1",

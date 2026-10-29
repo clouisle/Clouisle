@@ -1507,6 +1507,7 @@ async def test_rebuild_context_restores_encrypted_pending_tool_calls(monkeypatch
     payload = _resume_payload(
         user_msg,
         pending_tool_calls_cipher=encrypt_tool_secret(calls_json),
+        pending_tool_visible_names=["ask_user", "safe_core"],
         resume_tool_result={
             "tool_call_id": "call-1",
             "tool_name": "db_query",
@@ -1523,8 +1524,17 @@ async def test_rebuild_context_restores_encrypted_pending_tool_calls(monkeypatch
 
     assert loaded is user_msg
     assert loop_context.resume_tool_calls == expected
-    # The ciphertext stays on the payload so a later pause can drop it.
+    assert loop_context.resume_tool_visible_names == {"ask_user", "safe_core"}
     assert payload["pending_tool_calls_cipher"]
+
+    legacy_payload = _resume_payload(user_msg)
+    legacy_context, _loaded, _loop = await agent_run_worker._rebuild_context(
+        legacy_payload,
+        agent=agent,
+        conversation=conversation,
+        event_queue=asyncio.Queue(),
+    )
+    assert legacy_context.resume_tool_visible_names is None
 
 
 @pytest.mark.asyncio

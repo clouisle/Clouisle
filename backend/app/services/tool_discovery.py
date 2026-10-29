@@ -180,8 +180,13 @@ def _search_terms(query: str) -> tuple[list[str], list[str]]:
             break
         if run[0].isascii() or len(run) <= 2:
             continue
-        bigrams = (run[index : index + 2] for index in range(len(run) - 1))
-        unseen = [term for term in bigrams if term not in seen]
+        unseen: list[str] = []
+        run_seen: set[str] = set()
+        for index in range(len(run) - 1):
+            term = run[index : index + 2]
+            if term not in seen and term not in run_seen:
+                unseen.append(term)
+                run_seen.add(term)
         # If the run is longer than the remaining budget, retain its suffix
         # bigram as well as the leading ones instead of silently losing it.
         if len(unseen) > remaining:

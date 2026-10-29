@@ -1572,6 +1572,7 @@ describe('useChat', () => {
     await editing
 
     expect(result.messages.map((message) => message.id)).not.toContain(errorId)
+    expect(result.messages.find((message) => message.id === '33333333-3333-3333-3333-333333333333')?.parts).toContainEqual({ type: 'text', text: 'updated' })
     expect(result.status).toBe('idle')
   })
   it('preserves errored messages during an ordinary history refresh', async () => {
@@ -1592,13 +1593,17 @@ describe('useChat', () => {
     ])
     await flush()
     getConversation.mockResolvedValue({
-      messages: [{ id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] }] as ChatMessage[],
+      messages: [
+        { id: userId, role: 'user', parts: [{ type: 'text', text: 'original' }] },
+        { id: '33333333-3333-3333-3333-333333333333', role: 'assistant', parts: [{ type: 'text', text: 'server update' }] },
+      ] as ChatMessage[],
     })
 
     result.reconnect()
     await flush()
 
     expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(result.messages.find((message) => message.id === '33333333-3333-3333-3333-333333333333')?.parts).toContainEqual({ type: 'text', text: 'server update' })
     expect(result.messages.map((message) => message.id)).toContain(errorId)
     expect(result.messages.find((message) => message.id === errorId)).toBe(failedMessage)
   })
