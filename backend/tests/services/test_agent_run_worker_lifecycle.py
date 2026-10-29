@@ -1883,6 +1883,32 @@ async def test_run_agent_round_failure_publishes_when_failed_transition_wins(
     ]
 
 
+@pytest.mark.asyncio
+async def test_provider_auth_failure_publishes_safe_error(monkeypatch):
+    from app.llm.errors import AuthenticationError
+
+    async def transition(run, _expected, status, **kwargs):
+        if status == AgentRunStatus.FAILED:
+            run.status = status
+            run.error_message = kwargs["error_message"]
+            return run
+        return None
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=transition,
+        rebuild=AuthenticationError("secret provider token"),
+    )
+    output = await run_agent_round(_round_payload(run))
+    assert output["status"] == "failed"
+    assert "secret provider token" not in output["error"]
+    error_event = next(
+        call for call in stream.publish.await_args_list if call.args[0] == "error"
+    )
+    assert error_event.args[1]["msg"] == output["error"]
+
+
 @pytest.mark.parametrize(
     ("key", "fragment"),
     [

@@ -474,6 +474,7 @@ export interface Message {
   iteration_index?: number | null
   round_status?: MessageRoundStatus | null
   steps?: MessageRoundStep[] | null
+  compression_events?: Array<{ timestamp: string; payload: Record<string, unknown> }> | null
   // Version fields
   parent_id?: string | null
   branch_parent_id?: string | null

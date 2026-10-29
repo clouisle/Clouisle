@@ -331,6 +331,42 @@ class MicroBatchingCollector:
                         if self.run_obj
                         else None
                     )
+                    if event_type == "compression_end" and self.run_obj:
+                        try:
+                            from tortoise.transactions import in_transaction
+
+                            async with in_transaction() as conn:
+                                fresh = (
+                                    await AgentRun.filter(id=self.run_obj.id)
+                                    .using_db(conn)
+                                    .select_for_update()
+                                    .first()
+                                )
+                                if fresh and fresh.active_round_id == round_id:
+                                    payload = dict(fresh.worker_payload or {})
+                                    events = list(
+                                        payload.get("compression_events") or []
+                                    )
+                                    events.append(
+                                        {
+                                            "round_id": str(round_id),
+                                            "message_id": str(
+                                                self.canonical_message_id
+                                            ),
+                                            "timestamp": now_utc().isoformat(),
+                                            "payload": event_payload,
+                                        }
+                                    )
+                                    payload["compression_events"] = events
+                                    fresh.worker_payload = payload
+                                    await fresh.save(
+                                        using_db=conn, update_fields=["worker_payload"]
+                                    )
+                        except Exception:
+                            logger.exception(
+                                "Failed to persist compression event for AgentRun %s",
+                                self.run_obj.id,
+                            )
                     await self.stream.publish(
                         event_type,
                         event_payload,
@@ -1245,6 +1281,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             run.canonical_message_id = canonical.id
             await run.save(update_fields=["canonical_message_id"])
         canonical_message_id = canonical.id
+        collector.canonical_message_id = canonical.id
         publisher_task = asyncio.create_task(publish_queued_events())
         if isinstance(resume_tool_result, dict):
             await stream.publish(
@@ -1632,11 +1669,13 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         logger.exception("Agent run %s failed", run.id)
         from app.core.i18n import t
         from app.schemas.response import BusinessError
-        from app.llm.errors import ContextLengthError
+        from app.llm.errors import AuthenticationError, ContextLengthError
 
         error_message = (
             t("context_budget_exceeded", lang=payload.get("locale"))
             if isinstance(exc, ContextLengthError)
+            else t("model_test_invalid_api_key", lang=payload.get("locale"))
+            if isinstance(exc, AuthenticationError)
             else t(exc.msg_key, lang=payload.get("locale"), **exc.kwargs)
             if isinstance(exc, BusinessError) and exc.msg_key
             else str(exc)
@@ -1659,6 +1698,8 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         await stream.publish(
             "error",
             {"code": "run_failed", "msg": error_message},
+            round_id=run.active_round_id,
+            message_id=run.canonical_message_id,
         )
         await stream.publish(
             "run_end",

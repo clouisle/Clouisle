@@ -766,6 +766,39 @@ describe('useChat', () => {
     }
   })
 
+  it('shows a failed run error when reconnecting after the error event was missed', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 4 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    } })
+    try {
+      getRunStatus.mockResolvedValue({ id: 'run-1', status: 'failed', canonical_message_id: 'assistant-failed', error_message: 'Invalid API key' })
+      getConversation.mockResolvedValue({ messages: [] })
+      options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+      renderHookHarness()
+      result.setConversationId('conversation-1')
+      await flush()
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+      renderHookHarness()
+      expect(result.messages.find((message) => message.id === 'assistant-failed')?.metadata).toMatchObject({
+        isError: true,
+        errorMessage: 'Invalid API key',
+      })
+      expect(result.isStreaming).toBe(false)
+    } finally {
+      result.reset()
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    }
+  })
+
   it('reconciles the optimistic user ID from durable start before message_start', async () => {
     const userMessageId = '11111111-1111-1111-1111-111111111111'
     const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
@@ -1637,6 +1670,25 @@ describe('useChat', () => {
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'new answer', state: 'done' })
     expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'tool-call', state: 'done' }))
     expect(result.messages[1].parts).toContainEqual(expect.objectContaining({ type: 'media-result' }))
+  })
+
+  it('restores the active assistant when a history refresh replaces its placeholder', async () => {
+    const release = deferred<StreamEvent>()
+    streamEvents = [
+      { event: 'message_start', data: { message_id: 'assistant-live', conversation_id: 'conversation-1' } },
+      release.promise,
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+    const sending = result.sendMessage('initial')
+    await flush()
+    result.setMessages([{ id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'initial' }] }])
+    await flush()
+    release.resolve({ event: 'tool_call', data: { tool_call_id: 'call-1', tool_name: 'search', arguments: {} } })
+    await sending
+    expect(result.messages.find((item) => item.id === 'assistant-live')?.parts).toContainEqual(
+      expect.objectContaining({ type: 'tool-call', toolCallId: 'call-1' }),
+    )
   })
 
   it('submits steering to the active run and commits the queued user message', async () => {

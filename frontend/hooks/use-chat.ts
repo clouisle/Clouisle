@@ -358,27 +358,27 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       session.state.ragSources,
       streaming
     )
-    setMessages((previous) => previous.map((message) => (
-      message.id === messageId
-        ? {
-            ...message,
-            parts,
-            metadata: {
-              ...message.metadata,
-              ...(streaming
-                ? { isLoading: true }
-                : {
-                    isLoading: false,
-                    isManuallyStopped: false,
-                    isError: false,
-                    errorMessage: undefined,
-                    preservedPartialProgress: undefined,
-                    ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
-                  }),
-            },
-          }
-        : message
-    )))
+    setMessages((previous) => {
+      const message = previous.find((item) => item.id === messageId)
+      const next: ChatMessage = {
+        ...(message ?? { id: messageId, role: 'assistant', createdAt: new Date() }),
+        parts,
+        metadata: {
+          ...message?.metadata,
+          ...(streaming
+            ? { isLoading: true }
+            : {
+                isLoading: false,
+                isManuallyStopped: false,
+                isError: false,
+                errorMessage: undefined,
+                preservedPartialProgress: undefined,
+                ...(endData ? { usage: endData.usage, timing: endData.timing } : {}),
+              }),
+        },
+      }
+      return message ? previous.map((item) => item.id === messageId ? next : item) : [...previous, next]
+    })
   }, [])
 
   const scheduleSessionRender = useCallback((session: AssistantStreamSession) => {
@@ -1076,6 +1076,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           if (!isCurrentReconnect()) return
         }
         if (!isCurrentReconnect()) return
+        if (current.status === 'failed') {
+          const failedSession = ensureSession(current.canonical_message_id ?? `assistant-run-${stored.runId}`, stored.runId)
+          if (failedSession) {
+            const chatError: ChatError = { message: current.error_message || 'Run failed' }
+            markAssistantError(failedSession, chatError)
+            onError?.(chatError)
+          }
+        }
         disconnectLocalSubscription()
         if (activeSessionRef.current?.runId === stored.runId) activeSessionRef.current = null
         sessionsByRunRef.current.delete(stored.runId)
@@ -1125,6 +1133,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     clearStoredRunSnapshot,
     disconnectLocalSubscription,
     ensureSession,
+    markAssistantError,
+    onError,
     reloadConversationMessages,
     renderSession,
     runApi,

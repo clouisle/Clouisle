@@ -35,11 +35,17 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Specific logic**: Test complete AgentRun including tools, pressure, recovery and authorization across relevant adapters.
 - **Validation**: Run backend and frontend full test suites, lint, type checks and i18n checks; run real application and browser UI scenarios; record actual results.
 
+### Stage 6: Durable Chat Visibility
+- **Files modified**: AgentRun worker, run persistence and conversation history schemas; chat stream hook and history conversion, with regression tests.
+- **Specific logic**: Persist content-free compression diagnostics with the owning run and expose them only with authorized visible conversation rounds. Preserve their order in historical chat; propagate terminal errors and retain active-conversation subscriptions without cross-conversation leakage.
+- **Validation**: Exercise authentication failure, active-run event delivery and conversation switching, plus compression history after Redis expiry and branch changes.
+
 ### Current verification and open items
 - Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser verification used a temporary private Agent and a 10,000-token model configuration. The run completed, persisted a `readback_only` checkpoint covering 11 results, and executed nine `read_tool_result` calls; the temporary Agent and model were removed. Semantic checkpoint creation and provider-side overflow retry were not observed in this run.
-- Retained browser run `f5cc071b-fd51-437a-b715-b2577e16937c` completed with a `readback_only` checkpoint covering 10 results; 9 model requests contained omission markers. Live UI showed compaction but incorrectly displayed zero saved tokens, now corrected. Historical message reload does not restore compression events; durable history display remains outstanding.
+- Retained browser run `f5cc071b-fd51-437a-b715-b2577e16937c` completed with a `readback_only` checkpoint covering 10 results; 9 model requests contained omission markers. Live UI showed compaction with incorrect zero saved tokens, subsequently corrected. New compression events are persisted with the run and restored on history reload; earlier events without persisted diagnostics cannot be reconstructed.
 - Provider overflow retries reduce only provably unprotected assistant text or optional tool schemas, before any streamed chunk, with a bounded retry count. Active-round semantic checkpoints summarize complete tool groups, bind source hashes, retain original records and survive approval pauses.
+- Durable visibility changes: 151 backend and 134 frontend targeted tests passed; frontend TypeScript and ESLint and backend Ruff passed. Real browser validation of the latest changes requires restarting API and worker processes.
 
 ## Testing Strategy
 

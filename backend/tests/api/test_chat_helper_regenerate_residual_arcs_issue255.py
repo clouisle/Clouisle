@@ -103,6 +103,7 @@ async def test_message_payload_residual_arcs(monkeypatch):
     round_id = uuid4()
     regular = SimpleNamespace(round_id=None, round_role=None, is_round_canonical=True)
     final = SimpleNamespace(
+        id=uuid4(),
         round_id=round_id,
         round_role=chat.MessageRoundRole.ASSISTANT_FINAL,
         is_round_canonical=True,
@@ -114,6 +115,9 @@ async def test_message_payload_residual_arcs(monkeypatch):
     validated = MagicMock()
     validated.model_dump.side_effect = [{"id": "regular"}, {"id": "final"}]
     monkeypatch.setattr(chat.MessageOut, "model_validate", Mock(return_value=validated))
+    query = MagicMock()
+    query.values = AsyncMock(return_value=[])
+    monkeypatch.setattr(chat._AgentRunModel, "filter", Mock(return_value=query))
 
     assert await chat.build_message_round_payloads([regular, step, final]) == [
         {"id": "regular"},

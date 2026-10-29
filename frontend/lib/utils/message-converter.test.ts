@@ -160,6 +160,23 @@ describe('message converter', () => {
     ])
   })
 
+  it('restores durable compression events between the corresponding tool steps', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Done',
+      steps: [
+        { id: 'one', role: 'assistant', content: 'before', created_at: '2026-07-19T00:00:01Z', round_index: 1 },
+        { id: 'two', role: 'assistant', content: 'after', created_at: '2026-07-19T00:00:03Z', round_index: 2 },
+      ],
+      compression_events: [{ timestamp: '2026-07-19T00:00:02Z', payload: { stage: 'micro', before_tokens: 900, after_tokens: 500 } }],
+    }))
+    expect(converted?.parts).toEqual([
+      { type: 'text', text: 'before', state: 'done' },
+      { type: 'task', taskType: 'compression', state: 'completed', info: { stage: 'micro', before_tokens: 900, after_tokens: 500 } },
+      { type: 'text', text: 'after', state: 'done' },
+      { type: 'text', text: 'Done', state: 'done' },
+    ])
+  })
+
   it('converts user_input step into user-instruction part in assistant message', () => {
     const converted = convertBackendMessage(message({
       content: 'Here is the Beijing weather report',

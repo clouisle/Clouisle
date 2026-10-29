@@ -673,6 +673,28 @@ async def build_round_steps_map(
 async def build_message_round_payloads(messages: list[Message]) -> list[dict[str, Any]]:
     """Serialize canonical round messages with nested non-canonical step payloads."""
     steps_by_round = await build_round_steps_map(messages)
+    final_rounds = {
+        str(message.id): str(message.round_id)
+        for message in messages
+        if message.is_round_canonical
+        and message.round_role == MessageRoundRole.ASSISTANT_FINAL
+    }
+    events_by_message: dict[str, list[dict[str, Any]]] = {}
+    if final_rounds:
+        runs = await _AgentRunModel.filter(
+            canonical_message_id__in=list(final_rounds)
+        ).values("canonical_message_id", "active_round_id", "worker_payload")
+        for run in runs:
+            payload = run.get("worker_payload") or {}
+            for event in payload.get("compression_events", []):
+                if event.get("message_id") == str(
+                    run["canonical_message_id"]
+                ) and event.get("round_id") == str(
+                    run["active_round_id"]
+                ) == final_rounds.get(str(run["canonical_message_id"])):
+                    events_by_message.setdefault(
+                        str(run["canonical_message_id"]), []
+                    ).append(event)
     payloads: list[dict[str, Any]] = []
     for message in messages:
         if message.round_id and not message.is_round_canonical:
@@ -680,6 +702,8 @@ async def build_message_round_payloads(messages: list[Message]) -> list[dict[str
         msg_data = MessageOut.model_validate(message).model_dump()
         if message.round_id and message.round_role == MessageRoundRole.ASSISTANT_FINAL:
             msg_data["steps"] = steps_by_round.get(message.round_id)
+            if str(message.id) in events_by_message:
+                msg_data["compression_events"] = events_by_message[str(message.id)]
         payloads.append(msg_data)
     return payloads
 

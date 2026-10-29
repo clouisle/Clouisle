@@ -8,6 +8,7 @@
   - [x] 3. Authorized on-demand tool discovery
   - [x] 4. Configuration, UI, documentation and compatibility
   - [ ] 5. Complete regression and browser verification
+  - [ ] 6. Persist compression history and repair live run/error visibility
 
 - **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
   - [x] 1. Add team-level view of individual tool approval settings

@@ -762,6 +762,7 @@ class MessageOut(BaseModel):
     iteration_index: int | None = None
     round_status: str | None = None
     steps: list[MessageRoundStep] | None = None
+    compression_events: list[dict[str, Any]] | None = None
     # Version info
     parent_id: UUID | None = None
     branch_parent_id: UUID | None = None

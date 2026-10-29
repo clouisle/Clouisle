@@ -397,7 +397,7 @@ async def park_run_waiting(
                 {
                     key: value
                     for key, value in worker_payload.items()
-                    if key != CHECKPOINT_KEY
+                    if key not in {CHECKPOINT_KEY, "compression_events"}
                 }
             )
             if isinstance(current, dict) and CHECKPOINT_KEY in current:
