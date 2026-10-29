@@ -2,6 +2,13 @@
 
 ## Active
 
+- **ai-elements-shadcn-migration** — Completed; browser visual verification not performed. See `docs/plan/ai-elements-shadcn-migration.md`.
+  - [x] 1. Add shadcn UI primitives and migrate trace patterns
+  - [x] 2. Migrate message, citation, code and chat patterns
+  - [x] 3. Remove obsolete CLI dependency and verify chat behavior
+  - [x] 4. Update changelogs and complete regression verification
+  - [x] 5. Address PR review findings and verify chat interactions
+
 - **tiered-context-management** — In progress. See `docs/plan/tiered-context-management.md`.
   - [x] 1. Budget diagnostics and resilient history compaction
   - [ ] 2. Active-round compaction, recoverable results and durable safety

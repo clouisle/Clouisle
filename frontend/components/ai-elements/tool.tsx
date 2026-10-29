@@ -1,26 +1,29 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
 import type { ToolUIPart } from "ai";
 import { useTranslations } from "next-intl";
-import {
-  CheckCircleIcon,
-  ChevronDownIcon,
-  CircleIcon,
-  ClockIcon,
-  WrenchIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { CheckCircleIcon, CircleIcon, ClockIcon, WrenchIcon, XCircleIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, isValidElement, useCallback, useContext, useId, useMemo, useState } from "react";
-import { CodeBlock } from "./code-block";
 
 export type ToolProps = ComponentProps<"div"> & {
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
+export type ToolPart = ToolUIPart;
 
 type ToolContextValue = {
   isOpen: boolean;
@@ -43,20 +46,18 @@ export const Tool = ({ className, defaultOpen = false, open, onOpenChange, child
   const contentId = useId();
   const isOpen = open ?? uncontrolledOpen;
   const setIsOpen = useCallback((nextOpen: boolean) => {
-    setUncontrolledOpen(nextOpen);
+    if (open === undefined) setUncontrolledOpen(nextOpen);
     onOpenChange?.(nextOpen);
-  }, [onOpenChange]);
+  }, [open, onOpenChange]);
   const contextValue = useMemo(() => ({ isOpen, setIsOpen, contentId }), [isOpen, setIsOpen, contentId]);
 
   return (
     <ToolContext.Provider value={contextValue}>
-      <div
-        className={cn("not-prose mb-4 w-full rounded-md border", className)}
-        data-state={isOpen ? "open" : "closed"}
-        {...props}
-      >
-        {children}
-      </div>
+      <Trace className={cn("not-prose mb-4 w-full rounded-md border", className)} data-state={isOpen ? "open" : "closed"} {...props}>
+        <TraceCollapsible open={isOpen} onOpenChange={setIsOpen}>
+          {children}
+        </TraceCollapsible>
+      </Trace>
     </ToolContext.Provider>
   );
 };
@@ -68,9 +69,9 @@ export type ToolHeaderProps = {
   className?: string;
 };
 
-const getStatusBadge = (
+export const getStatusBadge = (
   status: ToolUIPart["state"],
-  t: ReturnType<typeof useTranslations>
+  t: (key: string) => string
 ) => {
   const labels: Record<ToolUIPart["state"], string> = {
     "input-streaming": t("pending"),
@@ -81,7 +82,6 @@ const getStatusBadge = (
     "output-error": t("error"),
     "output-denied": t("denied"),
   };
-
   const icons: Record<ToolUIPart["state"], ReactNode> = {
     "input-streaming": <CircleIcon className="size-4" />,
     "input-available": <ClockIcon className="size-4 animate-pulse" />,
@@ -91,66 +91,54 @@ const getStatusBadge = (
     "output-error": <XCircleIcon className="size-4 text-red-600" />,
     "output-denied": <XCircleIcon className="size-4 text-orange-600" />,
   };
-
-  return (
-    <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-      {icons[status]}
-      {labels[status]}
-    </Badge>
-  );
+  return <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">{icons[status]}{labels[status]}</Badge>;
 };
 
-export const ToolHeader = ({
-  className,
-  title,
-  type,
-  state,
-  ...props
-}: ToolHeaderProps) => {
+export const ToolHeader = ({ className, title, type, state, ...props }: ToolHeaderProps) => {
   const t = useTranslations("chat.tool");
-  const { isOpen, setIsOpen, contentId } = useToolContext();
+  const { isOpen, contentId } = useToolContext();
+  const running = state === "input-streaming" || state === "input-available";
+  const failed = state === "output-error" || state === "output-denied";
+  const statusLabels: Record<ToolUIPart["state"], string> = {
+    "input-streaming": t("running"),
+    "input-available": t("running"),
+    "approval-requested": t("awaitingApproval"),
+    "approval-responded": t("responded"),
+    "output-available": t("completed"),
+    "output-error": t("error"),
+    "output-denied": t("denied"),
+  };
+  const text = `${statusLabels[state]}: ${title ?? type.split("-").slice(1).join("-")}`;
 
   return (
-    <button
-      type="button"
-      className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
-        className
-      )}
-      onClick={() => setIsOpen(!isOpen)}
+    <TraceCollapsibleTrigger
+      className={cn("flex w-full items-center justify-between gap-4 p-3", className)}
       aria-expanded={isOpen}
       aria-controls={contentId}
       {...props}
     >
-      <div className="flex items-center gap-2">
-        <WrenchIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium text-sm">
-          {title ?? type.split("-").slice(1).join("-")}
-        </span>
-        {getStatusBadge(state, t)}
-      </div>
-      <ChevronDownIcon className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
-    </button>
+      <TraceLine status={failed ? "error" : running ? "running" : undefined}>
+        <TraceIcon><WrenchIcon /></TraceIcon>
+        <TraceTitle className="font-medium">{text}</TraceTitle>
+      </TraceLine>
+    </TraceCollapsibleTrigger>
   );
 };
 
 export type ToolContentProps = ComponentProps<"div">;
 
-export const ToolContent = ({ className, ...props }: ToolContentProps) => {
-  const { isOpen, contentId } = useToolContext();
+export const ToolContent = ({ className, children, ...props }: ToolContentProps) => {
+  const { contentId } = useToolContext();
 
-  return isOpen ? (
-    <div
+  return (
+    <TraceCollapsibleContent
       id={contentId}
-      data-state="open"
-      className={cn(
-        "text-popover-foreground outline-none",
-        "data-[state=open]:slide-in-from-top-2 data-[state=open]:animate-in",
-        className
-      )}
+      className={cn("text-popover-foreground outline-none", className)}
       {...props}
-    />
-  ) : null;
+    >
+      {children}
+    </TraceCollapsibleContent>
+  );
 };
 
 export type ToolInputProps = ComponentProps<"div"> & {
@@ -165,9 +153,9 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {t("parameters")}
       </h4>
-      <div className="rounded-md bg-muted/50">
-        <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
-      </div>
+      <CodeBlock size="sm" className="bg-muted/50">
+        <CodeBlockContent wrap>{JSON.stringify(input, null, 2)}</CodeBlockContent>
+      </CodeBlock>
     </div>
   );
 };
@@ -189,16 +177,13 @@ export const ToolOutput = ({
     return null;
   }
 
-  let Output = <div>{output as ReactNode}</div>;
+  let Output = <>{output as ReactNode}</>;
 
-  if (typeof output === "object" && !isValidElement(output)) {
-    Output = (
-      <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-    );
+  if (typeof output === "object" && output !== null && !isValidElement(output)) {
+    Output = <CodeBlock size="sm"><CodeBlockContent wrap>{JSON.stringify(output, null, 2)}</CodeBlockContent></CodeBlock>;
   } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="json" />;
+    Output = <CodeBlock size="sm"><CodeBlockContent wrap>{output}</CodeBlockContent></CodeBlock>;
   }
-
   return (
     <div className={cn("space-y-2 p-4", className)} {...props}>
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">

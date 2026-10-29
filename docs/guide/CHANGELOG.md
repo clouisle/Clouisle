@@ -11,6 +11,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Citation sources with non-HTTP or invalid URLs are displayed as text rather than links.
+- Preserve small upward scrolls during streaming; fix closed trace visibility, touch copy controls, localized accessibility labels and scroll direction indicators.
+- Chat follows newly added content when the reader was at the bottom before it grew, while preserving deliberate scrolling into history.
+- The scroll-to-bottom button stays above sticky thought-process headers.
+- Thought-process and tool details now use a short fade on expansion instead of conflicting height and visibility transitions.
+- Thought-process steps use distinct icons for tools, Skills and other actions, with error states still highlighted.
+- Long thought processes keep their header available while scrolling for easy collapse.
+- Tool calls in the thought process now use a single expandable trace step instead of a duplicate nested card.
+- Migrated the local AI Elements patterns to shadcn/ui primitives and removed the obsolete `ai-elements` CLI dependency. Conversation scrolling now uses Message Scroller instead of spring-based scrolling.
+- Chat thought-process timelines now show `ask_user` calls and their waiting, answered, or skipped state; the question form remains in the composer area.
 - MCP browsing distinguishes unsupported capabilities and invalid resource templates, resets server state, labels untrusted prompt content and reports truncated results.
 - Tool-connection revocation and OAuth disconnect require confirmation, configured badges reflect active connections, and administrators can open builtin connection management.
 - The Agent API approval preview explanation renders its execution ID placeholder correctly.
@@ -20,6 +30,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - MCP tool calls no longer time out before their configured approval window, and approved resource/prompt previews can be replayed.
 - Connection update/revoke can no longer resurrect a revoked credential or roll back its secret version; stopping a waiting run cancels its pending approval, and approved sandbox tools resume in their conversation workspace.
 - Package import keeps the tool's approval policy and invalidates pending approvals on a definition change; MCP header values are masked again, and admin tool lists no longer show each builtin twice.
+- Conversation wrappers now use the MessageScroller contract directly, preserve per-message keys/refs, apply message IDs and scroll anchors, and forward scroll-button callbacks and refs.
 
 - Inactive accounts are rejected before API-key identity processing when submitting an Agent chat run.
 - A fixed personal tool connection whose owner has left the team now returns an access-denied error rather than an internal error.

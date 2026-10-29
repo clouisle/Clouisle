@@ -24,16 +24,36 @@ mock.module("next-intl", () => ({
 mock.module("@/components/ui/badge", () => ({
   Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
+mock.module("@/components/ui/trace", () => {
+  const CollapsibleContext = React.createContext({ open: false, toggle: () => {} });
+  return {
+    Trace: ({ children, ...props }: React.ComponentProps<"div">) => <div {...props}>{children}</div>,
+    TraceCollapsible: ({ children, open = false, onOpenChange, ...props }: React.ComponentProps<"div"> & { open?: boolean; onOpenChange?: (open: boolean) => void }) => (
+      <CollapsibleContext.Provider value={{ open, toggle: () => onOpenChange?.(!open) }}><div {...props}>{children}</div></CollapsibleContext.Provider>
+    ),
+    TraceCollapsibleTrigger: ({ children, ...props }: React.ComponentProps<"button">) => {
+      const context = React.useContext(CollapsibleContext);
+      return <button aria-expanded={context.open} onClick={context.toggle} {...props}>{children}</button>;
+    },
+    TraceCollapsibleContent: ({ children, ...props }: React.ComponentProps<"div"> & { forceMount?: boolean }) => {
+      const context = React.useContext(CollapsibleContext);
+      return context.open ? <div {...props}>{children}</div> : null;
+    },
+    TraceLine: ({ children, ...props }: React.ComponentProps<"span"> & { status?: string }) => <span {...props}>{children}</span>,
+    TraceIcon: ({ children, ...props }: React.ComponentProps<"span">) => <span {...props}>{children}</span>,
+    TraceTitle: ({ children, ...props }: React.ComponentProps<"span">) => <span {...props}>{children}</span>,
+  };
+});
 mock.module("lucide-react", () => ({
   CheckCircleIcon: () => <svg />,
-  ChevronDownIcon: () => <svg />,
   CircleIcon: () => <svg />,
   ClockIcon: () => <svg />,
   WrenchIcon: () => <svg />,
   XCircleIcon: () => <svg />,
 }));
-mock.module("./code-block", () => ({
-  CodeBlock: ({ code }: { code: string }) => <pre>{code}</pre>,
+mock.module("@/components/ui/code-block", () => ({
+  CodeBlock: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CodeBlockContent: ({ children }: { children: React.ReactNode }) => <pre>{children}</pre>,
 }));
 
 let Tool: typeof import("./tool").Tool;

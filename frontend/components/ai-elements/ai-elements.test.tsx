@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const codeToHtml = mock(async (code: string, options: { theme: string }) =>
-  `<pre data-theme="${options.theme}">${code}</pre>`,
+  `<pre data-theme="${options.theme}"><code>${code}</code></pre>`,
 )
 
 mock.module('next-intl', () => ({
@@ -314,21 +314,21 @@ describe('ai elements', () => {
     expect(carousel).toContain('0/0')
   })
 
-  test('uses shimmer animation properties derived from its text', () => {
+  test('uses the Base UI shimmer utility with values from its legacy props', () => {
     const html = renderToStaticMarkup(<Shimmer as="span" duration={4} spread={3}>hello</Shimmer>)
 
     expect(html).toStartWith('<span')
-    expect(html).toContain('--spread:15px')
-    expect(html).toContain('data-duration="4"')
-    expect(html).toContain('data-animate="{&quot;backgroundPosition&quot;:&quot;0% center&quot;}"')
+    expect(html).toContain('class="shimmer"')
+    expect(html).toContain('--shimmer-duration:4s')
+    expect(html).toContain('--shimmer-spread:15px')
   })
 
   test('highlights both themes and adds line numbers only when requested', async () => {
     const output = await highlightCode('let value = 1', 'ts', true)
 
     expect(output).toEqual([
-      '<pre data-theme="one-light">let value = 1</pre>',
-      '<pre data-theme="one-dark-pro">let value = 1</pre>',
+      '<pre data-theme="one-light"><code>let value = 1</code></pre>',
+      '<pre data-theme="one-dark-pro"><code>let value = 1</code></pre>',
     ])
     expect(codeToHtml).toHaveBeenCalledTimes(2)
     expect(codeToHtml).toHaveBeenNthCalledWith(1, 'let value = 1', {
@@ -364,7 +364,7 @@ describe('ai elements', () => {
     ])
   })
 
-  test('renders highlighted code and child copy controls', async () => {
+  test('renders highlighted code through Base UI primitives and child copy controls', async () => {
     let renderer: ReactTestRenderer
 
     await act(async () => {
@@ -515,12 +515,14 @@ describe('ai elements', () => {
     )
     const image = MessageAttachment({ data: { filename: 'photo.png', mediaType: 'image/png', url: '/photo.png' } as never, onRemove: removeImage })
     const document = MessageAttachment({ data: { filename: 'notes.pdf', mediaType: 'application/pdf', url: '/notes.pdf' } as never, onRemove: removeDocument })
+    const imageRemoveButton = image.props.children[1].props.children
+    const documentRemoveButton = document.props.children[0].props.children[2].props.children
     const toolbar = renderToStaticMarkup(<MessageToolbar className="compact">tools</MessageToolbar>)
     const actions = renderToStaticMarkup(<MessageActions className="stacked">copy</MessageActions>)
 
     expect(single.root.findAllByProps({ 'data-slot': 'button-group' })).toHaveLength(0)
-    image.props.children[1].props.onClick({ stopPropagation: mock(() => {}) })
-    document.props.children[0].props.render.props.children[2].props.onClick({ preventDefault: mock(() => {}), stopPropagation: mock(() => {}) })
+    imageRemoveButton.props.onClick({ stopPropagation: mock(() => {}) })
+    documentRemoveButton.props.onClick({ preventDefault: mock(() => {}), stopPropagation: mock(() => {}) })
     expect(removeImage).toHaveBeenCalledTimes(1)
     expect(removeDocument).toHaveBeenCalledTimes(1)
     expect(toolbar).toContain('compact')

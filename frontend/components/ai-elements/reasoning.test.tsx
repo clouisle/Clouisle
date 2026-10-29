@@ -2,19 +2,22 @@ import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import * as React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
-mock.module('@/components/ui/collapsible', () => ({
-  Collapsible: ({ children, open, onOpenChange }: { children: React.ReactNode; open: boolean; onOpenChange: (open: boolean) => void }) => (
-    <div data-open={open}>
+mock.module('@/components/ui/trace', () => ({
+  Trace: ({ children, ...props }: React.ComponentProps<'div'>) => <div data-slot="trace" {...props}>{children}</div>,
+  TraceCollapsible: ({ children, open, onOpenChange, ...props }: React.ComponentProps<'div'> & { open?: boolean; onOpenChange?: (open: boolean) => void }) => (
+    <div data-slot="trace-collapsible" data-open={open} {...props}>
       {children}
-      <button data-testid="close" onClick={() => onOpenChange(false)}>close</button>
+      <button data-testid="close" onClick={() => onOpenChange?.(false)}>close</button>
     </div>
   ),
-  CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
+  TraceCollapsibleContent: ({ children, forceMount, ...props }: React.ComponentProps<'div'> & { forceMount?: boolean }) => { void forceMount; return <div data-slot="trace-collapsible-content" {...props}>{children}</div> },
+  TraceCollapsibleTrigger: ({ children }: React.ComponentProps<'button'>) => <button data-slot="trace-collapsible-trigger">{children}</button>,
+  TraceIcon: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-icon" {...props}>{children}</span>,
+  TraceLine: ({ children, status, ...props }: React.ComponentProps<'span'> & { status?: string }) => <span data-slot="trace-line" data-status={status} {...props}>{children}</span>,
+  TraceTitle: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-title" {...props}>{children}</span>,
+  TraceDescription: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-description" {...props}>{children}</span>,
 }))
-mock.module('lucide-react', () => ({ BrainIcon: () => <svg />, ChevronDownIcon: () => <svg /> }))
 mock.module('streamdown', () => ({ Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
-mock.module('./shimmer', () => ({ Shimmer: ({ children }: { children: React.ReactNode }) => <span>{children}</span> }))
 
 let Reasoning: typeof import('./reasoning').Reasoning
 let ReasoningTrigger: typeof import('./reasoning').ReasoningTrigger
@@ -30,7 +33,7 @@ describe('Reasoning', () => {
   const originalClearTimeout = globalThis.clearTimeout
 
   afterEach(() => {
-    renderer?.unmount()
+    act(() => renderer?.unmount())
     renderer = undefined
     Date.now = originalNow
     globalThis.setTimeout = originalSetTimeout
@@ -50,17 +53,17 @@ describe('Reasoning', () => {
     act(() => {
       renderer = create(<Reasoning isStreaming><ReasoningTrigger /></Reasoning>)
     })
-    expect(renderer!.root.findByType('div').props['data-open']).toBe(true)
-    expect(renderer!.root.findByType('span').children).toContain('Thinking...')
+    expect(renderer!.root.findByProps({ 'data-slot': 'trace-collapsible' }).props['data-open']).toBe(true)
+    expect(renderer!.root.findByProps({ 'data-slot': 'trace-title' }).children).toContain('Thinking...')
 
     now = 3_400
     act(() => {
       renderer!.update(<Reasoning isStreaming={false}><ReasoningTrigger /></Reasoning>)
     })
-    expect(renderer!.root.findByType('p').children.join('')).toBe('Thought for 3 seconds')
+    expect(renderer!.root.findByProps({ 'data-slot': 'trace-title' }).children).toContain('Thought for 3 seconds')
     expect(autoClose).toBeDefined()
 
     act(() => autoClose!())
-    expect(renderer!.root.findByType('div').props['data-open']).toBe(false)
+    expect(renderer!.root.findByProps({ 'data-slot': 'trace-collapsible' }).props['data-open']).toBe(false)
   })
 })

@@ -45,6 +45,18 @@ mock.module('lucide-react', () => ({
   ArrowDown: Icon,
   ArrowUp: Icon,
   Brain: Icon,
+  BookOpen: Icon,
+  Calculator: Icon,
+  Code2: Icon,
+  Clock3: Icon,
+  Download: Icon,
+  FilePen: Icon,
+  FileText: Icon,
+  FolderOpen: Icon,
+  Globe: Icon,
+  Link: Icon,
+  ChartColumn: Icon,
+  Terminal: Icon,
   Check: Icon,
   ChevronLeft: Icon,
   ChevronRight: Icon,
@@ -56,6 +68,7 @@ mock.module('lucide-react', () => ({
   MessageSquare: Icon,
   Pencil: Icon,
   RefreshCw: Icon,
+  Search: Icon,
   SearchIcon: Icon,
   SparklesIcon: Icon,
   Square: Icon,
@@ -106,7 +119,7 @@ mock.module('@/components/ai-elements/inline-citation', () => ({
   InlineCitationCardBody: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
   InlineCitationCardTrigger: ({ label, sources, ...props }: React.ComponentProps<'button'> & { label?: React.ReactNode; sources: string[] }) => <button type="button" data-source-count={sources.length} {...props}>{label}</button>,
   InlineCitationQuote: ({ children, ...props }: React.ComponentProps<'blockquote'>) => <blockquote {...props}>{children}</blockquote>,
-  InlineCitationSource: ({ children, title, url, ...props }: React.ComponentProps<'div'> & { title?: string; url?: string }) => <div {...props}>{title && <h4>{title}</h4>}{url && <p>{url}</p>}{children}</div>,
+  InlineCitationSource: ({ children, title, url, newTabLabel, ...props }: React.ComponentProps<'div'> & { title?: string; url?: string; newTabLabel?: string }) => <div data-new-tab-label={newTabLabel} {...props}>{title && <h4>{title}</h4>}{url && <p>{url}</p>}<span className="sr-only">{newTabLabel}</span>{children}</div>,
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: Array<{ sourceId?: string }> }) => <aside>sources:{sources.length}:{sources.map(source => source.sourceId).join(',')}</aside> }))
@@ -304,59 +317,76 @@ describe('message rendering', () => {
     expect(hidden).toContain('chat.reasoning.thought')
   })
 
-  test('keeps ask_user interaction content out of conversation nodes', () => {
-    const markup = renderToStaticMarkup(<Message
+  test('shows waiting and answered ask_user calls in the reasoning chain', () => {
+    const call = {
+      type: 'tool-call' as const,
+      toolCallId: 'ask-1',
+      toolName: 'ask_user',
+      input: { questions: [{ id: 'target', question: 'Where?' }] },
+    }
+    const pending = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-pending', role: 'assistant', metadata: { isLoading: true },
+      parts: [{ ...call, state: 'pending' as const }],
+    }} />)
+    expect(pending).toContain('chat.message.askUserWaiting')
+    expect(pending).toContain('Where?')
+    expect(pending).not.toContain('data-chat-tool-node="true"')
+
+    const answered = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-answered', role: 'assistant',
+      parts: [
+        { ...call, state: 'done' as const },
+        { type: 'tool-result' as const, toolCallId: 'ask-1', toolName: 'ask_user', output: { target: 'cloud' } },
+      ],
+    }} />)
+    expect(answered).toContain('chat.message.askUserAnswered')
+    expect(answered).toContain('cloud')
+    expect(answered).not.toContain('data-chat-tool-node="true"')
+
+    const skipped = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-skipped', role: 'assistant',
+      parts: [
+        { ...call, state: 'done' as const },
+        { type: 'tool-result' as const, toolCallId: 'ask-1', toolName: 'ask_user', output: { answers: {}, skipped: true } },
+      ],
+    }} />)
+    expect(skipped).toContain('chat.message.askUserSkipped')
+
+    const hidden = renderToStaticMarkup(<Message message={{
+      id: 'ask-user-hidden', role: 'assistant', parts: [{ ...call, state: 'pending' as const }],
+    }} hideToolCalls />)
+    expect(hidden).not.toContain('Where?')
+    expect(hidden).not.toContain('chat.message.askUserWaiting')
+  })
+  test('omits assistant actions when tool calls are hidden', () => {
+    const html = renderToStaticMarkup(<Message
       message={{
-        id: 'pending-ask-user',
+        id: 'hidden-tool-actions',
         role: 'assistant',
-        metadata: { isLoading: true },
         parts: [
-          { type: 'reasoning', text: 'Need clarification', state: 'done' as const },
           {
-            type: 'tool-call' as const,
-            toolCallId: 'ask-1',
+            type: 'tool-call',
+            toolCallId: 'ask-user',
             toolName: 'ask_user',
-            toolDisplayName: 'Ask user',
-            input: {
-              questions: [
-                { id: 'target', question: 'Where should this go?', options: ['cloud', 'local'], required: true },
-              ],
-            },
-            state: 'pending' as const,
+            input: { questions: [{ id: 'target', question: 'Where?' }] },
+            state: 'pending',
           },
           {
-            type: 'tool-result' as const,
-            toolCallId: 'ask-1',
-            toolName: 'ask_user',
-            output: { target: 'cloud' },
+            type: 'mcp-tool-result',
+            toolCallId: 'lookup',
+            serverName: 'docs',
+            toolName: 'lookup',
+            output: 'Hidden tool result',
           },
         ],
       }}
+      hideToolCalls
+      onRegenerate={() => {}}
     />)
 
-    expect(markup).toContain('chat.reasoning.thought')
-    expect(markup).not.toContain('Where should this go?')
-    expect(markup).not.toContain('cloud')
-    expect(markup).not.toContain('local')
-    expect(markup).not.toContain('Ask user')
-  })
-
-  test('omits an assistant message containing only ask_user plumbing', () => {
-    const markup = renderToStaticMarkup(<Message
-      message={{
-        id: 'ask-user-only',
-        role: 'assistant',
-        parts: [{
-          type: 'tool-call' as const,
-          toolCallId: 'ask-1',
-          toolName: 'ask_user',
-          input: { questions: [{ id: 'target', question: 'Where?' }] },
-          state: 'pending' as const,
-        }],
-      }}
-    />)
-
-    expect(markup).toBe('')
+    expect(html).not.toContain('chat.message.copy')
+    expect(html).not.toContain('chat.message.regenerate')
+    expect(html).not.toContain('Hidden tool result')
   })
 
   test('renders iteration cap and stopped markers once', () => {
@@ -654,12 +684,10 @@ describe('message behavior', () => {
     expect(container.textContent).toContain('chat.task.compressingContext')
     expect(container.textContent).toContain('chat.task.generating')
     expect(thought).not.toBeNull()
-    expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
     expect(thought?.textContent).toContain('Inspecting evidence')
     expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.actionQueryingTool tool=Web search')
     expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
-    expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['output-available', 'input-available', 'output-error', 'input-streaming'])
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -677,10 +705,9 @@ describe('message behavior', () => {
     />)
 
     const trace = container.querySelector('[data-chat-thought-process="true"]')
-    const tool = container.querySelector('[data-chat-tool-node="true"]')
     expect(trace).not.toBeNull()
     expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
-    expect(trace?.contains(tool)).toBe(true)
+    expect(trace?.textContent).toContain('Weather lookup')
     expect(container.textContent).toContain('It is sunny.')
 
     const embedded = render(<Message
@@ -703,8 +730,7 @@ describe('message behavior', () => {
 
     const trace = container.querySelector('[data-chat-thought-process="true"]')
     expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
-    expect(trace?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
-    expect(trace?.querySelector('[data-tool-state]')?.getAttribute('data-tool-state')).toBe('output-available')
+    expect(trace?.textContent).toContain('Inspect repository')
   })
 
   test('keeps a stable header for the aggregated thought process', () => {
@@ -834,7 +860,6 @@ describe('message behavior', () => {
     expect(header.outerHTML).toBe(headerHtml)
     expect(header.textContent).not.toContain('mcp')
     expect(thought.textContent).toContain('repo/read')
-    expect(thought.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
 
     renderMessage([
       { type: 'reasoning', text: 'Inspecting the request again', state: 'streaming' },
@@ -1073,12 +1098,7 @@ describe('message behavior', () => {
     />)
 
     const thought = container.querySelector('[data-chat-thought-process="true"]')
-    const tool = thought?.querySelector('[data-chat-tool-node="true"]')
     expect(thought).not.toBeNull()
-    expect(tool).not.toBeNull()
-    expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
-    expect(tool?.className).toContain('mt-2')
-    expect(tool?.className).not.toContain('mb-2')
     expect(thought?.textContent).toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
     expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.thoughtFor seconds=1')
@@ -1126,7 +1146,6 @@ describe('message behavior', () => {
 
     expect(html).toContain('chat.task.compressionCompleted')
     expect(html).toContain('lookup')
-    expect(html).toContain('data-tool-state="output-available"')
     expect(html).toContain('Done thinking')
   })
 
@@ -1486,6 +1505,8 @@ describe('message behavior', () => {
     expect(card).toContain('News')
     expect(card).toContain('https://example.test/news')
     expect(card).toContain('Latest update')
+    expect(card).toContain('data-new-tab-label="chat.source.opensInNewTab"')
+    expect(card).toContain('chat.source.opensInNewTab')
 
     renderToStaticMarkup(<Message
       isStreaming

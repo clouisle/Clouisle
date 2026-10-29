@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare, BookOpen, Terminal, FileText, FilePen, FolderOpen, Calculator, ImageIcon, Download, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -78,7 +78,8 @@ import {
   isIterationCapReachedPart,
   isUserInstructionPart,
 } from './types'
-import { getActiveToolActions } from './tool-action-utils'
+import { renderToolIcon, TOOL_MARKS } from '@/components/tools/tool-icons'
+import { categorizeTool, getActiveToolActions } from './tool-action-utils'
 import { SourceContent } from './message-parts'
 import {
   getImageAssetUrl,
@@ -174,10 +175,23 @@ const chatStreamdownPlugins: PluginConfig = {
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
-
-function isAskUserInteractionPart(part: MessagePart) {
-  return (isToolCallPart(part) || isToolResultPart(part)) && part.toolName === 'ask_user'
+function getTraceToolIcon(name: string, isMcp: boolean, input?: Record<string, unknown>, displayName?: string) {
+  if (!isMcp && name === 'ask_user') return <MessageSquare className="size-3.5" />
+  if (!isMcp && name.startsWith('skill_')) return <BookOpen className="size-3.5" />
+  if (isMcp || name.startsWith('mcp_')) return renderToolIcon({ name, type: 'mcp', size: 14 })
+  if (TOOL_MARKS[name]) return renderToolIcon({ name, size: 14 })
+  const category = categorizeTool(name, input, displayName)
+  const icons = {
+    reading_file: FileText, editing_file: FilePen, browsing_dir: FolderOpen,
+    running_code: Terminal, executing_command: Terminal, calculating: Calculator,
+    searching_web: Globe, searching_kb: SearchIcon, generating_media: ImageIcon,
+    collecting_artifacts: Download,
+  }
+  const Icon = icons[category as keyof typeof icons]
+  return Icon ? <Icon className="size-3.5" /> : renderToolIcon({ name, size: 14 })
 }
+
+
 
 const MCP_TOOL_NAME_PREFIX = 'mcp_'
 
@@ -535,11 +549,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const tReasoning = useTranslations('chat.reasoning')
     const tTask = useTranslations('chat.task')
     const getToolDisplayName = React.useCallback((name: string, fallback?: string) => {
+      if (name === 'ask_user') return t('askUserTool')
       if (name === 'discover_tools') return tTask('discoverTools')
       if (name === 'load_tools') return tTask('loadTools')
       if (name === 'unload_tools') return tTask('unloadTools')
       return fallback || name
-    }, [tTask])
+    }, [t, tTask])
     const [copied, setCopied] = React.useState(false)
     const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
@@ -914,14 +929,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [otherPartEntries])
     const toolActivityCount = React.useMemo(() => {
-      let count = 0
-      for (const part of toolCallParts) {
-        if (!isAskUserInteractionPart(part)) count += 1
-      }
+      let count = toolCallParts.length
       for (const { part, index } of otherPartEntries) {
         if (
           (isToolResultPart(part) || isMcpToolResultPart(part))
-          && !isAskUserInteractionPart(part)
           && !pairedToolResultIndexes.has(index)
         ) {
           count += 1
@@ -962,8 +973,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           />
         )
       }
-
-      if (isAskUserInteractionPart(part)) return null
 
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
         const result = toolResultsByCallIndex.get(index)
@@ -1131,7 +1140,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
     const visibleContentEntries = React.useMemo(() => {
       return otherPartEntries.filter(({ part }) => {
-        if (isAskUserInteractionPart(part)) return false
         if (isFilePart(part)) return false
         if (isErroredMessage && !showPreservedErrorNote && streamErrorMessage && isTextPart(part)) {
           return part.text.trim() !== streamErrorMessage.trim()
@@ -1140,7 +1148,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       })
     }, [isErroredMessage, otherPartEntries, showPreservedErrorNote, streamErrorMessage])
     const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
-      if (isAskUserInteractionPart(part)) return false
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
       if (isTaskPart(part)) return !hideReasoning
@@ -1152,15 +1159,14 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasTextContent = textParts.some(part => part.text.length > 0)
     const hasMessageContent = hasTextContent
       || otherParts.some(part => (
-        !isAskUserInteractionPart(part)
-        && (
-          isReasoningPart(part)
-          || isUserInstructionPart(part)
-          || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
-          || isToolCallPart(part)
+        isReasoningPart(part)
+        || isUserInstructionPart(part)
+        || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
+        || (!hideToolCalls && (
+          isToolCallPart(part)
           || isMcpToolCallPart(part)
           || isMcpToolResultPart(part)
-        )
+        ))
       ))
       || isErroredMessage
     const isLoadingMessage = Boolean(message.metadata?.isLoading && !hasVisibleTimelineContent)
@@ -1322,6 +1328,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       const name = isToolCallPart(toolPart)
         ? getToolDisplayName(toolPart.toolName, toolPart.toolDisplayName)
         : `${toolPart.serverName}/${toolPart.toolName}`
+      if (isToolCallPart(toolPart) && toolPart.toolName === 'ask_user' && toolPart.state === 'pending') {
+        return t('askUserWaiting')
+      }
+      if (isToolCallPart(toolPart) && toolPart.toolName === 'ask_user' && toolPart.state === 'done') {
+        return t('askUserAnswered')
+      }
       switch (toolPart.state) {
         case 'running': return t('toolRunning', { name })
         case 'done': return t('toolCompleted', { name })
@@ -1447,39 +1459,25 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           return
         }
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-          if (isAskUserInteractionPart(part)) return
-          const toolName = isToolCallPart(part)
-            ? getToolDisplayName(part.toolName, part.toolDisplayName)
-            : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
           if (hideToolCalls) return
-          const state = part.state === 'error' ? 'output-error'
-            : part.state === 'done' ? 'output-available'
-              : part.state === 'running' ? 'input-available'
-                : 'input-streaming'
 
           steps.push(
             <ChainOfThoughtStep
               key={`tool-${part.toolCallId}-${index}`}
-              icon={Wrench}
-              label={getToolCallLabel(part)}
+              collapsible
+              iconContent={getTraceToolIcon(part.toolName, isMcpToolCallPart(part), part.input, isToolCallPart(part) ? part.toolDisplayName : undefined)}
+              label={isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
+                ? t('askUserSkipped')
+                : getToolCallLabel(part)}
               status={getToolCallStepStatus(part.state)}
             >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={toolName}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={part.input} />
-                  {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                    (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
-                      ? null
-                      : renderToolResultContent(result.output, result.isError)
-                  )}
-                </AIToolContent>
-              </Tool>
+              <ToolInput input={part.input} />
+              {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
+                  ? null
+                  : renderToolResultContent(result.output, result.isError)
+              )}
             </ChainOfThoughtStep>
           )
           return
@@ -1489,21 +1487,16 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           const toolName = isToolResultPart(part)
             ? getToolDisplayName(part.toolName, part.toolDisplayName)
             : `${part.serverName}/${part.toolName}`
-          const state = part.isError ? 'output-error' : 'output-available'
 
           steps.push(
             <ChainOfThoughtStep
               key={`tool-result-${part.toolCallId}-${index}`}
-              icon={Wrench}
+              collapsible
+              iconContent={getTraceToolIcon(part.toolName, isMcpToolResultPart(part), undefined, isToolResultPart(part) ? part.toolDisplayName : undefined)}
               label={part.isError ? t('toolFailed', { name: toolName }) : t('toolCompleted', { name: toolName })}
               status={part.isError ? 'error' : 'complete'}
             >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader title={toolName} type="tool-call" state={state} />
-                <AIToolContent>
-                  {renderToolResultContent(part.output, part.isError)}
-                </AIToolContent>
-              </Tool>
+              {renderToolResultContent(part.output, part.isError)}
             </ChainOfThoughtStep>
           )
           return
@@ -1693,14 +1686,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       streamErrorMessage,
       t,
     ])
-
-    const isAskUserOnlyMessage = isAssistant
-      && otherParts.length > 0
-      && otherParts.every(isAskUserInteractionPart)
-
-    if (isAskUserOnlyMessage && !isErroredMessage && !isManuallyStoppedMessage) {
-      return null
-    }
 
     return (
       <div
@@ -2375,6 +2360,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   onOpenImage?: (src: string, alt?: string) => void
 }) {
+  const tSource = useTranslations('chat.source')
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   const processedText = React.useMemo(() => (
@@ -2511,7 +2497,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
               aria-label={title || source.sourceId}
             />
             <InlineCitationCardBody className="p-3.5 max-w-[24rem]">
-              <InlineCitationSource title={title} url={url}>
+              <InlineCitationSource title={title} url={url} newTabLabel={tSource('opensInNewTab')}>
                 {description && <InlineCitationQuote>{description}</InlineCitationQuote>}
               </InlineCitationSource>
             </InlineCitationCardBody>
@@ -2545,7 +2531,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [onOpenCodePreview, onOpenImage, sources])
+  }), [onOpenCodePreview, onOpenImage, sources, tSource])
 
   const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
     <PreviewableMarkdownBlock
