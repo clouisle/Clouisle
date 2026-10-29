@@ -575,6 +575,7 @@ async def test_park_run_waiting_merges_latest_worker_payload_under_lock(
         round_index=4,
         iteration_index=2,
         worker_payload={
+            "history_override": [{"role": "user", "content": "old"}],
             "resume": True,
             # Stale copy carried inside the caller's pre-read payload.
             "active_round_checkpoint": {"mode": "readback_only", "summary_text": None},
@@ -583,10 +584,9 @@ async def test_park_run_waiting_merges_latest_worker_payload_under_lock(
     assert parked is run
     assert run.status == AgentRunStatus.WAITING
     assert run.pending_tool_call_id == "call-1"
-    # The stale whole-payload write must not erase the latest checkpoint, while
-    # the newly supplied resume fields win over the row's older values.
+    # The latest checkpoint is retained while the caller's resume snapshot wins.
     assert run.worker_payload["history_override"] == [
-        {"role": "user", "content": "fresh"}
+        {"role": "user", "content": "old"}
     ]
     assert run.worker_payload["resume"] is True
     assert run.worker_payload["active_round_checkpoint"] == checkpoint_payload
