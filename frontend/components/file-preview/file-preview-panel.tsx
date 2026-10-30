@@ -3,16 +3,39 @@
 import * as React from 'react'
 import type { IframeHTMLAttributes } from 'react'
 import dynamic from 'next/dynamic'
+import { useTheme } from 'next-themes'
+import { useTranslations } from 'next-intl'
 import { AlertTriangle, Download, Expand, ShieldAlert, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
-import { DocxPreview } from './docx-preview'
-import { PptxPreview } from './pptx-preview'
+import {
+  createViewerLabels,
+  ViewerI18nProvider,
+} from '@/components/extend/viewer-i18n'
 import { PreviewZoomViewport, type PreviewZoomFitMode } from './preview-zoom-viewport'
-import { SpreadsheetPreview } from './spreadsheet-preview'
 import { getFilePreviewMode, type FilePreviewMode, type PreviewFile } from './file-preview-types'
 
 const PdfPreview = dynamic(
-  () => import('./pdf-preview').then((mod) => mod.PdfPreview),
+  () => import('@/components/extend/pdf-viewer').then((mod) => mod.PDFViewer),
+  { ssr: false },
+)
+
+const DocxPreview = dynamic(
+  () => import('@/components/extend/docx-viewer').then((mod) => mod.DocxViewerPreview),
+  { ssr: false },
+)
+
+const PptxPreview = dynamic(
+  () => import('@/components/extend/pptx-viewer').then((mod) => mod.PptxViewerPreview),
+  { ssr: false },
+)
+
+const SpreadsheetPreview = dynamic(
+  () => import('@/components/extend/xlsx-viewer').then((mod) => mod.XlsxViewerPreview),
+  { ssr: false },
+)
+
+const CsvPreview = dynamic(
+  () => import('@/components/extend/csv-viewer').then((mod) => mod.CsvViewer),
   { ssr: false },
 )
 
@@ -176,7 +199,7 @@ function MermaidFilePreview({ code }: { code: string }) {
 }
 
 function isTextMode(mode: FilePreviewMode): boolean {
-  return mode === 'text' || mode === 'markdown' || mode === 'mermaid'
+  return mode === 'text' || mode === 'markdown' || mode === 'mermaid' || mode === 'csv'
 }
 function getZoomFitMode(mode: FilePreviewMode): PreviewZoomFitMode | null {
   switch (mode) {
@@ -191,6 +214,15 @@ function getZoomFitMode(mode: FilePreviewMode): PreviewZoomFitMode | null {
 function readBlobText(blob: Blob): Promise<string> {
   if (typeof blob.text === 'function') return blob.text()
   return new Response(blob).text()
+}
+
+/** CSV exports are often GBK; try UTF-8 first and fall back to GB18030. */
+function decodeCsvBytes(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return new TextDecoder('gb18030').decode(bytes)
+  }
 }
 
 async function fetchPreviewResponse(url: string): Promise<Response> {
@@ -222,7 +254,6 @@ export function FilePreviewPanel({
   file,
   labels,
   loadFile,
-  locale,
   onClose,
   isResizing = false,
   maxPreviewBytes = DEFAULT_MAX_PREVIEW_BYTES,
@@ -237,12 +268,19 @@ export function FilePreviewPanel({
     ...labels,
     rowsLimited: labels?.rowsLimited ?? DEFAULT_LABELS.rowsLimited,
   }
+  const { resolvedTheme } = useTheme()
+  const tViewer = useTranslations('common.fileViewer')
+  const viewerLabels = React.useMemo(() => createViewerLabels(tViewer), [tViewer])
+  const [isDark, setIsDark] = React.useState(false)
   const [status, setStatus] = React.useState<PreviewStatus>(mode === 'unsupported' ? 'unsupported' : 'loading')
   const [blob, setBlob] = React.useState<Blob | null>(null)
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
   const [textContent, setTextContent] = React.useState('')
-  const [parseFailed, setParseFailed] = React.useState(false)
   const htmlPreviewIframeRef = React.useRef<HTMLIFrameElement>(null)
+
+  React.useEffect(() => {
+    setIsDark(resolvedTheme === 'dark')
+  }, [resolvedTheme])
 
   React.useLayoutEffect(() => {
     const iframe = htmlPreviewIframeRef.current
@@ -257,9 +295,6 @@ export function FilePreviewPanel({
     }
   }, [isResizing, mode, previewUrl])
 
-  const handleDocxError = React.useCallback(() => setParseFailed(true), [])
-  const handlePptxError = React.useCallback(() => setParseFailed(true), [])
-
   React.useEffect(() => {
     let cancelled = false
     let createdObjectUrl: string | null = null
@@ -268,7 +303,6 @@ export function FilePreviewPanel({
     setBlob(null)
     setPreviewUrl(null)
     setTextContent('')
-    setParseFailed(false)
 
     if (mode === 'unsupported' && !loadFile) return
     if (mode !== 'unsupported' && !loadFile && file.size !== undefined && file.size > maxPreviewBytes) {
@@ -282,7 +316,9 @@ export function FilePreviewPanel({
         return false
       }
       if (isTextMode(mode)) {
-        const content = await readBlobText(loadedBlob)
+        const content = mode === 'csv'
+          ? decodeCsvBytes(new Uint8Array(await loadedBlob.arrayBuffer()))
+          : await readBlobText(loadedBlob)
         if (!cancelled) setTextContent(content)
         return true
       }
@@ -340,7 +376,9 @@ export function FilePreviewPanel({
               merged.set(chunk, offset)
               offset += chunk.byteLength
             }
-            decoded = new TextDecoder().decode(merged)
+            decoded = mode === 'csv'
+              ? decodeCsvBytes(merged)
+              : new TextDecoder().decode(merged)
           } else if (typeof response.text === 'function') {
             decoded = await response.text()
             if (new TextEncoder().encode(decoded).byteLength > maxPreviewBytes) {
@@ -410,8 +448,7 @@ export function FilePreviewPanel({
     status === 'error' ||
     status === 'unsupported' ||
     status === 'forbidden' ||
-    status === 'unauthorized' ||
-    parseFailed
+    status === 'unauthorized'
   ) {
     const message = status === 'too-large'
       ? resolvedLabels.tooLarge
@@ -441,8 +478,15 @@ export function FilePreviewPanel({
     body = <video src={previewUrl} controls playsInline className="block max-w-none bg-black object-contain" />
   } else if (mode === 'audio' && previewUrl) {
     body = <div className="flex h-full items-center justify-center p-8"><audio src={previewUrl} controls className="w-full max-w-xl" /></div>
-  } else if (mode === 'pdf' && blob) {
-    body = <PdfPreview blob={blob} locale={locale} onError={handleDocxError} />
+  } else if (mode === 'pdf' && previewUrl) {
+    body = (
+      <PdfPreview
+        src={previewUrl}
+        fileName={file.filename}
+        className="h-full w-full"
+        showUpload={false}
+      />
+    )
   } else if (mode === 'html' && previewUrl) {
     // Keep the blob-backed document mounted while resizing; remounting reloads its embedded resources.
     body = <iframe
@@ -454,44 +498,39 @@ export function FilePreviewPanel({
       className={isResizing ? 'h-full w-full border-0 bg-white pointer-events-none' : 'h-full w-full border-0 bg-white'}
       tabIndex={isResizing ? -1 : undefined}
     />
-  } else if (mode === 'docx' && blob) {
+  } else if (mode === 'docx' && previewUrl) {
     body = (
       <DocxPreview
-        blob={blob}
-        filename={file.filename}
-        labels={{
-          loading: resolvedLabels.loading,
-          parseError: resolvedLabels.parseError,
-          zoomIn: resolvedLabels.zoomIn,
-          zoomOut: resolvedLabels.zoomOut,
-          zoomReset: resolvedLabels.fitToView,
-          toggleThumbnails: resolvedLabels.toggleThumbnails,
-          thumbnails: resolvedLabels.thumbnails,
-          fitToWidth: resolvedLabels.fitToWidth,
-          pageNumber: resolvedLabels.pageNumber,
-        }}
-        onError={handleDocxError}
+        src={previewUrl}
+        fileName={file.filename}
+        className="h-full w-full"
+        isDark={isDark}
+        onIsDarkChange={setIsDark}
+        showUpload={false}
       />
     )
-  } else if (mode === 'pptx' && blob) {
-    body = <PptxPreview blob={blob} onError={handlePptxError} />
-  } else if (mode === 'spreadsheet' && blob) {
+  } else if (mode === 'pptx' && previewUrl) {
+    body = (
+      <PptxPreview
+        src={previewUrl}
+        fileName={file.filename}
+        className="h-full w-full"
+        showUpload={false}
+      />
+    )
+  } else if (mode === 'spreadsheet' && previewUrl) {
     body = (
       <SpreadsheetPreview
-        blob={blob}
-        filename={file.filename}
-        labels={{
-          loading: resolvedLabels.loading,
-          sheet: resolvedLabels.sheet,
-          rowsLimited: resolvedLabels.rowsLimited,
-          parseError: resolvedLabels.parseError,
-          zoomIn: resolvedLabels.zoomIn,
-          zoomOut: resolvedLabels.zoomOut,
-          zoomReset: resolvedLabels.fitToView,
-        }}
-        onError={handleDocxError}
+        src={previewUrl}
+        fileName={file.filename}
+        className="h-full w-full"
+        isDark={isDark}
+        onIsDarkChange={setIsDark}
+        showUpload={false}
       />
     )
+  } else if (mode === 'csv') {
+    body = <CsvPreview data={textContent} className="h-full w-full" />
   } else if (mode === 'markdown') {
     body = <div className="h-full overflow-auto p-6"><Streamdown>{textContent}</Streamdown></div>
   } else if (mode === 'mermaid') {
@@ -499,20 +538,24 @@ export function FilePreviewPanel({
   } else {
     body = <pre className="h-full overflow-auto p-4 text-sm"><code>{textContent}</code></pre>
   }
-  const zoomFitMode = status === 'ready' && !parseFailed ? getZoomFitMode(mode) : null
-  const previewBody = zoomFitMode ? (
-    <PreviewZoomViewport
-      fitKey={`${mode}:${file.url || file.filename}`}
-      fitMode={zoomFitMode}
-      labels={{
-        zoomIn: resolvedLabels.zoomIn,
-        zoomOut: resolvedLabels.zoomOut,
-        fitToView: resolvedLabels.fitToView,
-      }}
-    >
-      {body}
-    </PreviewZoomViewport>
-  ) : body
+  const zoomFitMode = status === 'ready' ? getZoomFitMode(mode) : null
+  const previewBody = (
+    <ViewerI18nProvider labels={viewerLabels}>
+      {zoomFitMode ? (
+        <PreviewZoomViewport
+          fitKey={`${mode}:${file.url || file.filename}`}
+          fitMode={zoomFitMode}
+          labels={{
+            zoomIn: resolvedLabels.zoomIn,
+            zoomOut: resolvedLabels.zoomOut,
+            fitToView: resolvedLabels.fitToView,
+          }}
+        >
+          {body}
+        </PreviewZoomViewport>
+      ) : body}
+    </ViewerI18nProvider>
+  )
 
   return (
     <div className={`flex h-full min-w-0 flex-col bg-background ${className || ''}`}>

@@ -2,6 +2,13 @@
 
 ## Active
 
+- **file-preview-extend-ui-alignment** — Completed. Replaced the custom PDF/DOCX/XLSX/PPTX/CSV preview wrappers with the official Extend UI registry viewers and reconnected the shared panel through blob URLs, theme sync, and lazy loading. See `docs/plan/file-preview-extend-ui-alignment.md`.
+  - [x] 1. Vendor official viewers, shared helpers, and dependencies
+  - [x] 2. Reconnect panel with src, theme, CSV mode, and lazy imports
+  - [x] 3. Add portal, coverage exclusions, tests, and docs
+  - [x] 4. Localize viewer toolbars, menus, and accessibility labels
+  - [x] 5. Verify typecheck, lint, i18n checks, build, and full test suite
+
 - **knowledge-base-image-understanding** — Completed; browser end-to-end verified 2026-10-30. See `docs/plan/knowledge-base-image-understanding.md`.
   - [x] 1. Fix authenticated display, resource safety and preview parity
   - [x] 2. Configure site-wide vision and recognize DOCX/PPTX images

@@ -4,7 +4,16 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { FilePreviewPanel } from './file-preview-panel'
 
+mock.module('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+}))
+
 const window = new Window({ url: 'http://localhost' })
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
 Object.assign(globalThis, {
   window,
   document: window.document,
@@ -13,6 +22,7 @@ Object.assign(globalThis, {
   HTMLElement: window.HTMLElement,
   Node: window.Node,
   Event: window.Event,
+  ResizeObserver: ResizeObserverStub,
 })
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -159,7 +169,7 @@ test('maps a URL preview 403 response to a permission error', async () => {
     Object.assign(window, { fetch: originalWindowFetch })
   }
 })
-test('renders PDF using PdfPreview', async () => {
+test('renders PDF files', async () => {
   const loadFile = mock(async () => new Blob(['pdf preview'], { type: 'application/pdf' }))
   const container = render(
     <FilePreviewPanel
@@ -307,7 +317,7 @@ test('renders markdown preview with streamdown', async () => {
   expect(container.textContent).toContain('Markdown Title')
 })
 
-test('renders docx preview mode using DocxPreview', async () => {
+test('renders docx preview mode', async () => {
   const loadFile = mock(async () => new Blob(['fake docx'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))
   const container = render(
     <FilePreviewPanel
@@ -320,7 +330,7 @@ test('renders docx preview mode using DocxPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
-test('renders pptx preview mode using PptxPreview', async () => {
+test('renders pptx preview mode', async () => {
   const loadFile = mock(async () => new Blob(['fake presentation'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }))
   const container = render(
     <FilePreviewPanel
@@ -333,7 +343,7 @@ test('renders pptx preview mode using PptxPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
-test('renders spreadsheet preview mode using SpreadsheetPreview and switches sheets', async () => {
+test('renders CSV preview mode', async () => {
   const csvContent = 'A1,B1\nA2,B2'
   const loadFile = mock(async () => new Blob([csvContent], { type: 'text/csv' }))
   const container = render(

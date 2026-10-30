@@ -12,7 +12,8 @@ describe('file preview types', () => {
     expect(getFilePreviewMode({ filename: 'slides.ppt', mimeType: 'application/vnd.ms-powerpoint' })).toBe('pptx')
     expect(getFilePreviewMode({ filename: 'budget.xlsx' })).toBe('spreadsheet')
     expect(getFilePreviewMode({ filename: 'budget.xls', mimeType: 'application/vnd.ms-excel' })).toBe('spreadsheet')
-    expect(getFilePreviewMode({ filename: 'rows.csv', mimeType: 'text/csv' })).toBe('spreadsheet')
+    expect(getFilePreviewMode({ filename: 'rows.csv', mimeType: 'text/csv' })).toBe('csv')
+    expect(getFilePreviewMode({ filename: 'rows.tsv', mimeType: 'text/tab-separated-values' })).toBe('csv')
   })
 
   test('keeps unsupported binary files downloadable without previewing them', () => {
