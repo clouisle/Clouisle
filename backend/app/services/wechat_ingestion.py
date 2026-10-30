@@ -230,7 +230,8 @@ async def claim_document(
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         raise collection_error("wechat_empty_content")
-    digest_source = str(metadata.get("wechat_original_sha256") or normalized)
+    original_sha = metadata.get("wechat_original_sha256")
+    digest_source = f"wechat-image:{original_sha}" if original_sha else normalized
     digest = hashlib.sha256(digest_source.encode()).hexdigest()
     path = f"documents/{kb.id}/wechat/{item.id}/content.md"
     await save_content(path, normalized.encode())

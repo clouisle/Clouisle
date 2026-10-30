@@ -881,3 +881,8 @@ async def test_refresh_recomputes_cached_entry(redis: FakeRedis):
             refresh=True,
         )
     ).enriched_text == "new"
+
+
+def test_reject_sensitive_value_accepts_parameterized_data_uris():
+    with pytest.raises(KBPreviewCacheError, match="binary URI"):
+        _reject_sensitive_value("data:image/svg+xml;charset=utf-8,<svg/>")

@@ -84,7 +84,9 @@ _SENSITIVE_QUERY_NAMES = frozenset(
         "authorization",
     }
 )
-_DATA_URI_RE = re.compile(r"(?i)\bdata:[a-z0-9.+-]+/[a-z0-9.+-]+(?:;base64)?,")
+_DATA_URI_RE = re.compile(
+    r"(?i)\bdata:[a-z0-9.+-]+/[a-z0-9.+-]+(?:;[a-z0-9.+-]+(?:=[a-z0-9.+-]+)?){0,8},"
+)
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/-]+=*")
 
 

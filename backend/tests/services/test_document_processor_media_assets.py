@@ -511,3 +511,29 @@ async def test_standalone_image_rejects_supported_but_disallowed_format(tmp_path
                 kb_id=kb_id,
                 document_id=uuid4(),
             )
+
+
+def test_markdown_image_bounds_requires_uri_to_follow_opener():
+    processor = DocumentProcessor()
+    text = "![a](data:image/png;base64,AAA) data:image/png;base64,BBB"
+    second = text.index("data:", 5)
+    assert processor._markdown_image_bounds(text, second, len(text)) is None
+
+
+def test_markdown_image_bounds_handles_titles_with_parentheses():
+    processor = DocumentProcessor()
+    text = '![a](data:image/png;base64,AAA "figure (detail)")'
+    start = text.index("data:")
+    bounds = processor._markdown_image_bounds(text, start, text.index(" ", start))
+    assert bounds is not None
+    assert bounds[0] == 0
+    assert bounds[1] == len(text)
+    assert bounds[2] == "a"
+
+    paren_title = "![b](data:image/png;base64,BBB (figure (detail)))"
+    start = paren_title.index("data:")
+    bounds = processor._markdown_image_bounds(
+        paren_title, start, paren_title.index(" ", start)
+    )
+    assert bounds is not None
+    assert bounds[1] == len(paren_title)

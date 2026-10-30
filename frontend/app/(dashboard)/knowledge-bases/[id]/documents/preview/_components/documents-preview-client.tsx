@@ -20,6 +20,7 @@ import {
   Plus,
 } from 'lucide-react'
 import {
+  ApiError,
   adminKnowledgeBasesApi,
   type Document,
   type ProcessInput,
@@ -328,7 +329,15 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         if (!silent) toast.success(t('documentProcessingStarted'))
         return true
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setDocumentsState(prev => ({
+          ...prev,
+          [docId]: { ...prev[docId], isProcessing: false }
+        }))
+        toast.error(error.message || t('documentProcessFailed'))
+        return false
+      }
       // 获取最新文档状态以显示错误信息
       try {
         const docData = await adminKnowledgeBasesApi.getDocument(knowledgeBaseId, docId)

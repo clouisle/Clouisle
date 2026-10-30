@@ -361,12 +361,41 @@ class DocumentProcessor:
         if open_index == -1:
             return None
         alt_end = text.find("](", open_index + 2, data_uri_start)
-        if alt_end == -1:
+        if alt_end == -1 or alt_end + 2 != data_uri_start:
             return None
-        close_index = text.find(")", data_uri_end)
+        close_index = DocumentProcessor._markdown_image_close(text, data_uri_end)
         if close_index == -1:
             return None
         return open_index, close_index + 1, text[open_index + 2 : alt_end]
+
+    @staticmethod
+    def _markdown_image_close(text: str, position: int) -> int:
+        index = position
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            return -1
+        if text[index] in {'"', "'"}:
+            quote = text[index]
+            end = text.find(quote, index + 1)
+            if end == -1:
+                return -1
+            index = end + 1
+        elif text[index] == "(":
+            depth = 0
+            for cursor in range(index, len(text)):
+                if text[cursor] == "(":
+                    depth += 1
+                elif text[cursor] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        index = cursor + 1
+                        break
+            else:
+                return -1
+        while index < len(text) and text[index].isspace():
+            index += 1
+        return index if index < len(text) and text[index] == ")" else -1
 
     async def replace_embedded_media_data_uris(
         self,
