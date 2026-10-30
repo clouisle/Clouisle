@@ -39,6 +39,17 @@ def celery_event_loop():
     asyncio.set_event_loop(None)
 
 
+@pytest.fixture(autouse=True)
+def image_understanding_disabled():
+    from app.services.kb_image_ingestion import IMAGE_DEFAULTS
+
+    with patch(
+        "app.services.kb_image_ingestion.image_settings",
+        AsyncMock(return_value=IMAGE_DEFAULTS),
+    ):
+        yield
+
+
 class Query:
     def __init__(self, *, first=None, count=0, items=None, values=None):
         self._first = first
@@ -322,7 +333,7 @@ def test_url_task_delegates_to_process_task():
     process.assert_awaited_once_with(document_id, None)
 
 
-def test_rechunk_uses_requested_settings_and_reports_partial_failure():
+def test_rechunk_forwards_settings_and_preview_chunks_to_staged_helper():
     document = make_document(source="url")
     document.metadata["rechunk_settings"] = {
         "chunk_size": 50,
@@ -330,111 +341,63 @@ def test_rechunk_uses_requested_settings_and_reports_partial_failure():
         "separator": "|",
         "clean_text": False,
     }
-    vector_store = MagicMock()
-    vector_store.delete_document_vectors = AsyncMock(return_value=2)
-    vector_store.store_chunks_with_progress = AsyncMock(
-        return_value=[chunk("embedded", 4), chunk("failed", 6)]
-    )
+    document.metadata["rechunk_preview_chunks"] = [
+        {"content": "edited", "chunk_index": 0, "token_count": 2}
+    ]
+    staged = AsyncMock(return_value={"status": "success", "chunk_count": 1})
 
     with (
         patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
-        patch(f"{MODULE}.VectorStore", return_value=vector_store),
-        patch(
-            f"{MODULE}.document_processor.fetch_url_content",
-            new=AsyncMock(return_value=("text", {})),
-        ) as fetch,
-        patch(
-            "app.services.document_processor.chunk_text", return_value=["a", "b"]
-        ) as split,
-        patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()),
-        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+        task_id(rechunk_document_task, "rechunk-task"),
+        patch("app.services.kb_rechunk_staging.rechunk_document_staged", staged),
     ):
         result = rechunk_document_task.run(str(document.id))
 
-    assert result["status"] == "success"
-    assert result["chunk_size"] == 50
-    assert document.status == DocumentStatus.ERROR.value
-    fetch.assert_awaited_once_with(document.source_url, clean_text=False)
-    split.assert_called_once_with(
-        "text", chunk_size=50, chunk_overlap=5, separators=["|"]
+    assert result == {"status": "success", "chunk_count": 1}
+    staged.assert_awaited_once_with(
+        document.id,
+        expected_task_id="rechunk-task",
+        chunk_size=50,
+        chunk_overlap=5,
+        separator="|",
+        clean_text=False,
+        chunks=document.metadata["rechunk_preview_chunks"],
     )
 
 
-def test_rechunk_file_success_persists_progress_and_cleans_metadata():
-    document = make_document()
-    document.metadata["rechunk_settings"] = {}
-    created = [chunk("embedded", 8)]
-    vector_store = MagicMock()
-    vector_store.delete_document_vectors = AsyncMock(return_value=2)
-
-    async def store_chunks(_document, _chunks, *, kb_id, progress_callback, **_kw):
-        assert kb_id == document.knowledge_base.id
-        await progress_callback(1, 0, 1)
-        return created
-
-    vector_store.store_chunks_with_progress = AsyncMock(side_effect=store_chunks)
-
-    with (
-        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
-        patch(f"{MODULE}.VectorStore", return_value=vector_store),
-        patch(
-            f"{MODULE}.document_processor.extract_text",
-            new=AsyncMock(return_value=("text", {})),
-        ) as extract,
-        patch(f"{MODULE}.document_processor.delete_media_assets") as delete_assets,
-        patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
-        patch(f"{MODULE}._send_doc_indexed_notification", new=AsyncMock()) as notify,
-        patch(f"{MODULE}._index_document_lexically", new=AsyncMock()) as lexical,
-    ):
-        result = rechunk_document_task.run(str(document.id))
-
-    assert result["status"] == "success"
-    assert document.status == DocumentStatus.COMPLETED.value
-    assert document.chunk_count == 1
-    assert document.token_count == 8
-    assert document.metadata == {"task_id": None, "rechunk_settings": {}}
-    extract.assert_awaited_once_with(
-        document.file_path,
-        document.doc_type,
-        clean_text=True,
-        kb_id=document.knowledge_base.id,
-        document_id=document.id,
-    )
-    delete_assets.assert_called_once_with(document.knowledge_base.id, document.id)
-    assert any(
-        call.kwargs == {"update_fields": ["metadata"]}
-        for call in document.save.await_args_list
-    )
-    notify.assert_awaited_once()
-    lexical.assert_awaited_once_with(document.id)
-
-
-def test_rechunk_dimension_failure_cleans_task_metadata():
+def test_rechunk_returns_staged_error_without_touching_published_document():
     document = make_document(source="url")
-    vector_store = MagicMock()
-    vector_store.delete_document_vectors = AsyncMock(return_value=2)
-    vector_store.store_chunks_with_progress = AsyncMock(
-        side_effect=DimensionMismatchError("wrong dimension")
-    )
+    document.metadata["rechunk_settings"] = {}
+    expected = {
+        "status": "error",
+        "document_id": str(document.id),
+        "error_type": "dimension_mismatch",
+        "preserved_previous_version": True,
+    }
 
     with (
         patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
-        patch(f"{MODULE}.VectorStore", return_value=vector_store),
+        task_id(rechunk_document_task, "rechunk-task"),
         patch(
-            f"{MODULE}.document_processor.fetch_url_content",
-            new=AsyncMock(return_value=("text", {})),
+            "app.services.kb_rechunk_staging.rechunk_document_staged",
+            AsyncMock(return_value=expected),
         ),
-        patch("app.services.document_processor.chunk_text", return_value=["chunk"]),
-        patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()) as notify,
-        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
     ):
         result = rechunk_document_task.run(str(document.id))
 
-    assert result["error_type"] == "dimension_mismatch"
-    assert document.status == DocumentStatus.ERROR.value
-    assert document.metadata == {"task_id": None}
-    assert document.chunk_count == document.token_count == 0
-    notify.assert_awaited_once()
+    assert result == expected
+    document.save.assert_not_awaited()
+
+
+def test_rechunk_missing_document_returns_error():
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=None)),
+        task_id(rechunk_document_task, "rechunk-task"),
+    ):
+        result = rechunk_document_task.run(str(uuid4()))
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "not_found"
 
 
 def test_reprocess_storage_failure_does_not_persist_counter_reset():
@@ -792,3 +755,26 @@ def test_lexical_backfill_complete_without_reconciliation():
     }
     dispatch.assert_not_called()
     store.reconcile.assert_not_awaited()
+
+
+def test_process_document_reports_image_understanding_failure():
+    from app.services.kb_image_understanding import KBImageUnderstandingError
+
+    document = make_document()
+    with (
+        patch(f"{MODULE}.Document.filter", return_value=Query(first=document)),
+        patch(f"{MODULE}.DocumentChunk.filter", return_value=Query(count=0)),
+        patch(f"{MODULE}.document_processor.delete_media_assets", new=AsyncMock()),
+        patch(
+            "app.services.kb_image_ingestion.prepare_document",
+            AsyncMock(side_effect=KBImageUnderstandingError("provider down")),
+        ),
+        patch(f"{MODULE}._send_doc_failed_notification", new=AsyncMock()),
+        patch(f"{MODULE}.t", side_effect=lambda key, **_kwargs: key),
+    ):
+        result = process_document_task.run(str(document.id))
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "image_understanding"
+    assert document.status == DocumentStatus.ERROR.value
+    assert document.error_message == "image_understanding_failed"

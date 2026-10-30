@@ -14,12 +14,12 @@ let SearchTestClient: typeof import('./search-test-client').SearchTestClient
 beforeAll(async () => { ({ SearchTestClient } = await import('./search-test-client')) })
 
 describe('platform SearchTestClient', () => {
-  test('keeps platform API, back route, permission, and authenticated markdown', () => {
+  test('keeps platform API, back route, and permission', () => {
     const tree = SearchTestClient({ knowledgeBaseId: 'kb-1' }) as ReactElement<Record<string, unknown>>
     expect(tree.type).toBe('retrieval-lab')
     expect(tree.props).toMatchObject({
       knowledgeBaseId: 'kb-1', api, backHref: '/app/kb/kb-1',
-      canUpdate: true, canTest: true, authenticatedMarkdown: true,
+      canUpdate: true, canTest: true,
     })
     expect(hasPermission.mock.calls.map(call => call[0])).toEqual(['kb:update', 'kb:test'])
     ;(tree.props.onLoadError as () => void)()

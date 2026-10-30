@@ -31,9 +31,12 @@ mock.module('@/lib/utils', () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
 }))
 
+const AuthenticatedImage = () => null
+mock.module('@/components/chat/authenticated-media', () => ({ AuthenticatedImage }))
+
 const { ChunkMarkdown } = await import('./chunk-markdown')
 
-test('renders with the preview-only package and sanitizes untrusted Markdown', () => {
+test('sanitizes untrusted Markdown and only renders protected KB media images', () => {
   const tree = ChunkMarkdown({ source: '<iframe src="javascript:alert(1)"></iframe>', className: 'compact' }) as {
     props: Record<string, unknown>
   }
@@ -43,4 +46,38 @@ test('renders with the preview-only package and sanitizes untrusted Markdown', (
   expect(tree.props['data-color-mode']).toBe('dark')
   expect(preview.props.source).toContain('<iframe')
   expect(preview.props.rehypePlugins).toEqual([[rehypeSanitize]])
+  const components = preview.props.components
+  if (!components || typeof components !== 'object' || !('img' in components) || typeof components.img !== 'function') {
+    throw new Error('Expected an image renderer')
+  }
+  const renderImage = components.img
+  const protectedImage = renderImage({
+    src: '/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png',
+    alt: 'Page',
+    className: 'preview-image',
+  })
+  expect(protectedImage.type).toBe(AuthenticatedImage)
+  expect(protectedImage.props).toMatchObject({
+    src: '/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png',
+    alt: 'Page',
+    className: 'preview-image',
+  })
+  const externalImage = renderImage({
+    src: 'https://cdn.example.test/page.png',
+    alt: 'External page',
+  })
+  expect(externalImage.type).toBe('span')
+  expect(externalImage.props.children).toBe('External page')
+  const externalApiImage = renderImage({
+    src: 'https://cdn.example.test/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png',
+    alt: 'External API-looking image',
+  })
+  expect(externalApiImage.type).toBe('span')
+  expect(externalApiImage.props.children).toBe('External API-looking image')
+  const nonMediaApiUrl = renderImage({
+    src: '/api/v1/knowledge-bases/kb-1/documents/doc-1/download',
+    alt: 'Document',
+  })
+  expect(nonMediaApiUrl.type).toBe('span')
+  expect(nonMediaApiUrl.props.children).toBe('Document')
 })

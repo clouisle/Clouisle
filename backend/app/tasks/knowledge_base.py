@@ -16,10 +16,15 @@ from app.models.knowledge_base import (
     Document,
     DocumentChunk,
     DocumentStatus,
+    DocumentType,
 )
 from app.models.notification import AutoNotificationType, NotificationLevel
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
+from app.services.kb_image_understanding import (
+    KBImageUnderstandingError,
+    KBImageValidationError,
+)
 from app.services.upload_gateway import UploadGatewayError
 from app.services.lexical_store import LexicalStore, chunk_document, index_document
 from app.services.vector_store import (
@@ -663,22 +668,14 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         doc_meta = document.metadata or {}
         clean_text_setting = doc_meta.get("clean_text", True)
 
+        from app.services.kb_image_ingestion import image_settings, prepare_document
+
         if document.file_path:
             await document_processor.delete_media_assets(kb.id, document.id)
-            text, metadata = await document_processor.extract_text(
-                document.file_path,
-                document.doc_type,
-                clean_text=clean_text_setting,
-                kb_id=kb.id,
-                document_id=document.id,
-            )
-        elif document.source_url:
-            text, metadata = await document_processor.fetch_url_content(
-                document.source_url,
-                clean_text=clean_text_setting,
-            )
-        else:
-            raise ValueError(t("document_missing_source", lang=user_locale))
+        settings = await image_settings()
+        text, metadata = await prepare_document(
+            document, clean_text=clean_text_setting, settings=settings
+        )
 
         # Update document metadata
         document.metadata = document.metadata or {}
@@ -696,7 +693,7 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         # Chunk text
         from app.services.document_processor import chunk_text
 
-        is_md_format = document.doc_type == "md" or (
+        is_md_format = document.doc_type == DocumentType.MD.value or (
             document.metadata and document.metadata.get("format") == "markdown"
         )
         chunk_kwargs: dict[str, Any] = {
@@ -872,6 +869,38 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
             "error_type": "dimension_mismatch",
         }
 
+    except (KBImageUnderstandingError, KBImageValidationError) as e:
+        code = getattr(e, "code", "image_understanding_failed")
+        logger.error(
+            "Image understanding failed for document %s: %s",
+            document_id,
+            code,
+        )
+        document.status = DocumentStatus.ERROR.value
+        _clear_task_metadata(document)
+        msg_key = (
+            "image_no_text_extracted"
+            if code == "image_no_text_extracted"
+            else "image_understanding_failed"
+        )
+        document.error_message = t(msg_key, lang=user_locale)[:500]
+        await document.save()
+
+        await _send_doc_failed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb.team_id,
+            error=document.error_message,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "error",
+            "document_id": document_id,
+            "message": document.error_message,
+            "error_type": "image_understanding",
+        }
+
     except UploadGatewayError:
         # The api gateway can be briefly unavailable during startup or rollout.
         # Let the bound Celery task retry instead of terminally failing the document.
@@ -1038,252 +1067,33 @@ def rechunk_document_task(self, document_id: str) -> dict:
     """
 
     async def _rechunk():
+        from app.services.kb_rechunk_staging import rechunk_document_staged
+
         doc_uuid = UUID(document_id)
-
-        # Get document with uploader for locale
-        document = (
-            await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base", "uploaded_by")
-            .first()
-        )
-
+        document = await Document.filter(id=doc_uuid).first()
         if not document:
-            logger.error(f"Document {document_id} not found")
-            default_lang = await get_default_language()
             return {
                 "status": "error",
-                "message": t("document_not_found", lang=default_lang),
+                "document_id": document_id,
+                "error_type": "not_found",
             }
-
         task_id = getattr(self.request, "id", None)
-        if _is_stale_task(document, task_id):
-            return await _finish_stale_task(document, task_id)
-        if _is_finished_task(document, task_id):
-            return await _finish_already_finished_task(document, task_id)
-
-        kb = document.knowledge_base
-        # Get uploader's locale for notifications
-        uploader = getattr(document, "uploaded_by", None)
-        user_locale = await resolve_language(
-            getattr(uploader, "locale", None) if uploader else None
+        settings = (document.metadata or {}).get("rechunk_settings") or {}
+        return await rechunk_document_staged(
+            doc_uuid,
+            expected_task_id=str(task_id or ""),
+            chunk_size=int(settings.get("chunk_size", 1000)),
+            chunk_overlap=int(settings.get("chunk_overlap", 100)),
+            separator=settings.get("separator"),
+            clean_text=bool(settings.get("clean_text", True)),
+            chunks=(document.metadata or {}).get("rechunk_preview_chunks"),
         )
-
-        try:
-            # Update status to processing
-            document.status = DocumentStatus.PROCESSING.value
-            await document.save()
-
-            # Get rechunk settings from metadata
-            rechunk_settings = (document.metadata or {}).get("rechunk_settings", {})
-            chunk_size = rechunk_settings.get("chunk_size", 1000)
-            chunk_overlap = rechunk_settings.get("chunk_overlap", 100)
-            separator = rechunk_settings.get("separator")
-            clean_text_setting = rechunk_settings.get("clean_text", True)
-
-            # Delete existing chunks and prepare for re-embedding with team_id for usage tracking
-            embedding_model_id = (
-                str(kb.embedding_model_id) if kb.embedding_model_id else None
-            )
-            team_id = str(kb.team_id) if kb.team_id else None
-            vector_store = VectorStore(
-                embedding_model_id=embedding_model_id,
-                team_id=team_id,
-            )
-            previous_chunk_count = document.chunk_count
-            previous_token_count = document.token_count
-            deleted_count = await vector_store.delete_document_vectors(doc_uuid)
-
-            # Update KB stats for deleted chunks
-            kb.total_chunks = max(0, kb.total_chunks - previous_chunk_count)
-            kb.total_tokens = max(0, kb.total_tokens - previous_token_count)
-            document.chunk_count = 0
-            document.token_count = 0
-            await kb.save()
-            await document.save(update_fields=["chunk_count", "token_count"])
-
-            logger.info(
-                f"Deleted {deleted_count} chunks for rechunking document {document_id}"
-            )
-
-            # Extract text
-            if document.file_path:
-                await document_processor.delete_media_assets(kb.id, document.id)
-                text, _ = await document_processor.extract_text(
-                    document.file_path,
-                    document.doc_type,
-                    clean_text=clean_text_setting,
-                    kb_id=kb.id,
-                    document_id=document.id,
-                )
-            elif document.source_url:
-                text, _ = await document_processor.fetch_url_content(
-                    document.source_url,
-                    clean_text=clean_text_setting,
-                )
-            else:
-                raise ValueError(t("document_missing_source", lang=user_locale))
-
-            # Chunk text
-            from app.services.document_processor import chunk_text
-
-            is_md_format = document.doc_type == "md" or (
-                document.metadata and document.metadata.get("format") == "markdown"
-            )
-            chunk_kwargs: dict[str, Any] = {
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-                "separators": [separator] if separator else None,
-            }
-            if is_md_format:
-                chunk_kwargs["is_markdown"] = True
-            chunks = chunk_text(text, **chunk_kwargs)
-            if not chunks:
-                raise ValueError(t("document_no_chunks_generated", lang=user_locale))
-
-            # Store chunks with embeddings and progress (pass kb_id for dimension management)
-            async def _update_rechunk_progress(
-                embedded: int, failed: int, total: int
-            ) -> None:
-                document.metadata = document.metadata or {}
-                document.metadata["embed_progress"] = {
-                    "embedded": embedded,
-                    "failed": failed,
-                    "total": total,
-                }
-                await document.save(update_fields=["metadata"])
-
-            created_chunks = await vector_store.store_chunks_with_progress(
-                document,
-                chunks,
-                kb_id=kb.id,
-                progress_callback=_update_rechunk_progress,
-                batch_size=25,
-            )
-            failed_chunks = [c for c in created_chunks if c.status == "failed"]
-            total_tokens = sum(c.token_count for c in created_chunks)
-
-            # Clear progress from metadata
-            document.metadata = document.metadata or {}
-            _clear_task_metadata(document)
-
-            if failed_chunks and len(failed_chunks) == len(created_chunks):
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = t(
-                    "all_chunks_failed_to_embed",
-                    lang=user_locale,
-                    error=t("unknown_error_generic", lang=user_locale),
-                )[:500]
-            elif failed_chunks:
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = t(
-                    "chunks_failed_to_embed",
-                    lang=user_locale,
-                    failed_count=len(failed_chunks),
-                    total_chunks=len(created_chunks),
-                    error=t("unknown_error_generic", lang=user_locale),
-                )[:500]
-            else:
-                document.status = DocumentStatus.COMPLETED.value
-                document.error_message = None
-
-            document.chunk_count = len(created_chunks)
-            document.token_count = total_tokens
-            document.processed_at = datetime.now(timezone.utc)
-            await document.save()
-            if document.status == DocumentStatus.COMPLETED.value:
-                await _index_document_lexically(document.id)
-
-            # Update KB statistics
-            kb.total_chunks += len(created_chunks)
-            kb.total_tokens += total_tokens
-            await kb.save()
-
-            logger.info(
-                f"Document {document_id} rechunked: "
-                f"{len(created_chunks)} chunks, {total_tokens} tokens"
-            )
-
-            # Send success notification
-            await _send_doc_indexed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                chunk_count=len(created_chunks),
-                token_count=total_tokens,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "success",
-                "document_id": document_id,
-                "chunk_count": len(created_chunks),
-                "token_count": total_tokens,
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-            }
-
-        except DimensionMismatchError as e:
-            logger.error(f"Dimension mismatch rechunking document {document_id}: {e}")
-
-            document.status = DocumentStatus.ERROR.value
-            _clear_task_metadata(document)
-            document.error_message = _get_dimension_mismatch_error(
-                document, user_locale
-            )[:500]
-            await document.save()
-
-            # Send failure notification
-            await _send_doc_failed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                error=document.error_message,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "error",
-                "document_id": document_id,
-                "message": document.error_message,
-                "error_type": "dimension_mismatch",
-            }
-
-        except UploadGatewayError:
-            raise
-        except Exception as e:
-            logger.exception(f"Error rechunking document {document_id}: {e}")
-
-            # Update document status
-            document.status = DocumentStatus.ERROR.value
-            _clear_task_metadata(document)
-            document.error_message = _get_generic_processing_error(
-                document, user_locale
-            )[:500]
-            await document.save()
-
-            # Send failure notification
-            await _send_doc_failed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                error=document.error_message,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "error",
-                "document_id": document_id,
-                "message": document.error_message,
-            }
 
     try:
         return _run_async(_rechunk())
     except UploadGatewayError as exc:
         return _retry_upload_gateway_or_mark_document_failed(
-            self,
-            document_id,
-            getattr(self.request, "id", None),
-            exc,
+            self, document_id, getattr(self.request, "id", None), exc
         )
 
 

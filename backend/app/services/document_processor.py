@@ -6,6 +6,7 @@ Handles document parsing, text extraction, and chunking.
 import base64
 import binascii
 import hashlib
+import io
 import logging
 import mimetypes
 import os
@@ -41,6 +42,10 @@ MIME_TYPE_MAP: dict[str, str] = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": DocumentType.XLSX.value,
     "application/vnd.ms-excel": DocumentType.XLS.value,
     "application/json": DocumentType.JSON.value,
+    "image/png": DocumentType.IMAGE.value,
+    "image/jpeg": DocumentType.IMAGE.value,
+    "image/gif": DocumentType.IMAGE.value,
+    "image/webp": DocumentType.IMAGE.value,
 }
 
 # File extension to document type mapping
@@ -58,10 +63,20 @@ EXT_TYPE_MAP: dict[str, str] = {
     ".xlsx": DocumentType.XLSX.value,
     ".xls": DocumentType.XLS.value,
     ".json": DocumentType.JSON.value,
+    ".png": DocumentType.IMAGE.value,
+    ".jpg": DocumentType.IMAGE.value,
+    ".jpeg": DocumentType.IMAGE.value,
+    ".gif": DocumentType.IMAGE.value,
+    ".webp": DocumentType.IMAGE.value,
 }
 
 MEDIA_ASSETS_METADATA_KEY = "media_assets"
-DATA_URI_IMAGE_RE = re.compile(r"data:(image/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
+DATA_URI_IMAGE_RE = re.compile(
+    r"data:(image/[a-zA-Z0-9.+-]+);base64,([^\s)\"'<>]*)", re.IGNORECASE
+)
+MAX_EMBEDDED_IMAGE_COUNT = 100
+MAX_EMBEDDED_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_EMBEDDED_IMAGE_PIXELS = 40_000_000
 ALLOWED_MEDIA_MIME_TYPES = {
     "image/gif",
     "image/jpeg",
@@ -349,13 +364,38 @@ class DocumentProcessor:
         replacements: dict[str, str] = {}
 
         for match in DATA_URI_IMAGE_RE.finditer(text):
+            if len(assets) >= MAX_EMBEDDED_IMAGE_COUNT:
+                raise ValueError("embedded_image_count_exceeded")
             content_type = match.group(1).lower()
             if content_type not in ALLOWED_MEDIA_MIME_TYPES:
-                continue
+                raise ValueError("embedded_image_type_unsupported")
+            encoded = match.group(2)
+            if len(encoded) > ((MAX_EMBEDDED_IMAGE_BYTES + 2) // 3) * 4:
+                raise ValueError("embedded_image_size_exceeded")
             try:
-                content = base64.b64decode(match.group(2), validate=True)
-            except binascii.Error:
-                continue
+                content = base64.b64decode(encoded, validate=True)
+            except binascii.Error as exc:
+                raise ValueError("embedded_image_invalid") from exc
+            if len(content) > MAX_EMBEDDED_IMAGE_BYTES:
+                raise ValueError("embedded_image_size_exceeded")
+            if content_type != "image/svg+xml":
+                from PIL import Image, UnidentifiedImageError
+
+                try:
+                    with Image.open(io.BytesIO(content)) as image:
+                        if image.width * image.height > MAX_EMBEDDED_IMAGE_PIXELS:
+                            raise ValueError("embedded_image_pixels_exceeded")
+                        actual_type = Image.MIME.get(image.format)
+                        if actual_type != content_type:
+                            raise ValueError("embedded_image_type_mismatch")
+                        image.verify()
+                except (
+                    UnidentifiedImageError,
+                    OSError,
+                    SyntaxError,
+                    Image.DecompressionBombError,
+                ) as exc:
+                    raise ValueError("embedded_image_invalid") from exc
             asset = await self._save_media_asset(
                 kb_id=kb_id,
                 document_id=document_id,
@@ -397,7 +437,19 @@ class DocumentProcessor:
         }
 
         try:
-            if doc_type == DocumentType.TXT.value:
+            if doc_type == DocumentType.IMAGE.value:
+                content_type = mimetypes.guess_type(storage_key)[0]
+                if content_type not in {
+                    "image/png",
+                    "image/jpeg",
+                    "image/gif",
+                    "image/webp",
+                }:
+                    raise ValueError("embedded_image_type_unsupported")
+                encoded = base64.b64encode(content).decode("ascii")
+                text = f"![Image](data:{content_type};base64,{encoded})"
+                metadata["format"] = "markdown"
+            elif doc_type == DocumentType.TXT.value:
                 text = content.decode("utf-8", errors="ignore")
             elif doc_type == DocumentType.MD.value:
                 text = content.decode("utf-8", errors="ignore")

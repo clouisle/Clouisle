@@ -361,10 +361,15 @@ async def test_preview_chunks_rejects_missing_document(monkeypatch):
 @pytest.mark.asyncio
 async def test_reprocess_without_existing_task(monkeypatch):
     doc = document(metadata={})
-    monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock())
+    dispatch = AsyncMock()
+    monkeypatch.setattr(
+        endpoint,
+        "check_kb_access",
+        AsyncMock(return_value=SimpleNamespace(settings={}, team_id=uuid4())),
+    )
     monkeypatch.setattr(endpoint.Document, "filter", lambda **_kwargs: Query(first=doc))
     monkeypatch.setattr(endpoint.Document, "get", lambda **_kwargs: Query(awaited=doc))
-    monkeypatch.setattr(endpoint, "_dispatch_document_task", AsyncMock())
+    monkeypatch.setattr(endpoint, "_dispatch_document_task", dispatch)
     monkeypatch.setattr(endpoint, "serialize_document", AsyncMock(return_value={}))
     monkeypatch.setattr(endpoint.AuditLogService, "log", AsyncMock())
 
@@ -375,7 +380,13 @@ async def test_reprocess_without_existing_task(monkeypatch):
         current_user=user(),
     )
 
-    assert doc.status == DocumentStatus.PENDING.value
+    assert doc.status == DocumentStatus.COMPLETED.value
+    dispatch.assert_awaited_once()
+    assert dispatch.await_args.kwargs["status"] == DocumentStatus.COMPLETED.value
+    assert (
+        dispatch.await_args.kwargs["metadata_updates"]["rechunk_settings"]["chunk_size"]
+        == 1000
+    )
 
 
 @pytest.mark.asyncio
@@ -517,7 +528,8 @@ async def test_rechunk_guards_processing_and_initializes_metadata(monkeypatch):
     monkeypatch.setattr(
         endpoint.Document, "get", lambda **_kwargs: Query(awaited=completed)
     )
-    monkeypatch.setattr(endpoint, "_dispatch_document_task", AsyncMock())
+    dispatch = AsyncMock()
+    monkeypatch.setattr(endpoint, "_dispatch_document_task", dispatch)
     monkeypatch.setattr(endpoint, "serialize_document", AsyncMock(return_value={}))
     monkeypatch.setattr(endpoint.AuditLogService, "log", AsyncMock())
     rechunk_in = RechunkRequest(chunk_size=200, chunk_overlap=20)
@@ -533,8 +545,10 @@ async def test_rechunk_guards_processing_and_initializes_metadata(monkeypatch):
     kwargs["doc_id"] = completed.id
     await endpoint.rechunk_document(**kwargs)
 
-    assert completed.metadata["rechunk_settings"] == {
+    assert dispatch.await_args.kwargs["metadata_updates"]["rechunk_settings"] == {
         "chunk_size": 200,
         "chunk_overlap": 20,
         "separator": None,
+        "clean_text": True,
     }
+    assert dispatch.await_args.kwargs["status"] == DocumentStatus.COMPLETED.value

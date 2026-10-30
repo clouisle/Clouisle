@@ -23,6 +23,7 @@ import {
   Wrench,
   Bot,
   Globe,
+  Image as ImageIcon,
   Mail,
   Plug,
 } from 'lucide-react'
@@ -102,6 +103,7 @@ const SEARCHABLE_DASHBOARD_ROUTES: SearchRouteItem[] = [
   { titleKey: 'nav:deliveries', url: '/deliveries', icon: Send },
   { titleKey: 'siteSettings:memory', url: '/site-settings/memory', icon: Brain, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:memorySettings.title', url: '/site-settings/memory', icon: Brain, parentKey: 'siteSettings:memory' },
+  { titleKey: 'siteSettings:parsing', url: '/site-settings/parsing', icon: ImageIcon, parentKey: 'nav:siteSettings' },
   { titleKey: 'sso:addProvider', url: '/site-settings/integrations', icon: Shield, parentKey: 'siteSettings:integrations.title' },
   { titleKey: 'sso:testConnection', url: '/site-settings/integrations', icon: Shield, parentKey: 'siteSettings:integrations.title' },
 ]

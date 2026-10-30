@@ -23,6 +23,9 @@ class Query:
     def using_db(self, _connection):
         return self
 
+    def prefetch_related(self, *_relations):
+        return self
+
     def select_for_update(self):
         return self
 
@@ -31,6 +34,16 @@ class Query:
 
     async def first(self):
         return self.value
+
+
+@pytest.fixture(autouse=True)
+def image_settings_defaults(monkeypatch):
+    from app.services.kb_image_ingestion import IMAGE_DEFAULTS
+    from app.models.site_setting import SiteSetting
+
+    monkeypatch.setattr(
+        SiteSetting, "get_values", AsyncMock(return_value=IMAGE_DEFAULTS)
+    )
 
 
 @pytest.fixture
@@ -177,6 +190,7 @@ async def test_preview_document_chunks_uses_available_source(monkeypatch, use_fi
         file_path="document.txt" if use_file else None,
         source_url=None if use_file else "https://example.test/document",
         doc_type="txt",
+        status="pending",
     )
     extract = AsyncMock(return_value=("preview text", {}))
     fetch = AsyncMock(return_value=("preview text", {}))
@@ -216,12 +230,66 @@ async def test_preview_document_chunks_uses_available_source(monkeypatch, use_fi
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("doc_type", "stored_metadata", "extraction_metadata", "use_url", "expected"),
+    [
+        ("markdown", {}, {}, False, True),
+        ("txt", {}, {"format": "markdown"}, False, True),
+        ("txt", {"format": "markdown"}, {}, False, False),
+        ("url", {}, {"format": "markdown"}, True, True),
+        ("url", {}, {}, True, False),
+    ],
+)
+async def test_preview_document_chunks_uses_fresh_markdown_metadata(
+    monkeypatch, doc_type, stored_metadata, extraction_metadata, use_url, expected
+):
+    kb_id, doc_id = uuid4(), uuid4()
+    doc = SimpleNamespace(
+        file_path=None if use_url else "document.txt",
+        source_url="https://example.test/document" if use_url else None,
+        doc_type=doc_type,
+        metadata=stored_metadata,
+        status="pending",
+    )
+    extract = AsyncMock(return_value=("# Markdown", extraction_metadata))
+    fetch = AsyncMock(return_value=("# Markdown", extraction_metadata))
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(knowledge_bases.document_processor, "extract_text", extract)
+    monkeypatch.setattr(knowledge_bases.document_processor, "fetch_url_content", fetch)
+
+    chunk_kwargs = {}
+
+    def chunk_text(_text, **kwargs):
+        chunk_kwargs.update(kwargs)
+        return []
+
+    processor_module = importlib.import_module("app.services.document_processor")
+    monkeypatch.setattr(processor_module, "chunk_text", chunk_text)
+
+    await knowledge_bases.preview_document_chunks(
+        kb_id=kb_id,
+        doc_id=doc_id,
+        preview_in=SimpleNamespace(
+            clean_text=True, chunk_size=100, chunk_overlap=10, separator=None
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert chunk_kwargs["is_markdown"] is expected
+
+
+@pytest.mark.anyio
 async def test_preview_document_chunks_rejects_missing_source(monkeypatch):
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
     monkeypatch.setattr(
         knowledge_bases.Document,
         "filter",
-        lambda **_kwargs: Query(SimpleNamespace(file_path=None, source_url=None)),
+        lambda **_kwargs: Query(
+            SimpleNamespace(file_path=None, source_url=None, status="pending")
+        ),
     )
 
     with pytest.raises(BusinessError) as exc:

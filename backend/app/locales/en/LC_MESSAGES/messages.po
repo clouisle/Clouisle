@@ -1652,6 +1652,12 @@ msgstr "The document embedding dimension does not match this knowledge base"
 msgid "document_processing_failed_generic"
 msgstr "Document processing failed"
 
+msgid "image_understanding_failed"
+msgstr "Image understanding failed. Check that the configured vision model endpoint and credentials are available."
+
+msgid "image_no_text_extracted"
+msgstr "No readable text was found in this image. Add a vision model to generate a visual description, or upload an image that contains text."
+
 msgid "no_failed_chunks"
 msgstr "No failed chunks to retry"
 

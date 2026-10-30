@@ -226,12 +226,12 @@ async def test_process_with_chunks_cancels_old_task_and_batches_nonempty_chunks(
         current_user=SimpleNamespace(),
     )
 
-    celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
-    vector_store.delete_document_vectors.assert_awaited_once_with(doc_id)
-    assert chunks_query.deleted is True
-    assert [chunk.content for chunk in created] == ["first chunk", "second"]
-    assert (doc.chunk_count, doc.token_count) == (2, 3)
     dispatch.assert_awaited_once()
+    assert dispatch.await_args.kwargs["status"] == DocumentStatus.COMPLETED.value
+    assert dispatch.await_args.kwargs["metadata_updates"]["rechunk_preview_chunks"] == [
+        {"content": "first chunk", "chunk_index": 0, "token_count": 2},
+        {"content": "second", "chunk_index": 2, "token_count": 1},
+    ]
     assert result["data"]["id"] == doc_id
 
 

@@ -21,7 +21,10 @@ async def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
     processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
     kb_id = uuid4()
     document_id = uuid4()
-    image_content = b"image-bytes"
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
     data_uri = "data:image/png;base64," + base64.b64encode(image_content).decode(
         "ascii"
     )
@@ -61,7 +64,10 @@ async def test_extract_text_resourceizes_markdown_data_uri_when_context_is_provi
     processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
     kb_id = uuid4()
     document_id = uuid4()
-    image_content = b"image-bytes"
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
     data_uri = "data:image/png;base64," + base64.b64encode(image_content).decode(
         "ascii"
     )
@@ -157,7 +163,7 @@ async def test_extract_text_resourceizes_docx_embedded_image(tmp_path):
     document_id = uuid4()
     image_content = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
-        "AAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
     )
     docx_path = processor.get_storage_path(kb_id, "sample.docx")
     content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -227,7 +233,7 @@ async def test_extract_pptx_preserves_svg_without_raster_fallback(
 
     image = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
-        "AAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
     )
     svg = (
         b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'

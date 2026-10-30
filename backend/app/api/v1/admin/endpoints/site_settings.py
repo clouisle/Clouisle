@@ -14,6 +14,7 @@ from app.models import (
     KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
+from app.models.model import Model
 from app.models.notification import AutoNotificationType
 from app.models.site_setting import RESTRICTION_SWITCH_KEYS
 from app.schemas.site_setting import (
@@ -40,6 +41,8 @@ from app.core.sandbox_network_policy import (
     SandboxNetworkPolicyError,
     normalize_sandbox_network_allowlist,
 )
+from app.llm.capabilities import get_effective_input_capabilities
+from app.llm.types import ContentType
 from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
@@ -54,6 +57,12 @@ MEMORY_EXTRACTION_MIN_COOLDOWN_SECONDS = 10
 MEMORY_EXTRACTION_MAX_COOLDOWN_SECONDS = 3600
 MEMORY_EXTRACTION_MIN_PENDING_TURNS = 1
 MEMORY_EXTRACTION_MAX_PENDING_TURNS = 50
+KB_IMAGE_UNDERSTANDING_INTEGER_BOUNDS = {
+    "kb_image_understanding_max_images": (1, 20),
+    "kb_image_understanding_max_image_bytes": (1, 50 * 1024 * 1024),
+    "kb_image_understanding_max_image_pixels": (1, 40_000_000),
+    "kb_image_understanding_concurrency": (1, 8),
+}
 
 
 def _setting_stored_str(value: Any, value_type: str) -> Optional[str]:
@@ -89,7 +98,28 @@ def _reject_integration_setting(key: str) -> None:
         )
 
 
-async def _validate_setting_value(key: str, value: object) -> None:
+async def _validate_image_capable_chat_model(value: str) -> None:
+    try:
+        model_id = UUID(value)
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+        ) from exc
+    model = await Model.filter(id=model_id).first()
+    if (
+        not model
+        or not model.is_enabled
+        or model.model_type != "chat"
+        or ContentType.IMAGE not in get_effective_input_capabilities(model).modalities
+    ):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+        )
+
+
+async def _validate_setting_value(
+    key: str, value: object, pending_settings: dict[str, Any] | None = None
+) -> None:
     """Validate site setting values.
 
     Args:
@@ -265,6 +295,112 @@ async def _validate_setting_value(key: str, value: object) -> None:
             or isinstance(value, bool)
             or value < MEMORY_EXTRACTION_MIN_PENDING_TURNS
             or value > MEMORY_EXTRACTION_MAX_PENDING_TURNS
+        ):
+            raise_validation_error()
+    if key in {
+        "kb_image_understanding_enabled",
+        "kb_image_understanding_allow_external",
+    }:
+        if not isinstance(value, bool):
+            raise_validation_error()
+        if key == "kb_image_understanding_enabled" and value:
+            configured_model_id = (
+                pending_settings.get("kb_image_understanding_model_id")
+                if pending_settings is not None
+                and "kb_image_understanding_model_id" in pending_settings
+                else await SiteSetting.get_value("kb_image_understanding_model_id", "")
+            )
+            if not configured_model_id:
+                configured_ocr_id = (
+                    pending_settings.get("kb_image_ocr_model_id")
+                    if pending_settings is not None
+                    and "kb_image_ocr_model_id" in pending_settings
+                    else await SiteSetting.get_value("kb_image_ocr_model_id", "")
+                )
+                if not configured_ocr_id:
+                    raise_validation_error()
+                await _validate_setting_value(
+                    "kb_image_ocr_model_id", configured_ocr_id, pending_settings
+                )
+            else:
+                await _validate_setting_value(
+                    "kb_image_understanding_model_id",
+                    configured_model_id,
+                    pending_settings,
+                )
+        return
+    if key == "kb_image_understanding_model_id":
+        if not isinstance(value, str):
+            raise_validation_error()
+        if value == "":
+            enabled = (
+                pending_settings.get("kb_image_understanding_enabled")
+                if pending_settings is not None
+                and "kb_image_understanding_enabled" in pending_settings
+                else await SiteSetting.get_value(
+                    "kb_image_understanding_enabled", False
+                )
+            )
+            if enabled:
+                configured_ocr_id = (
+                    pending_settings.get("kb_image_ocr_model_id")
+                    if pending_settings is not None
+                    and "kb_image_ocr_model_id" in pending_settings
+                    else await SiteSetting.get_value("kb_image_ocr_model_id", "")
+                )
+                if not configured_ocr_id:
+                    raise_validation_error()
+            return
+        try:
+            model_id = UUID(value)
+        except ValueError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+            ) from exc
+        model = await Model.filter(id=model_id).first()
+        if (
+            not model
+            or not model.is_enabled
+            or model.model_type != "chat"
+            or ContentType.IMAGE
+            not in get_effective_input_capabilities(model).modalities
+        ):
+            raise_validation_error()
+        return
+
+    if key == "kb_image_ocr_model_id":
+        if not isinstance(value, str):
+            raise_validation_error()
+        if value == "":
+            enabled = (
+                pending_settings.get("kb_image_understanding_enabled")
+                if pending_settings is not None
+                and "kb_image_understanding_enabled" in pending_settings
+                else await SiteSetting.get_value(
+                    "kb_image_understanding_enabled", False
+                )
+            )
+            if enabled:
+                configured_model_id = (
+                    pending_settings.get("kb_image_understanding_model_id")
+                    if pending_settings is not None
+                    and "kb_image_understanding_model_id" in pending_settings
+                    else await SiteSetting.get_value(
+                        "kb_image_understanding_model_id", ""
+                    )
+                )
+                if not configured_model_id:
+                    raise_validation_error()
+            return
+        await _validate_image_capable_chat_model(value)
+        return
+
+    bounds = KB_IMAGE_UNDERSTANDING_INTEGER_BOUNDS.get(key)
+    if bounds:
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not bounds[0] <= value <= bounds[1]
         ):
             raise_validation_error()
         return
@@ -530,7 +666,7 @@ async def bulk_update_settings(
     for key in data.settings:
         _reject_integration_setting(key)
     for key, value in data.settings.items():
-        await _validate_setting_value(key, value)
+        await _validate_setting_value(key, value, data.settings)
     await _validate_storage_settings_update(data.settings)
 
     updated_keys = []

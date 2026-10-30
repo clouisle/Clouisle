@@ -46,6 +46,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EMBEDDING_REQUEST_TIMEOUT_SECONDS = 120.0
+_KB_MEDIA_MARKDOWN = re.compile(
+    r"!\[([^\]]*)\]\(/api/v1/(?:admin/)?knowledge-bases/[^/]+/documents/[^/]+/media/[^)]+\)"
+)
+
+
+def _embedding_content(text: str) -> str:
+    return _KB_MEDIA_MARKDOWN.sub(lambda match: match.group(1), text)
 
 
 class EmbeddingRequestTimeoutError(Exception):
@@ -599,6 +606,7 @@ class VectorStore:
         """
         if not texts:
             return []
+        texts = [_embedding_content(text) for text in texts]
 
         model_manager = _get_model_manager()
 
@@ -1475,7 +1483,7 @@ class VectorStore:
         """
         try:
             # Generate new embedding
-            embedding = await self.embed_query(chunk.content)
+            embedding = await self.embed_query(_embedding_content(chunk.content))
             if kb_id is None:
                 kb_ids = cast(
                     list[UUID],

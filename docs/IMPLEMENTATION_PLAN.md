@@ -2,6 +2,14 @@
 
 ## Active
 
+- **knowledge-base-image-understanding** — Completed; browser end-to-end verified 2026-10-30. See `docs/plan/knowledge-base-image-understanding.md`.
+  - [x] 1. Fix authenticated display, resource safety and preview parity
+  - [x] 2. Configure site-wide vision and recognize DOCX/PPTX images
+  - [x] 3. Process scanned and illustrated PDF pages
+  - [x] 4. Support XLSX, image uploads and controlled external images
+  - [x] 5. Publish processed versions safely and expose status
+  - [x] 6. Verify and document behavior; do not migrate historical documents
+
 - **ai-elements-shadcn-migration** — Completed; browser visual verification not performed. See `docs/plan/ai-elements-shadcn-migration.md`.
   - [x] 1. Add shadcn UI primitives and migrate trace patterns
   - [x] 2. Migrate message, citation, code and chat patterns

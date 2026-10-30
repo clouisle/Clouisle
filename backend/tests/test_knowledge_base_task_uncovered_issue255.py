@@ -115,7 +115,14 @@ def test_document_tasks_report_missing_document(monkeypatch, task):
 
     result = task.run(*args)
 
-    assert result == {"status": "error", "message": "document_not_found:en"}
+    if task is knowledge_base.rechunk_document_task:
+        assert result == {
+            "status": "error",
+            "document_id": document_id,
+            "error_type": "not_found",
+        }
+    else:
+        assert result == {"status": "error", "message": "document_not_found:en"}
 
 
 @pytest.mark.asyncio

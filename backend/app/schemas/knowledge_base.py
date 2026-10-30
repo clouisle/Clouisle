@@ -408,6 +408,9 @@ class ProcessWithChunksRequest(BaseModel):
     batch_total: Optional[int] = Field(
         default=None, description="Total number of documents in this batch"
     )
+    preview_clean_text: Optional[bool] = Field(
+        default=None, description="Clean-text setting used for the cached preview"
+    )
 
 
 class ChunkPreviewRequest(BaseModel):

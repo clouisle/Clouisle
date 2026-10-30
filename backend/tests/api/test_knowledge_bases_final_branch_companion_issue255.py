@@ -46,6 +46,9 @@ class Query:
     def prefetch_related(self, *_args):
         return self
 
+    def exclude(self, *_args, **_kwargs):
+        return self
+
     def offset(self, *_args):
         return self
 

@@ -54,6 +54,7 @@ class DocumentType(str, Enum):
     XLSX = "xlsx"
     XLS = "xls"
     JSON = "json"
+    IMAGE = "image"
     URL = "url"  # Web page
 
 

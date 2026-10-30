@@ -92,14 +92,14 @@ async def test_paths_and_media_resource_cleanup(processor, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_media_replacement_ignores_unsupported_and_invalid_data(processor):
-    invalid = "data:image/png;base64,not-valid=="
+async def test_media_replacement_rejects_unsupported_and_invalid_data(processor):
+    invalid = "data:image/png;base64,aW52YWxpZA=="
     unsupported = "data:image/bmp;base64," + base64.b64encode(b"bmp").decode()
-    text = f"{invalid} {unsupported}"
-
-    assert await processor.replace_embedded_media_data_uris(
-        text, kb_id=uuid4(), document_id=uuid4()
-    ) == (text, [])
+    for data in (invalid, unsupported):
+        with pytest.raises(ValueError, match="embedded_image_"):
+            await processor.replace_embedded_media_data_uris(
+                data, kb_id=uuid4(), document_id=uuid4()
+            )
 
 
 @pytest.mark.asyncio

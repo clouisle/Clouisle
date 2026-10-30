@@ -44,6 +44,7 @@ interface DocumentsPreviewClientProps {
 interface DocumentPreviewState {
   document: Document | null
   previewChunks: ChunkPreviewItem[]
+  previewCleanText?: boolean
   previewStats: {
     total_chunks: number
     total_tokens: number
@@ -218,6 +219,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         [docId]: {
           ...prev[docId],
           previewChunks: result.chunks,
+          previewCleanText: settings.clean_text,
           previewStats: {
             total_chunks: result.total_chunks,
             total_tokens: result.total_tokens,
@@ -293,7 +295,8 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         knowledgeBaseId,
         docId,
         chunks,
-        batch
+        batch,
+        docState.previewCleanText
       )
       // 更新文档状态 - API 返回的状态可能是 processing（因为 Celery 任务是异步的）
       setDocumentsState(prev => ({

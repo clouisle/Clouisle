@@ -7,6 +7,7 @@ import type {
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
+  KnowledgeBaseImageSettings,
   ThemeBrandingDisplay,
   ThemeMode,
 } from '../site-settings'
@@ -19,6 +20,7 @@ export type {
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
+  KnowledgeBaseImageSettings,
   ThemeBrandingDisplay,
   ThemeMode,
 }
@@ -215,6 +217,24 @@ export const siteSettingsApi = {
   },
 
   async updateMemory(data: Partial<MemorySiteSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async getKnowledgeBaseImages(): Promise<KnowledgeBaseImageSettings> {
+    const settings = await this.getAll('knowledge_base_images')
+    return {
+      kb_image_understanding_enabled: (settings.kb_image_understanding_enabled as boolean) ?? false,
+      kb_image_understanding_model_id: (settings.kb_image_understanding_model_id as string) ?? '',
+      kb_image_ocr_model_id: (settings.kb_image_ocr_model_id as string) ?? '',
+      kb_image_understanding_allow_external: (settings.kb_image_understanding_allow_external as boolean) ?? false,
+      kb_image_understanding_max_images: (settings.kb_image_understanding_max_images as number) ?? 8,
+      kb_image_understanding_max_image_bytes: (settings.kb_image_understanding_max_image_bytes as number) ?? 10485760,
+      kb_image_understanding_max_image_pixels: (settings.kb_image_understanding_max_image_pixels as number) ?? 20000000,
+      kb_image_understanding_concurrency: (settings.kb_image_understanding_concurrency as number) ?? 2,
+    }
+  },
+
+  async updateKnowledgeBaseImages(data: Partial<KnowledgeBaseImageSettings>): Promise<Record<string, unknown>> {
     return this.bulkUpdate(data)
   },
 }

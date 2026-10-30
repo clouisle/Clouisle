@@ -287,7 +287,7 @@ describe('DocumentsPreviewClient', () => {
     expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
       { content: 'Alpha beta', chunk_index: 0 },
       { content: 'Beta gamma', chunk_index: 1 },
-    ], undefined)
+    ], undefined, true)
     expect(toast.loading).toHaveBeenCalledWith('processing')
     expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":1}', { id: 'toast-1' })
     expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1')

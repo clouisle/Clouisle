@@ -201,15 +201,160 @@ async def test_get_settings_groups_and_missing_key(monkeypatch):
         ("memory_extraction_max_pending_turns", 0, False),
         ("memory_extraction_max_pending_turns", 51, False),
         ("memory_extraction_max_pending_turns", False, False),
+        ("kb_image_understanding_enabled", False, True),
+        ("kb_image_understanding_enabled", "false", False),
+        ("kb_image_understanding_allow_external", True, True),
+        ("kb_image_understanding_allow_external", 1, False),
+        ("kb_image_understanding_model_id", "", True),
+        ("kb_image_understanding_model_id", "not-a-uuid", False),
+        ("kb_image_understanding_max_images", 1, True),
+        ("kb_image_understanding_max_images", 20, True),
+        ("kb_image_understanding_max_images", 0, False),
+        ("kb_image_understanding_max_images", 21, False),
+        ("kb_image_understanding_max_images", True, False),
+        ("kb_image_understanding_max_image_bytes", 1, True),
+        ("kb_image_understanding_max_image_bytes", 52428800, True),
+        ("kb_image_understanding_max_image_bytes", 0, False),
+        ("kb_image_understanding_max_image_bytes", 52428801, False),
+        ("kb_image_understanding_max_image_pixels", 1, True),
+        ("kb_image_understanding_max_image_pixels", 40000000, True),
+        ("kb_image_understanding_max_image_pixels", 40000001, False),
+        ("kb_image_understanding_concurrency", 1, True),
+        ("kb_image_understanding_concurrency", 8, True),
+        ("kb_image_understanding_concurrency", 9, False),
     ],
 )
-async def test_validate_setting_boundaries(key, value, valid):
+async def test_validate_setting_boundaries(monkeypatch, key, value, valid):
+    if key == "kb_image_understanding_model_id" and value == "":
+        monkeypatch.setattr(
+            site_settings.SiteSetting,
+            "get_value",
+            AsyncMock(return_value=False),
+        )
     if valid:
         await _validate_setting_value(key, value)
     else:
         with pytest.raises(BusinessError) as exc_info:
             await _validate_setting_value(key, value)
         assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_kb_image_vision_model_requires_enabled_image_chat_model(monkeypatch):
+    model_id = uuid4()
+    model = SimpleNamespace(
+        capabilities={"input_modalities": ["text", "image"]},
+        is_enabled=True,
+        model_type="chat",
+    )
+    query = Query(value=model)
+    filter_mock = MagicMock(return_value=query)
+    monkeypatch.setattr(site_settings.Model, "filter", filter_mock)
+    monkeypatch.setattr(
+        site_settings,
+        "get_effective_input_capabilities",
+        lambda _model: SimpleNamespace(modalities=frozenset({"image"})),
+    )
+
+    await _validate_setting_value("kb_image_understanding_model_id", str(model_id))
+    filter_mock.assert_called_once_with(id=model_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model",
+    [
+        None,
+        SimpleNamespace(
+            capabilities={"input_modalities": ["text", "image"]},
+            is_enabled=False,
+            model_type="chat",
+        ),
+        SimpleNamespace(
+            capabilities={"input_modalities": ["text", "image"]},
+            is_enabled=True,
+            model_type="embedding",
+        ),
+        SimpleNamespace(
+            capabilities={"input_modalities": ["text"]},
+            is_enabled=True,
+            model_type="chat",
+            provider="openai",
+        ),
+    ],
+)
+async def test_kb_image_vision_model_rejects_unsupported_models(monkeypatch, model):
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=model)
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_understanding_model_id", str(uuid4()))
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_clearing_image_model_is_rejected_while_enabled(monkeypatch):
+    async def values(key, default=None):
+        if key == "kb_image_understanding_enabled":
+            return True
+        return ""
+
+    monkeypatch.setattr(site_settings.SiteSetting, "get_value", values)
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_understanding_model_id", "")
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_enabling_image_understanding_requires_configured_vision_model(
+    monkeypatch,
+):
+    model_id = str(uuid4())
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_value",
+        AsyncMock(return_value=""),
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_understanding_enabled", True)
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+    vision_model = SimpleNamespace(
+        capabilities={"input_modalities": ["text", "image"]},
+        is_enabled=True,
+        model_type="chat",
+        provider="openai",
+    )
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_value",
+        AsyncMock(return_value=model_id),
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=vision_model)
+    )
+    await _validate_setting_value("kb_image_understanding_enabled", True)
+
+
+@pytest.mark.asyncio
+async def test_bulk_enabling_image_understanding_accepts_pending_vision_model(
+    monkeypatch,
+):
+    model_id = str(uuid4())
+    vision_model = SimpleNamespace(
+        capabilities={"input_modalities": ["text", "image"]},
+        is_enabled=True,
+        model_type="chat",
+        provider="openai",
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=vision_model)
+    )
+    await _validate_setting_value(
+        "kb_image_understanding_enabled",
+        True,
+        {"kb_image_understanding_model_id": model_id},
+    )
 
 
 @pytest.mark.asyncio
@@ -870,3 +1015,86 @@ async def test_private_permission_migration_marker_is_not_manageable(monkeypatch
             current_user=SimpleNamespace(id=uuid4()),
         )
     assert site_settings._is_integration_setting(key)
+
+
+@pytest.mark.asyncio
+async def test_kb_image_ocr_model_is_optional_and_requires_image_capability(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        site_settings.SiteSetting, "get_value", AsyncMock(return_value=False)
+    )
+    await _validate_setting_value("kb_image_ocr_model_id", "")
+
+    vision_model = SimpleNamespace(
+        capabilities={"input_modalities": ["text", "image"]},
+        is_enabled=True,
+        model_type="chat",
+        provider="openai",
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=vision_model)
+    )
+    await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
+
+    text_model = SimpleNamespace(
+        capabilities={"input_modalities": ["text"]},
+        is_enabled=True,
+        model_type="chat",
+        provider="openai",
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=text_model)
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_enabling_image_understanding_accepts_ocr_only(monkeypatch):
+    ocr_model = SimpleNamespace(
+        capabilities={"input_modalities": ["text", "image"]},
+        is_enabled=True,
+        model_type="chat",
+        provider="openai",
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=ocr_model)
+    )
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_value",
+        AsyncMock(
+            side_effect=lambda key, default=None: (
+                "" if key == "kb_image_understanding_model_id" else default
+            )
+        ),
+    )
+    await _validate_setting_value(
+        "kb_image_understanding_enabled",
+        True,
+        {"kb_image_ocr_model_id": str(uuid4())},
+    )
+
+
+@pytest.mark.asyncio
+async def test_clearing_vision_model_allowed_with_ocr_and_rejected_without(monkeypatch):
+    async def values(key, default=None):
+        if key == "kb_image_understanding_enabled":
+            return True
+        if key == "kb_image_ocr_model_id":
+            return str(uuid4())
+        return default
+
+    monkeypatch.setattr(site_settings.SiteSetting, "get_value", values)
+    await _validate_setting_value("kb_image_understanding_model_id", "")
+
+    async def no_ocr(key, default=None):
+        if key == "kb_image_understanding_enabled":
+            return True
+        return ""
+
+    monkeypatch.setattr(site_settings.SiteSetting, "get_value", no_ocr)
+    with pytest.raises(BusinessError):
+        await _validate_setting_value("kb_image_understanding_model_id", "")

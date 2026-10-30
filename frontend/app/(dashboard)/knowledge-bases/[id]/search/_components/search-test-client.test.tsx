@@ -21,7 +21,6 @@ describe('dashboard SearchTestClient', () => {
       knowledgeBaseId: 'kb-1', api, backHref: '/knowledge-bases/kb-1',
       canUpdate: false, canTest: false,
     })
-    expect(tree.props.authenticatedMarkdown).toBeUndefined()
     expect(hasPermission.mock.calls.map(call => call[0])).toEqual([
       'admin:knowledge-base:update', 'admin:knowledge-base:test',
     ])

@@ -1652,6 +1652,12 @@ msgstr "文档嵌入维度与当前知识库不匹配"
 msgid "document_processing_failed_generic"
 msgstr "文档处理失败"
 
+msgid "image_understanding_failed"
+msgstr "图片理解失败，请检查配置的视觉模型地址与凭证是否可用。"
+
+msgid "image_no_text_extracted"
+msgstr "图片中未识别到可用文字。可配置视觉模型生成图像描述，或上传包含文字的图片。"
+
 msgid "no_failed_chunks"
 msgstr "没有失败的分块需要重试"
 

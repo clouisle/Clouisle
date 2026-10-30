@@ -16,7 +16,6 @@ export function SearchTestClient({ knowledgeBaseId }: { knowledgeBaseId: string 
       canUpdate={hasPermission('kb:update')}
       canTest={hasPermission('kb:test')}
       onLoadError={() => push('/app/kb')}
-      authenticatedMarkdown
     />
   )
 }

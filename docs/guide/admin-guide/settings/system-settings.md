@@ -27,6 +27,7 @@ As an administrator, you can configure:
 - **Integrations** (`/site-settings/integrations`)
 - **Storage** (`/site-settings/storage`)
 - **Memory** (`/site-settings/memory`)
+- **Parsing** (`/site-settings/parsing`)
 
 > General settings remain key-value SiteSettings, exposed through `/api/v1/admin/site-settings` with `admin:settings:read/update`. External services now use Integration records and `/api/v1/admin/integrations`. Login management requires `admin:integrations:login:read/update`; builtin configuration requires `admin:integrations:settings:read/update`. Feishu is one singleton integration declaring both `directory_sync` and `user_login`: its app ID, app secret, department scope, and directory sync are settings-domain, while the sign-in opt-in, button text, and sign-in enable/disable are login-domain. Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is decided per field, so a single card can require both domains. The global SSO policy (enable SSO, password login, auto-create users, approval, email matching) lives on **Security** but is authorized by the login domain. See [Integrations and SSO](SSO.md) for setup, domain permissions, credential handling, and migration/rollback cautions.
 
@@ -290,6 +291,33 @@ memory_extraction_max_pending_turns: 6      # 1-50
 
 The extraction model falls back to the explicitly configured enabled model, the Agent's assigned model, the system default chat model, and then the first available chat model. The cooldown debounces extraction; reaching the pending-turn threshold queues it immediately.
 
+## Document Image Parsing Settings
+
+The **Parsing** category (`/site-settings/parsing`) controls optional image OCR and understanding for documents processed after the feature is enabled. It is **off by default**, and existing documents are not reprocessed automatically.
+
+```yaml
+kb_image_understanding_enabled: false
+kb_image_understanding_model_id: ""            # enabled chat model with image input
+kb_image_ocr_model_id: ""                      # optional OCR-only image chat model
+kb_image_understanding_allow_external: false   # fetch external image URLs
+kb_image_understanding_max_images: 8           # 1-20 per document
+kb_image_understanding_max_image_bytes: 10485760   # 1-52428800
+kb_image_understanding_max_image_pixels: 20000000  # 1-40000000
+kb_image_understanding_concurrency: 2          # 1-8, per document
+```
+
+Enabling the feature requires at least one enabled chat model whose effective input capabilities include images: the vision model, the OCR model, or both. Model use still requires the model to be authorized for the owning team, and provider quota and usage accounting apply. Image content is sent to the configured provider, may leave the deployment, and may incur charges.
+
+When `kb_image_ocr_model_id` is set, OCR text is extracted by that model and the vision model produces only the factual visual description; both calls run concurrently. When only the OCR model is configured, processing indexes the extracted text and omits the image description. Leave both empty only while the feature is disabled.
+
+Processing extracts readable text and a separate factual description from supported embedded images, then indexes both with the surrounding text. Page, slide, or worksheet references are retained where available. Output is treated as untrusted content and is not executed.
+
+`kb_image_understanding_allow_external` is a separate opt-in for fetching images referenced by external URLs; it only takes effect when image understanding is enabled. When disabled, external URLs are never fetched. When enabled, requests use the centralized SSRF protection, re-validate every redirect, pin validated DNS answers, ignore proxy and cookie settings, and enforce byte and pixel limits. The concurrency value bounds work within one document/process; it is not a cluster-wide rate limit.
+
+For PDFs with both a text layer and visual content, a whole page may be sent to the vision model, so extracted text can overlap with the existing text layer. Complete deduplication is not guaranteed.
+
+If the configured vision model endpoint is unreachable or its credentials are invalid, preview and document processing fail with an image-understanding error that asks you to check the model endpoint and credentials. The system does not silently index a document without its image content.
+
 ## Storage Settings
 
 ### File Storage
@@ -328,4 +356,4 @@ object_storage_secure: true
 2. Enter the endpoint, bucket, region, access key, and secret key
 3. Save Changes
 
-**Last Updated**: 2026-10-14
+**Last Updated**: 2026-10-30

@@ -29,6 +29,11 @@ export const KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES = [
   '.xls',
   '.json',
   '.pptx',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
 ]
 
 export const KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB = 50

@@ -489,7 +489,8 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     kbId: string, 
     docId: string, 
     chunks: Array<{ content: string; chunk_index: number }>,
-    batch?: { batch_id: string; batch_total: number }
+    batch?: { batch_id: string; batch_total: number },
+    previewCleanText?: boolean
   ): Promise<Document> => {
     return api.post<Document>(
       `${prefix}/${kbId}/documents/${docId}/process-with-chunks`,
@@ -497,6 +498,7 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
         chunks,
         batch_id: batch?.batch_id,
         batch_total: batch?.batch_total,
+        preview_clean_text: previewCleanText,
       }
     )
   },

@@ -932,6 +932,63 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Maximum pending unextracted conversation turns before triggering background extraction immediately",
     },
+    # Knowledge-base image understanding
+    "kb_image_understanding_enabled": {
+        "value": False,
+        "type": "bool",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Enable image understanding during new knowledge-base document processing",
+    },
+    "kb_image_understanding_model_id": {
+        "value": "",
+        "type": "string",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Enabled chat model with image input for knowledge-base image understanding",
+    },
+    "kb_image_ocr_model_id": {
+        "value": "",
+        "type": "string",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Optional image-capable chat model used only for OCR; empty reuses the vision model",
+    },
+    "kb_image_understanding_allow_external": {
+        "value": False,
+        "type": "bool",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Allow fetching external image URLs during knowledge-base processing",
+    },
+    "kb_image_understanding_max_images": {
+        "value": 8,
+        "type": "int",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Maximum images analyzed per knowledge-base document (1-20)",
+    },
+    "kb_image_understanding_max_image_bytes": {
+        "value": 10485760,
+        "type": "int",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Maximum image size in bytes (1-52428800)",
+    },
+    "kb_image_understanding_max_image_pixels": {
+        "value": 20000000,
+        "type": "int",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Maximum total pixels per image (1-40000000)",
+    },
+    "kb_image_understanding_concurrency": {
+        "value": 2,
+        "type": "int",
+        "category": "knowledge_base_images",
+        "public": False,
+        "desc": "Maximum concurrent image understanding requests per document (1-8)",
+    },
 }
 
 

@@ -1084,6 +1084,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Document processing failed",
         "zh": "文档处理失败",
     },
+    "image_understanding_failed": {
+        "en": "Image understanding failed. Check that the configured vision model endpoint and credentials are available.",
+        "zh": "图片理解失败，请检查配置的视觉模型地址与凭证是否可用。",
+    },
+    "image_no_text_extracted": {
+        "en": "No readable text was found in this image. Add a vision model to generate a visual description, or upload an image that contains text.",
+        "zh": "图片中未识别到可用文字。可配置视觉模型生成图像描述，或上传包含文字的图片。",
+    },
     "document_processing_started": {
         "en": "Document processing started",
         "zh": "文档处理已开始",

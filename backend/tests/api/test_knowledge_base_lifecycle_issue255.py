@@ -195,6 +195,16 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
             return_value=SimpleNamespace(exists=AsyncMock(return_value=False)),
         ),
         patch.object(
+            knowledge_bases.Document,
+            "filter",
+            return_value=SimpleNamespace(all=AsyncMock(return_value=[])),
+        ),
+        patch.object(
+            knowledge_bases,
+            "VectorStore",
+            lambda: SimpleNamespace(delete_kb_vectors=AsyncMock()),
+        ),
+        patch.object(
             WeChatKnowledgeItem,
             "filter",
             return_value=MagicMock(

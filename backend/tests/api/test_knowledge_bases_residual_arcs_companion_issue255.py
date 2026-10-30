@@ -164,9 +164,19 @@ async def test_process_document_applies_only_provided_chunk_settings(monkeypatch
 async def test_preview_chunks_uses_url_source_and_separator(monkeypatch):
     kb_id, doc_id = uuid4(), uuid4()
     doc = SimpleNamespace(
-        id=doc_id, file_path=None, source_url="https://example.test", doc_type="url"
+        id=doc_id,
+        file_path=None,
+        source_url="https://example.test",
+        doc_type="url",
+        status="pending",
     )
     monkeypatch.setattr(endpoint, "check_kb_access", AsyncMock())
+    from app.services.kb_image_ingestion import IMAGE_DEFAULTS
+    from app.models.site_setting import SiteSetting
+
+    monkeypatch.setattr(
+        SiteSetting, "get_values", AsyncMock(return_value=IMAGE_DEFAULTS)
+    )
     monkeypatch.setattr(
         endpoint, "Document", SimpleNamespace(filter=lambda **_kwargs: Query(doc))
     )
@@ -176,12 +186,13 @@ async def test_preview_chunks_uses_url_source_and_separator(monkeypatch):
         AsyncMock(return_value=("alpha|beta", {})),
     )
 
-    def chunk_text(text, *, chunk_size, chunk_overlap, separators):
-        assert (text, chunk_size, chunk_overlap, separators) == (
+    def chunk_text(text, *, chunk_size, chunk_overlap, separators, is_markdown):
+        assert (text, chunk_size, chunk_overlap, separators, is_markdown) == (
             "alpha|beta",
             100,
             1,
             ["|"],
+            False,
         )
         return [
             {"chunk_index": 0, "content": "alpha", "token_count": 1, "char_count": 5}

@@ -484,6 +484,16 @@ async def test_delete_knowledge_base_removes_record_and_audits(monkeypatch):
         "filter",
         lambda **kwargs: SimpleNamespace(exists=AsyncMock(return_value=False)),
     )
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "filter",
+        lambda **kwargs: SimpleNamespace(all=AsyncMock(return_value=[])),
+    )
+    monkeypatch.setattr(
+        knowledge_bases,
+        "VectorStore",
+        lambda: SimpleNamespace(delete_kb_vectors=AsyncMock()),
+    )
     from app.models.wechat_knowledge import WeChatKnowledgeItem
 
     monkeypatch.setattr(
@@ -595,3 +605,59 @@ async def test_search_translates_provider_failures(
 
     assert caught.value.code == expected_code
     assert caught.value.msg_key == msg_key
+
+
+@pytest.mark.asyncio
+async def test_delete_knowledge_base_purges_indexes_media_and_source_files(monkeypatch):
+    record = _kb()
+    pointer = uuid4()
+    document = SimpleNamespace(
+        id=uuid4(),
+        metadata={"media_storage_document_id": str(pointer)},
+        file_path=f"documents/{record.id}/2026/10/file.txt",
+    )
+    vectors = SimpleNamespace(delete_kb_vectors=AsyncMock())
+    delete_lexical = AsyncMock()
+    delete_media = AsyncMock()
+    delete_file = AsyncMock()
+
+    monkeypatch.setattr(
+        knowledge_bases, "check_kb_access", AsyncMock(return_value=record)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.FeishuKnowledgeSource,
+        "filter",
+        lambda **kwargs: SimpleNamespace(exists=AsyncMock(return_value=False)),
+    )
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+
+    monkeypatch.setattr(
+        WeChatKnowledgeItem,
+        "filter",
+        lambda **kwargs: SimpleNamespace(
+            exclude=lambda **_: SimpleNamespace(values_list=AsyncMock(return_value=[]))
+        ),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "filter",
+        lambda **kwargs: SimpleNamespace(all=AsyncMock(return_value=[document])),
+    )
+    monkeypatch.setattr(knowledge_bases, "VectorStore", lambda: vectors)
+    monkeypatch.setattr(knowledge_bases, "delete_lexical_document", delete_lexical)
+    monkeypatch.setattr(
+        knowledge_bases.document_processor, "delete_media_assets", delete_media
+    )
+    monkeypatch.setattr(knowledge_bases.document_processor, "delete_file", delete_file)
+    monkeypatch.setattr(knowledge_bases.AuditLogService, "log", AsyncMock())
+
+    await knowledge_bases.delete_knowledge_base(record.id, SimpleNamespace(), _user())
+
+    vectors.delete_kb_vectors.assert_awaited_once_with(record.id)
+    delete_lexical.assert_awaited_once_with(document.id, record.team_id)
+    assert [item.args for item in delete_media.await_args_list] == [
+        (record.id, document.id),
+        (record.id, pointer),
+    ]
+    delete_file.assert_awaited_once_with(document.file_path)
+    record.delete.assert_awaited_once()

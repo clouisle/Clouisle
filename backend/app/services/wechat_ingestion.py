@@ -166,9 +166,6 @@ async def text_for_input(
     if kind == 3 and transcript:
         text = transcript
         source["wechat_extraction"] = "wechat_transcript"
-    elif doc_type:
-        text, metadata = await document_processor.extract_text(original, doc_type)
-        source.update(metadata)
     elif kind in (2, 3, 5) or mime.startswith(("image/", "audio/", "video/")):
         text = await extract_media(
             raw,
@@ -180,6 +177,9 @@ async def text_for_input(
             receipt.stt_model_id,
         )
         source["wechat_extraction"] = "model_media_extraction"
+    elif doc_type:
+        text, metadata = await document_processor.extract_text(original, doc_type)
+        source.update(metadata)
     else:
         raise collection_error("wechat_type_unsupported")
     return text, filename, source
