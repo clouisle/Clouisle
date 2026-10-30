@@ -1,7 +1,6 @@
 import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
 
-const PDFIUM_VERSION = "2.15.0"
-const PDFIUM_WASM_URL = `https://cdn.jsdelivr.net/npm/@embedpdf/pdfium@${PDFIUM_VERSION}/dist/pdfium.wasm`
+const PDFIUM_WASM_URL = "/pdfium/pdfium.wasm"
 
 let sharedEnginePromise: Promise<PdfEngine> | null = null
 const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()

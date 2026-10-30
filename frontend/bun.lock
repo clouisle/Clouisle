@@ -9,6 +9,7 @@
         "@embedpdf/core": "^2.15.0",
         "@embedpdf/engines": "^2.15.0",
         "@embedpdf/models": "^2.15.0",
+        "@embedpdf/pdfium": "^2.15.0",
         "@embedpdf/plugin-document-manager": "^2.15.0",
         "@embedpdf/plugin-interaction-manager": "^2.15.0",
         "@embedpdf/plugin-render": "^2.15.0",

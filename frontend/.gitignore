@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# generated runtime assets
+/public/pdfium/
+
 # production
 /build
 

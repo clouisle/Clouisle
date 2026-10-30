@@ -36,7 +36,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
 ### Stage 1: Vendor official viewers
 
 - **Files added**: `frontend/components/extend/*`, `frontend/lib/pdf-thumbnail-utils.ts`, `frontend/components/ui/context-menu.tsx`, `frontend/components/icon-placeholder.tsx`
-- **Dependencies**: `@embedpdf/core|engines|models|plugin-*@2.15.x`, `pdf-lib`, `@glideapps/glide-data-grid`, `papaparse`, upgraded `@extend-ai/react-docx/xlsx/pptx`; removed `@embedpdf/viewer`.
+- **Dependencies**: `@embedpdf/core|engines|models|pdfium|plugin-*@2.15.x`, `pdf-lib`, `@glideapps/glide-data-grid`, `papaparse`, upgraded `@extend-ai/react-docx/xlsx/pptx`; removed `@embedpdf/viewer`.
 - **Validation**: `bunx tsc --noEmit` and `bun run build`.
 
 ### Stage 2: Reconnect the shared panel
@@ -67,7 +67,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
 
 ## Risks & Mitigation
 
-- **PDFium WASM is fetched from jsDelivr** by `lib/pdf-thumbnail-utils.ts`, matching the official source. Air-gapped deployments must allow that host or serve the WASM locally.
+- **PDFium WASM is self-hosted**: `scripts/copy-pdfium-wasm.ts` copies `@embedpdf/pdfium/dist/pdfium.wasm` to `public/pdfium/pdfium.wasm` via `predev`/`prebuild`, and `lib/pdf-thumbnail-utils.ts` loads `/pdfium/pdfium.wasm`. Keep the direct `@embedpdf/pdfium` dependency aligned with `@embedpdf/engines` when re-vendoring; the generated asset is gitignored.
 - **Upstream strings**: new copy introduced by a future registry sync will stay English until a matching `common.fileViewer` key is added. Re-vendoring must diff the label set.
 - **Bundle size**: viewers are lazily imported, so they only load when a matching file is previewed.
 - **Vendored drift**: files are registry snapshots; upstream fixes require re-vendoring.
