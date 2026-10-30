@@ -51,6 +51,18 @@ describe('authenticated assets', () => {
       getAuthenticatedApiAssetUrl('http://localhost:8000/api/v1/upload/files/sandbox-artifacts/2026/09/a.txt'),
     ).toBeNull()
     expect(getAuthenticatedApiAssetUrl('https://cdn.example.test/a.txt')).toBeNull()
+    expect(
+      getAuthenticatedApiAssetUrl('https://cdn.example.test/api/v1/knowledge-bases/kb-1/image.png'),
+    ).toBeNull()
+  })
+
+  test('recognizes KB document media only on trusted API origins', () => {
+    expect(
+      getAuthenticatedApiAssetUrl('/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png'),
+    ).toBe('/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png')
+    expect(
+      getAuthenticatedApiAssetUrl('https://cdn.example.test/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png'),
+    ).toBeNull()
   })
 
   test('updates mounted token consumers when the embedded token changes', () => {

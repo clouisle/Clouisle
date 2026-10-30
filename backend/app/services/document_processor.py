@@ -6,6 +6,7 @@ Handles document parsing, text extraction, and chunking.
 import base64
 import binascii
 import hashlib
+import io
 import logging
 import mimetypes
 import os
@@ -41,6 +42,10 @@ MIME_TYPE_MAP: dict[str, str] = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": DocumentType.XLSX.value,
     "application/vnd.ms-excel": DocumentType.XLS.value,
     "application/json": DocumentType.JSON.value,
+    "image/png": DocumentType.IMAGE.value,
+    "image/jpeg": DocumentType.IMAGE.value,
+    "image/gif": DocumentType.IMAGE.value,
+    "image/webp": DocumentType.IMAGE.value,
 }
 
 # File extension to document type mapping
@@ -58,10 +63,20 @@ EXT_TYPE_MAP: dict[str, str] = {
     ".xlsx": DocumentType.XLSX.value,
     ".xls": DocumentType.XLS.value,
     ".json": DocumentType.JSON.value,
+    ".png": DocumentType.IMAGE.value,
+    ".jpg": DocumentType.IMAGE.value,
+    ".jpeg": DocumentType.IMAGE.value,
+    ".gif": DocumentType.IMAGE.value,
+    ".webp": DocumentType.IMAGE.value,
 }
 
 MEDIA_ASSETS_METADATA_KEY = "media_assets"
-DATA_URI_IMAGE_RE = re.compile(r"data:(image/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
+DATA_URI_IMAGE_RE = re.compile(
+    r"data:(image/[a-zA-Z0-9.+-]+);base64,([^\s)\"'<>]*)", re.IGNORECASE
+)
+MAX_EMBEDDED_IMAGE_COUNT = 100
+MAX_EMBEDDED_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_EMBEDDED_IMAGE_PIXELS = 40_000_000
 ALLOWED_MEDIA_MIME_TYPES = {
     "image/gif",
     "image/jpeg",
@@ -338,24 +353,104 @@ class DocumentProcessor:
             "size": len(content),
         }
 
+    @staticmethod
+    def _markdown_image_bounds(
+        text: str, data_uri_start: int, data_uri_end: int
+    ) -> tuple[int, int, str] | None:
+        open_index = text.rfind("![", 0, data_uri_start)
+        if open_index == -1:
+            return None
+        alt_end = text.find("](", open_index + 2, data_uri_start)
+        if alt_end == -1 or alt_end + 2 != data_uri_start:
+            return None
+        close_index = DocumentProcessor._markdown_image_close(text, data_uri_end)
+        if close_index == -1:
+            return None
+        return open_index, close_index + 1, text[open_index + 2 : alt_end]
+
+    @staticmethod
+    def _markdown_image_close(text: str, position: int) -> int:
+        index = position
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            return -1
+        if text[index] in {'"', "'"}:
+            quote = text[index]
+            end = text.find(quote, index + 1)
+            if end == -1:
+                return -1
+            index = end + 1
+        elif text[index] == "(":
+            depth = 0
+            for cursor in range(index, len(text)):
+                if text[cursor] == "(":
+                    depth += 1
+                elif text[cursor] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        index = cursor + 1
+                        break
+            else:
+                return -1
+        while index < len(text) and text[index].isspace():
+            index += 1
+        return index if index < len(text) and text[index] == ")" else -1
+
     async def replace_embedded_media_data_uris(
         self,
         text: str,
         *,
         kb_id: UUID,
         document_id: UUID,
+        max_image_bytes: int = MAX_EMBEDDED_IMAGE_BYTES,
+        max_images: int | None = None,
+        raise_on_count_exceeded: bool = False,
     ) -> tuple[str, list[dict[str, Any]]]:
         assets: list[dict[str, Any]] = []
-        replacements: dict[str, str] = {}
+        replacements: list[tuple[int, int, str]] = []
+        image_limit = MAX_EMBEDDED_IMAGE_COUNT if max_images is None else max_images
 
         for match in DATA_URI_IMAGE_RE.finditer(text):
+            if len(assets) >= image_limit:
+                if raise_on_count_exceeded:
+                    raise ValueError("embedded_image_count_exceeded")
+                bounds = self._markdown_image_bounds(text, match.start(), match.end())
+                if bounds is not None:
+                    replacements.append(bounds)
+                else:
+                    replacements.append((match.start(), match.end(), ""))
+                continue
             content_type = match.group(1).lower()
             if content_type not in ALLOWED_MEDIA_MIME_TYPES:
-                continue
+                raise ValueError("embedded_image_type_unsupported")
+            encoded = match.group(2)
+            if len(encoded) > ((max_image_bytes + 2) // 3) * 4:
+                raise ValueError("embedded_image_size_exceeded")
             try:
-                content = base64.b64decode(match.group(2), validate=True)
-            except binascii.Error:
-                continue
+                content = base64.b64decode(encoded, validate=True)
+            except binascii.Error as exc:
+                raise ValueError("embedded_image_invalid") from exc
+            if len(content) > max_image_bytes:
+                raise ValueError("embedded_image_size_exceeded")
+            if content_type != "image/svg+xml":
+                from PIL import Image, UnidentifiedImageError
+
+                try:
+                    with Image.open(io.BytesIO(content)) as image:
+                        if image.width * image.height > MAX_EMBEDDED_IMAGE_PIXELS:
+                            raise ValueError("embedded_image_pixels_exceeded")
+                        actual_type = Image.MIME.get(image.format)
+                        if actual_type != content_type:
+                            raise ValueError("embedded_image_type_mismatch")
+                        image.verify()
+                except (
+                    UnidentifiedImageError,
+                    OSError,
+                    SyntaxError,
+                    Image.DecompressionBombError,
+                ) as exc:
+                    raise ValueError("embedded_image_invalid") from exc
             asset = await self._save_media_asset(
                 kb_id=kb_id,
                 document_id=document_id,
@@ -363,12 +458,16 @@ class DocumentProcessor:
                 content=content,
             )
             assets.append(asset)
-            replacements[match.group(0)] = asset["url"]
+            replacements.append((match.start(), match.end(), asset["url"]))
 
-        def replace(match: re.Match[str]) -> str:
-            return replacements.get(match.group(0), match.group(0))
-
-        return DATA_URI_IMAGE_RE.sub(replace, text), assets
+        pieces: list[str] = []
+        position = 0
+        for start, end, replacement in replacements:
+            pieces.append(text[position:start])
+            pieces.append(replacement)
+            position = end
+        pieces.append(text[position:])
+        return "".join(pieces), assets
 
     async def extract_text(
         self,
@@ -397,7 +496,31 @@ class DocumentProcessor:
         }
 
         try:
-            if doc_type == DocumentType.TXT.value:
+            if doc_type == DocumentType.IMAGE.value:
+                from PIL import Image, UnidentifiedImageError
+
+                try:
+                    with Image.open(io.BytesIO(content)) as image:
+                        content_type = Image.MIME.get(image.format or "")
+                        if content_type not in {
+                            "image/png",
+                            "image/jpeg",
+                            "image/gif",
+                            "image/webp",
+                        }:
+                            raise ValueError("embedded_image_type_unsupported")
+                        image.verify()
+                except (
+                    UnidentifiedImageError,
+                    OSError,
+                    SyntaxError,
+                    Image.DecompressionBombError,
+                ) as exc:
+                    raise ValueError("embedded_image_invalid") from exc
+                encoded = base64.b64encode(content).decode("ascii")
+                text = f"![Image](data:{content_type};base64,{encoded})"
+                metadata["format"] = "markdown"
+            elif doc_type == DocumentType.TXT.value:
                 text = content.decode("utf-8", errors="ignore")
             elif doc_type == DocumentType.MD.value:
                 text = content.decode("utf-8", errors="ignore")

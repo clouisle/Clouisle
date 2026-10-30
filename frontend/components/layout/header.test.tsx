@@ -9,7 +9,7 @@ let pathname = '/dashboard'
 const iconNames = [
   'Activity', 'BarChart3', 'Bell', 'Bot', 'Brain', 'Database', 'FileText', 'Key',
   'KeyRound', 'LayoutDashboard', 'Palette', 'Search', 'Send', 'Settings', 'Shield', 'Users',
-  'UsersRound', 'Wrench', 'Globe', 'Mail', 'Plug',
+  'UsersRound', 'Wrench', 'Globe', 'Mail', 'Plug', 'Image',
 ]
 
 mock.module('next/navigation', () => ({

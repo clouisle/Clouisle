@@ -91,6 +91,9 @@ class _Query:
     def filter(self, **_kwargs):
         return self
 
+    def exclude(self, **_kwargs):
+        return self
+
     def prefetch_related(self, *_args):
         return self
 

@@ -408,6 +408,13 @@ class ProcessWithChunksRequest(BaseModel):
     batch_total: Optional[int] = Field(
         default=None, description="Total number of documents in this batch"
     )
+    preview_clean_text: Optional[bool] = Field(
+        default=None, description="Clean-text setting used for the cached preview"
+    )
+    preview_version: Optional[str] = Field(
+        default=None,
+        description="Version of the preview entry that produced these chunks",
+    )
 
 
 class ChunkPreviewRequest(BaseModel):
@@ -444,6 +451,9 @@ class ChunkPreviewResponse(BaseModel):
     total_tokens: int
     total_chars: int
     chunks: List[ChunkPreviewItem]
+    preview_version: Optional[str] = Field(
+        default=None, description="Version of the cached preview entry"
+    )
 
 
 # ============ Search Schemas ============

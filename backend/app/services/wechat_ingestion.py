@@ -166,20 +166,26 @@ async def text_for_input(
     if kind == 3 and transcript:
         text = transcript
         source["wechat_extraction"] = "wechat_transcript"
+    elif kind in (2, 3, 5) or mime.startswith(("image/", "audio/", "video/")):
+        if (kind == 2 or mime.startswith("image/")) and not receipt.vision_model_id:
+            # Let the durable document pipeline apply site-wide OCR-only settings.
+            text = str(spec.get("caption") or filename).strip() or filename
+            source["wechat_original_sha256"] = hashlib.sha256(raw).hexdigest()
+            source["wechat_extraction"] = "document_image_processing"
+        else:
+            text = await extract_media(
+                raw,
+                filename,
+                mime,
+                kind,
+                str(kb.team_id),
+                receipt.vision_model_id,
+                receipt.stt_model_id,
+            )
+            source["wechat_extraction"] = "model_media_extraction"
     elif doc_type:
         text, metadata = await document_processor.extract_text(original, doc_type)
         source.update(metadata)
-    elif kind in (2, 3, 5) or mime.startswith(("image/", "audio/", "video/")):
-        text = await extract_media(
-            raw,
-            filename,
-            mime,
-            kind,
-            str(kb.team_id),
-            receipt.vision_model_id,
-            receipt.stt_model_id,
-        )
-        source["wechat_extraction"] = "model_media_extraction"
     else:
         raise collection_error("wechat_type_unsupported")
     return text, filename, source
@@ -224,7 +230,9 @@ async def claim_document(
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         raise collection_error("wechat_empty_content")
-    digest = hashlib.sha256(normalized.encode()).hexdigest()
+    original_sha = metadata.get("wechat_original_sha256")
+    digest_source = f"wechat-image:{original_sha}" if original_sha else normalized
+    digest = hashlib.sha256(digest_source.encode()).hexdigest()
     path = f"documents/{kb.id}/wechat/{item.id}/content.md"
     await save_content(path, normalized.encode())
     source_fields = await document_source_fields(name, metadata, path)

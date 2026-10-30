@@ -72,6 +72,10 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor, sanitize_content
+from app.services.kb_image_understanding import (
+    KBImageUnderstandingError,
+    KBImageValidationError,
+)
 from app.services.lexical_store import (
     delete_document as delete_lexical_document,
     index_chunk as index_lexical_chunk,
@@ -204,7 +208,17 @@ def serialize_document_error(error_message: str | None) -> str | None:
     return serialize_knowledge_base_error(error_message)
 
 
+def ensure_document_is_visible(doc: Document) -> None:
+    if getattr(doc, "status", None) == "rechunk_staging":
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_NOT_FOUND,
+            msg_key="document_not_found",
+            status_code=404,
+        )
+
+
 def ensure_document_is_locally_managed(doc: Document) -> None:
+    ensure_document_is_visible(doc)
     metadata = doc.metadata or {}
     if metadata.get("feishu_source_id") or metadata.get("feishu_read_only"):
         raise BusinessError(
@@ -979,6 +993,37 @@ async def delete_knowledge_base(
             if collected.file_path:
                 await document_processor.delete_file(collected.file_path)
 
+    # Purge external indexes and stored files before the relational cascade.
+    documents = await Document.filter(knowledge_base_id=kb.id).all()
+    vector_store = VectorStore()
+    try:
+        await vector_store.delete_kb_vectors(kb.id)
+    except Exception:
+        logger.exception("Failed to delete Qdrant vectors for knowledge base %s", kb.id)
+    for document in documents:
+        try:
+            await delete_lexical_document(document.id, kb.team_id)
+        except Exception:
+            logger.exception(
+                "Failed to delete lexical rows for document %s", document.id
+            )
+        try:
+            await document_processor.delete_media_assets(kb.id, document.id)
+            pointer = (document.metadata or {}).get("media_storage_document_id")
+            if pointer:
+                try:
+                    pointer_id = UUID(str(pointer))
+                except (ValueError, TypeError):
+                    pointer_id = None
+                if pointer_id and pointer_id != document.id:
+                    await document_processor.delete_media_assets(kb.id, pointer_id)
+            if document.file_path:
+                await document_processor.delete_file(document.file_path)
+        except Exception:
+            logger.exception(
+                "Failed to delete stored files for document %s", document.id
+            )
+
     # Delete all documents and chunks (cascades)
     await kb.delete()
 
@@ -1010,7 +1055,11 @@ async def get_knowledge_base_stats(
     kb = await check_kb_access(kb_id, current_user)
 
     # Get document counts by status
-    docs = await Document.filter(knowledge_base_id=kb_id).all()
+    docs = (
+        await Document.filter(knowledge_base_id=kb_id)
+        .exclude(status="rechunk_staging")
+        .all()
+    )
     by_status: dict[str, int] = {}
     by_type: dict[str, int] = {}
     for doc in docs:
@@ -1072,7 +1121,7 @@ async def list_documents(
     """
     await check_kb_access(kb_id, current_user)
 
-    query = Document.filter(knowledge_base_id=kb_id)
+    query = Document.filter(knowledge_base_id=kb_id).exclude(status="rechunk_staging")
     if search:
         query = query.filter(name__icontains=search)
     if status:
@@ -1126,11 +1175,11 @@ async def upload_document(
             msg_key="invalid_document_type",
         )
 
-    # Read file content
-    content = await file.read()
-    file_size = len(content)
+    # Read at most one byte beyond the configured limit.
     max_upload_size_mb = await get_kb_document_max_upload_size_mb()
     max_upload_size_bytes = max_upload_size_mb * BYTES_PER_MB
+    content = await file.read(max_upload_size_bytes + 1)
+    file_size = len(content)
     if file_size > max_upload_size_bytes:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
@@ -1270,6 +1319,7 @@ async def get_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_visible(doc)
 
     return success(data=await serialize_document(doc))
 
@@ -1365,6 +1415,14 @@ async def delete_document(
 
     # Delete extracted media assets if exists
     await document_processor.delete_media_assets(kb.id, doc.id)
+    media_pointer = (doc.metadata or {}).get("media_storage_document_id")
+    if media_pointer:
+        try:
+            pointer_id = UUID(str(media_pointer))
+        except (ValueError, TypeError):
+            pointer_id = None
+        if pointer_id and pointer_id != doc.id:
+            await document_processor.delete_media_assets(kb.id, pointer_id)
 
     # Delete file if exists
     if doc.file_path:
@@ -1418,6 +1476,7 @@ async def download_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_visible(doc)
 
     if not doc.file_path:
         raise BusinessError(
@@ -1456,7 +1515,11 @@ async def download_document(
         "xls": "application/vnd.ms-excel",
         "json": "application/json",
     }
-    media_type = media_types.get(doc.doc_type, "application/octet-stream")
+    media_type = (
+        mimetypes.guess_type(doc.name)[0] or "application/octet-stream"
+        if doc.doc_type == DocumentType.IMAGE.value
+        else media_types.get(doc.doc_type, "application/octet-stream")
+    )
 
     return await storage.response(
         storage_key,
@@ -1484,6 +1547,7 @@ async def get_document_media(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_visible(doc)
 
     try:
         safe_filename = document_processor._sanitize_filename(filename)
@@ -1497,8 +1561,12 @@ async def get_document_media(
     media_document_id = doc_id
     metadata = doc.metadata or {}
     if metadata.get("feishu_source_id") and metadata.get("feishu_media_document_id"):
+        pointer = metadata["feishu_media_document_id"]
+    else:
+        pointer = metadata.get("media_storage_document_id")
+    if pointer:
         try:
-            media_document_id = UUID(metadata["feishu_media_document_id"])
+            media_document_id = UUID(pointer)
         except (ValueError, TypeError, AttributeError):
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
@@ -1510,14 +1578,26 @@ async def get_document_media(
     storage = await get_upload_storage_backend(root)
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     if await storage.exists(storage_key):
-        return await storage.response(storage_key, content_type=media_type)
+        response = await storage.response(storage_key, content_type=media_type)
+        headers = getattr(response, "headers", None)
+        if headers is not None:
+            headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+            headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     # Media assets created before this cutover were always local, including
     # object-storage deployments. Keep them readable until migration/cleanup.
     if not isinstance(storage, LocalUploadStorage):
         legacy_storage = LocalUploadStorage(root)
         if await legacy_storage.exists(storage_key):
-            return await legacy_storage.response(storage_key, content_type=media_type)
+            response = await legacy_storage.response(
+                storage_key, content_type=media_type
+            )
+            headers = getattr(response, "headers", None)
+            if headers is not None:
+                headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+                headers["X-Content-Type-Options"] = "nosniff"
+            return response
 
     raise BusinessError(
         code=ResponseCode.VALIDATION_ERROR,
@@ -1643,6 +1723,88 @@ async def process_document_with_chunks(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="document_is_processing",
         )
+    from app.services.kb_image_ingestion import image_settings
+    from app.services.kb_preview_cache import get_kb_preview_cache, preview_version
+    import json
+
+    image_config = await image_settings()
+    preview_metadata = {}
+    if image_config["kb_image_understanding_enabled"] and (
+        doc.file_path or doc.source_url
+    ):
+        if process_request.preview_clean_text is None:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR, msg_key="chunk_preview_failed"
+            )
+        source = (
+            await document_processor.read_file(doc.file_path)
+            if doc.file_path
+            else str(doc.source_url).encode()
+        )
+        entry = await get_kb_preview_cache().get_existing(
+            user_id=str(current_user.id),
+            knowledge_base_id=str(kb_id),
+            document_id=str(doc_id),
+            source=source,
+            clean_text=process_request.preview_clean_text,
+            model=str(image_config["kb_image_understanding_model_id"]),
+            policy=json.dumps(image_config, sort_keys=True),
+        )
+        if entry is None:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR, msg_key="chunk_preview_failed"
+            )
+        expected_version = preview_version(entry)
+        if (
+            not process_request.preview_version
+            or process_request.preview_version != expected_version
+        ):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="chunk_preview_stale",
+            )
+        preview_metadata = entry.metadata
+
+    if doc.status == DocumentStatus.COMPLETED.value:
+        from app.tasks.knowledge_base import rechunk_document_task
+
+        chunks = [
+            {
+                "content": chunk.content.strip(),
+                "chunk_index": chunk.chunk_index,
+                "token_count": len(chunk.content.strip()) // 4,
+            }
+            for chunk in process_request.chunks
+            if chunk.content.strip()
+        ]
+        if not chunks:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="document_no_chunks_generated",
+            )
+        try:
+            await _dispatch_document_task(
+                doc,
+                rechunk_document_task,
+                str(doc.id),
+                status=doc.status,
+                metadata_updates={
+                    "rechunk_preview_chunks": chunks,
+                    "rechunk_preview_metadata": preview_metadata,
+                },
+            )
+        except Exception as exc:
+            logger.exception("Celery rechunk task publication failed")
+            raise BusinessError(
+                code=ResponseCode.UNKNOWN_ERROR, msg_key="task_dispatch_failed"
+            ) from exc
+        doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
+        return success(
+            data=await serialize_document(doc), msg_key="document_processing_started"
+        )
+
+    if preview_metadata:
+        doc.metadata = {**(doc.metadata or {}), **preview_metadata}
 
     # Cancel existing task if any (for reprocessing completed/error documents)
     old_task_id = (doc.metadata or {}).get("task_id")
@@ -1655,18 +1817,6 @@ async def process_document_with_chunks(
             pass
 
     audit_before = AuditLogService.snapshot(doc, "document")
-
-    # Delete existing external index records before replacing authoritative chunks.
-    if doc.status == DocumentStatus.COMPLETED.value:
-        await delete_lexical_document(doc.id, kb.team_id)
-        try:
-            from app.services.vector_store import vector_store
-
-            # Delete old vectors (chunks) by document ID
-            await vector_store.delete_document_vectors(doc.id)
-            logger.info(f"Deleted existing vectors for document {doc.id}")
-        except Exception as e:
-            logger.warning(f"Failed to delete existing vectors: {e}")
 
     # Update document status to processing
     doc.status = DocumentStatus.PROCESSING.value
@@ -1837,13 +1987,18 @@ async def preview_document_chunks(
     """
     await check_kb_access(kb_id, current_user)
 
-    doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
+    doc = (
+        await Document.filter(id=doc_id, knowledge_base_id=kb_id)
+        .prefetch_related("knowledge_base")
+        .first()
+    )
     if not doc:
         raise BusinessError(
             code=ResponseCode.DOCUMENT_NOT_FOUND,
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_visible(doc)
 
     # Document must have a file path or source URL
     if not doc.file_path and not doc.source_url:
@@ -1853,9 +2008,45 @@ async def preview_document_chunks(
         )
 
     try:
-        # Extract text from document
-        if doc.file_path:
-            text, _ = await document_processor.extract_text(
+        from app.services.kb_image_ingestion import image_settings, prepare_document
+        from app.services.kb_preview_cache import (
+            KBPreviewCacheEntry,
+            get_kb_preview_cache,
+            preview_version,
+        )
+        import json
+
+        settings = await image_settings()
+        preview_version_value: str | None = None
+        if settings["kb_image_understanding_enabled"]:
+            await check_kb_access(kb_id, current_user, require_write=True)
+            source = (
+                await document_processor.read_file(doc.file_path)
+                if doc.file_path
+                else str(doc.source_url).encode()
+            )
+
+            async def compute() -> KBPreviewCacheEntry:
+                processed, metadata = await prepare_document(
+                    doc, clean_text=preview_in.clean_text, settings=settings
+                )
+                return KBPreviewCacheEntry(enriched_text=processed, metadata=metadata)
+
+            entry = await get_kb_preview_cache().get_or_create(
+                user_id=str(current_user.id),
+                knowledge_base_id=str(kb_id),
+                document_id=str(doc_id),
+                source=source,
+                clean_text=preview_in.clean_text,
+                model=str(settings["kb_image_understanding_model_id"]),
+                policy=json.dumps(settings, sort_keys=True),
+                compute=compute,
+                refresh=bool(doc.source_url),
+            )
+            text, extraction_metadata = entry.enriched_text, entry.metadata
+            preview_version_value = preview_version(entry)
+        elif doc.file_path:
+            text, extraction_metadata = await document_processor.extract_text(
                 doc.file_path,
                 doc.doc_type,
                 clean_text=preview_in.clean_text,
@@ -1863,10 +2054,14 @@ async def preview_document_chunks(
                 document_id=doc_id,
             )
         else:
-            text, _ = await document_processor.fetch_url_content(
-                doc.source_url,  # type: ignore[arg-type]
+            text, extraction_metadata = await document_processor.fetch_url_content(
+                doc.source_url,
                 clean_text=preview_in.clean_text,
             )
+
+        is_markdown = doc.doc_type == DocumentType.MD.value or (
+            extraction_metadata.get("format") == "markdown"
+        )
 
         # Create chunks with preview settings
         from app.services.document_processor import chunk_text
@@ -1877,6 +2072,7 @@ async def preview_document_chunks(
             chunk_size=preview_in.chunk_size,
             chunk_overlap=preview_in.chunk_overlap,
             separators=separators,
+            is_markdown=is_markdown,
         )
 
         # Build preview response
@@ -1900,12 +2096,29 @@ async def preview_document_chunks(
                 total_tokens=total_tokens,
                 total_chars=total_chars,
                 chunks=preview_items,
+                preview_version=preview_version_value,
             ),
             msg_key="chunk_preview_generated",
         )
 
     except BusinessError:
         raise
+    except (KBImageUnderstandingError, KBImageValidationError) as exc:
+        vision_error = getattr(exc, "code", "image_understanding_failed")
+        msg_key = (
+            "image_no_text_extracted"
+            if vision_error == "image_no_text_extracted"
+            else "image_understanding_failed"
+        )
+        logger.warning(
+            "Image understanding failed for document %s: %s", doc_id, vision_error
+        )
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key=msg_key,
+            status_code=400,
+            data={"vision_error": vision_error},
+        ) from exc
     except Exception as e:
         logger.exception(f"Error previewing chunks for document {doc_id}: {e}")
         raise BusinessError(
@@ -1949,6 +2162,58 @@ async def reprocess_document(
             celery_app.control.revoke(old_task_id, terminate=True)
         except Exception as e:
             logger.warning(f"Failed to revoke old task {old_task_id}: {e}")
+
+    # Keep the published version until a staged replacement is fully indexed.
+    if doc.status == DocumentStatus.COMPLETED.value:
+        from app.tasks.knowledge_base import rechunk_document_task
+
+        doc_meta = doc.metadata or {}
+        kb_settings = kb.settings or {}
+        audit_before = AuditLogService.snapshot(doc, "document")
+        try:
+            await _dispatch_document_task(
+                doc,
+                rechunk_document_task,
+                str(doc.id),
+                status=doc.status,
+                metadata_updates={
+                    "rechunk_settings": {
+                        "chunk_size": doc_meta.get("chunk_size")
+                        or kb_settings.get("chunk_size", 1000),
+                        "chunk_overlap": doc_meta.get("chunk_overlap")
+                        or kb_settings.get("chunk_overlap", 100),
+                        "separator": doc_meta.get("separator")
+                        or kb_settings.get("separator"),
+                        "clean_text": doc_meta.get("clean_text", True),
+                    },
+                    "rechunk_preview_chunks": None,
+                    "rechunk_preview_metadata": None,
+                },
+            )
+        except Exception as exc:
+            logger.exception("Celery reprocess task publication failed")
+            raise BusinessError(
+                code=ResponseCode.UNKNOWN_ERROR, msg_key="task_dispatch_failed"
+            ) from exc
+
+        await AuditLogService.log(
+            user=current_user,
+            action="reprocess_document",
+            resource_type="document",
+            resource_id=doc_id,
+            resource_name=doc.name,
+            operation="update",
+            status="success",
+            request=request,
+            changes=AuditLogService.build_changes(
+                audit_before, AuditLogService.snapshot(doc, "document")
+            ),
+            metadata={"knowledge_base_id": str(kb_id)},
+        )
+        doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
+        return success(
+            data=await serialize_document(doc), msg_key="document_reprocess_started"
+        )
 
     # Remove old lexical data before asynchronous reprocessing replaces chunks.
     await delete_lexical_document(doc.id, kb.team_id)
@@ -2186,6 +2451,7 @@ async def list_document_chunks(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_visible(doc)
 
     query = DocumentChunk.filter(document_id=doc_id).order_by("chunk_index")
     total = await query.count()
@@ -2589,9 +2855,9 @@ async def rechunk_document(
 ) -> Any:
     """
     Re-chunk a document with new chunking settings.
-    This will delete all existing chunks and create new ones.
+    The published version stays searchable until the replacement is indexed.
     """
-    kb = await check_kb_access(kb_id, current_user, require_write=True)
+    await check_kb_access(kb_id, current_user, require_write=True)
 
     doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
     if not doc:
@@ -2618,23 +2884,8 @@ async def rechunk_document(
         except Exception:
             pass
 
-    # Remove old lexical data before asynchronous rechunking replaces chunks.
-    await delete_lexical_document(doc.id, kb.team_id)
-
-    # Store the rechunk settings in document metadata
     audit_before = AuditLogService.snapshot(doc, "document")
-    if not doc.metadata:
-        doc.metadata = {}
-    doc.metadata["rechunk_settings"] = {
-        "chunk_size": rechunk_in.chunk_size,
-        "chunk_overlap": rechunk_in.chunk_overlap,
-        "separator": rechunk_in.separator,
-    }
-    doc.status = DocumentStatus.PENDING.value
-    doc.error_message = None  # type: ignore[assignment]
-    await doc.save()
 
-    # Trigger rechunk task
     try:
         from app.tasks.knowledge_base import rechunk_document_task
 
@@ -2642,19 +2893,23 @@ async def rechunk_document(
             doc,
             rechunk_document_task,
             str(doc.id),
-            status=DocumentStatus.PENDING.value,
+            status=doc.status,
             metadata_updates={
                 "rechunk_settings": {
                     "chunk_size": rechunk_in.chunk_size,
                     "chunk_overlap": rechunk_in.chunk_overlap,
                     "separator": rechunk_in.separator,
-                }
+                    "clean_text": True,
+                },
+                "rechunk_preview_chunks": None,
+                "rechunk_preview_metadata": None,
             },
         )
-    except Exception:
-        import logging
-
-        logging.warning("Celery task not dispatched - worker may not be running")
+    except Exception as exc:
+        logger.exception("Celery rechunk task publication failed")
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR, msg_key="task_dispatch_failed"
+        ) from exc
 
     await AuditLogService.log(
         user=current_user,

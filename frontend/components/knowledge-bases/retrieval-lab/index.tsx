@@ -30,6 +30,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { getAuthenticatedApiAssetUrl } from '@/components/chat/authenticated-asset'
+import { AuthenticatedImage } from '@/components/chat/authenticated-media'
 import { cn, formatDuration } from '@/lib/utils'
 import { type Config, type RetrievalApi, runConfig } from './shared'
 
@@ -100,7 +102,6 @@ interface RetrievalLabProps {
   backHref: string
   canTest: boolean
   canUpdate: boolean
-  authenticatedMarkdown?: boolean
   onLoadError?: () => void
 }
 
@@ -110,51 +111,37 @@ const DEFAULT_CONFIG: Config = {
   rerank_enabled: true, rerank_candidate_k: 10, rerank_score_threshold: null,
 }
 
-function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string; alt?: string }) {
-  const [objectUrl, setObjectUrl] = React.useState<string | null>(null)
-  const [failed, setFailed] = React.useState(false)
+const KB_MEDIA_ASSET_PATH =
+  /^\/api\/v1\/(?:admin\/)?knowledge-bases\/[^/]+\/documents\/[^/]+\/media\/[^/]+$/
 
-  React.useEffect(() => {
-    let cancelled = false
-    setFailed(false)
-    const normalized = src.trim().toLowerCase()
-    if (!src || normalized.startsWith('data:') || normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')) {
-      setObjectUrl(null)
-      setFailed(Boolean(src))
-      return
-    }
-    if (!src.startsWith('/api/v1/knowledge-bases/')) {
-      setObjectUrl(src)
-      return
-    }
-    const controller = new AbortController()
-    let currentObjectUrl: string | null = null
-    const token = localStorage.getItem('access_token')
-    fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : undefined, signal: controller.signal })
-      .then(response => {
-        if (!response.ok) throw new Error('image_load_failed')
-        return response.blob()
-      })
-      .then(blob => {
-        if (cancelled) return
-        currentObjectUrl = URL.createObjectURL(blob)
-        setObjectUrl(currentObjectUrl)
-      })
-      .catch(error => {
-        if (!cancelled && (error as Error).name !== 'AbortError') setFailed(true)
-      })
-    return () => {
-      cancelled = true
-      controller.abort()
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
-    }
-  }, [src])
+function AuthenticatedMarkdownImage({
+  src = '',
+  alt = '',
+  className,
+  title,
+  width,
+  height,
+}: Omit<React.ComponentProps<'img'>, 'src'> & { src?: string | Blob }) {
+  if (typeof src !== 'string') return alt ? <span className="text-muted-foreground">{alt}</span> : null
+  const assetUrl = getAuthenticatedApiAssetUrl(src)
+  if (!assetUrl) return alt ? <span className="text-muted-foreground">{alt}</span> : null
 
-  return failed || !objectUrl
-    ? <span className="text-muted-foreground">{alt || src}</span>
-    : <img src={objectUrl} alt={alt} loading="lazy" />
+  const pathname = assetUrl.split(/[?#]/, 1)[0]
+  if (!KB_MEDIA_ASSET_PATH.test(pathname)) {
+    return alt ? <span className="text-muted-foreground">{alt}</span> : null
+  }
+  return (
+    <AuthenticatedImage
+      src={assetUrl}
+      alt={alt}
+      className={className}
+      title={title}
+      width={width}
+      height={height}
+      loading="lazy"
+    />
+  )
 }
-
 function Highlight({ text, query }: { text: string; query: string }) {
   const terms = query.trim().split(/\s+/).filter(Boolean).sort((a, b) => b.length - a.length)
   if (!terms.length) return text
@@ -208,11 +195,10 @@ type Translate = {
   has(key: string): boolean
 }
 
-function ResultDetail({ result, side, rank, authenticatedMarkdown, resolvedTheme, t, onClose }: {
+function ResultDetail({ result, side, rank, resolvedTheme, t, onClose }: {
   result: SearchResult
   side: 'a' | 'b'
   rank: number
-  authenticatedMarkdown: boolean
   resolvedTheme: string | undefined
   t: Translate
   onClose: () => void
@@ -251,7 +237,7 @@ function ResultDetail({ result, side, rank, authenticatedMarkdown, resolvedTheme
         </div>
         <div className="min-w-0 rounded-md border bg-muted/20 p-4" data-color-mode={resolvedTheme === 'dark' ? 'dark' : 'light'}>
           <div className="w-full max-w-[75ch] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md [&_img]:object-contain [&_a.anchor]:!ml-0 [&_a]:break-words [&_code]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm [&_li]:text-sm [&_p]:text-sm [&_p]:leading-relaxed [&_pre]:overflow-x-auto [&_pre]:text-xs [&_table]:text-sm">
-            <MDPreview source={result.content} components={authenticatedMarkdown ? { img: ({ src, alt }) => <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} /> } : undefined} />
+            <MDPreview source={result.content} components={{ img: AuthenticatedMarkdownImage }} />
           </div>
         </div>
         {(result.degradation_reasons?.length || result.rerank_reason) && <p className="text-xs text-amber-700 dark:text-amber-300">{t('fallbackReasons')}: {[...(result.degradation_reasons ?? []).map(reason => `${reason.channel}: ${reason.error}`), result.rerank_reason].filter(Boolean).join('; ')}</p>}
@@ -260,7 +246,7 @@ function ResultDetail({ result, side, rank, authenticatedMarkdown, resolvedTheme
   </aside>
 }
 
-export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdate, authenticatedMarkdown = false, onLoadError }: RetrievalLabProps) {
+export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdate, onLoadError }: RetrievalLabProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const { resolvedTheme } = useTheme()
@@ -498,7 +484,6 @@ export function RetrievalLab({ knowledgeBaseId, api, backHref, canTest, canUpdat
     result={selectedResult}
     side={selection.side}
     rank={selectedIndex + 1}
-    authenticatedMarkdown={authenticatedMarkdown}
     resolvedTheme={resolvedTheme}
     t={t}
     onClose={() => setSelection(null)}

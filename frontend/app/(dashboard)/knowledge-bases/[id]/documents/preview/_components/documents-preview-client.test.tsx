@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
+class MockApiError extends Error {
+  code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.code = code
+  }
+  isValidationError() { return this.code === 1001 }
+}
+
 const push = mock()
 const toast = { success: mock(), error: mock(), loading: mock(() => 'toast-1') }
 const api = {
@@ -46,7 +55,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${JSON.stringify(values)}` : key,
 }))
 mock.module('sonner', () => ({ toast }))
-mock.module('@/lib/api', () => ({ adminKnowledgeBasesApi: api }))
+mock.module('@/lib/api', () => ({ ApiError: MockApiError, adminKnowledgeBasesApi: api }))
 mock.module('@/components/file-preview', () => ({
   FilePreviewPanel: (props: Record<string, unknown>) => ({ type: 'file-preview-panel', props }),
   getDocumentMimeType: () => 'text/plain',
@@ -287,7 +296,7 @@ describe('DocumentsPreviewClient', () => {
     expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
       { content: 'Alpha beta', chunk_index: 0 },
       { content: 'Beta gamma', chunk_index: 1 },
-    ], undefined)
+    ], undefined, true)
     expect(toast.loading).toHaveBeenCalledWith('processing')
     expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":1}', { id: 'toast-1' })
     expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1')

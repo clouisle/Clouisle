@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
+class MockApiError extends Error {
+  code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.code = code
+  }
+  isValidationError() { return this.code === 1001 }
+}
+
 const push = mock()
 const toast = { success: mock(), error: mock(), warning: mock(), loading: mock(() => 'toast-1') }
 const api = {
@@ -46,7 +55,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${JSON.stringify(values)}` : key,
 }))
 mock.module('sonner', () => ({ toast }))
-mock.module('@/lib/api', () => ({ knowledgeBasesApi: api }))
+mock.module('@/lib/api', () => ({ ApiError: MockApiError, knowledgeBasesApi: api }))
 mock.module('@/components/file-preview', () => ({
   FilePreviewPanel: (props: Record<string, unknown>) => ({ type: 'file-preview-panel', props }),
   getDocumentMimeType: () => 'text/plain',
@@ -288,10 +297,40 @@ describe('DocumentsPreviewClient', () => {
     expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
       { content: 'Alpha beta', chunk_index: 0 },
       { content: 'Beta gamma', chunk_index: 1 },
-    ], undefined)
+    ], undefined, true)
     expect(toast.loading).toHaveBeenCalledWith('processing')
     expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":1}', { id: 'toast-1' })
     expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
+  })
+
+  test('shows the stale-preview rejection message', async () => {
+    let tree = await load()
+    await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()
+    tree = render()
+    api.processDocumentWithChunks.mockRejectedValue(
+      new MockApiError(1001, 'The preview is out of date.'),
+    )
+    await (button(tree, 'startProcessingAll (1)').props.onClick as () => Promise<void>)()
+    expect(toast.error).toHaveBeenCalledWith('The preview is out of date.')
+  })
+
+  test('sends the preview version returned by the preview endpoint', async () => {
+    api.previewChunks.mockResolvedValue({ ...preview, preview_version: 'pv-1' })
+    let tree = await load()
+    await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()
+    tree = render()
+    await (button(tree, 'startProcessingAll (1)').props.onClick as () => Promise<void>)()
+    expect(api.processDocumentWithChunks).toHaveBeenCalledWith(
+      'kb-1',
+      'doc-1',
+      [
+        { content: 'Alpha beta', chunk_index: 0 },
+        { content: 'Beta gamma', chunk_index: 1 },
+      ],
+      undefined,
+      true,
+      'pv-1',
+    )
   })
 
   test('reports processing errors from refreshed state and from a failed refresh', async () => {
@@ -490,11 +529,11 @@ describe('DocumentsPreviewClient', () => {
       expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
         { content: 'Alpha beta', chunk_index: 0 },
         { content: 'Beta gamma', chunk_index: 1 },
-      ], { batch_id: 'batch-123', batch_total: 2 })
+      ], { batch_id: 'batch-123', batch_total: 2 }, true)
       expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-2', [
         { content: 'Alpha beta', chunk_index: 0 },
         { content: 'Beta gamma', chunk_index: 1 },
-      ], { batch_id: 'batch-123', batch_total: 2 })
+      ], { batch_id: 'batch-123', batch_total: 2 }, true)
       expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":2}', { id: 'toast-1' })
       expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
     } finally {

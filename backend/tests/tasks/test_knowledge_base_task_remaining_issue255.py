@@ -124,7 +124,6 @@ def test_process_document_all_failed_records_progress_and_error(monkeypatch, doc
     ("metadata", "status", "expected"),
     [
         ({"task_id": "newer"}, DocumentStatus.PENDING.value, "stale"),
-        ({"task_id": "current"}, DocumentStatus.ERROR.value, "already_finished"),
     ],
 )
 def test_rechunk_stops_for_invalid_task_state(
@@ -146,26 +145,30 @@ def test_rechunk_stops_for_invalid_task_state(
     document.save.assert_not_awaited()
 
 
-def test_rechunk_missing_source_persists_generic_error(monkeypatch, document):
-    document.file_path = None
-    failed_notification = AsyncMock()
-    vector_store = SimpleNamespace(delete_document_vectors=AsyncMock(return_value=0))
+def test_rechunk_returns_staged_error_and_preserves_document(monkeypatch, document):
+    document.metadata = {"task_id": "current", "rechunk_settings": {}}
+    expected = {
+        "status": "error",
+        "document_id": str(document.id),
+        "error_type": "processing_failed",
+        "preserved_previous_version": True,
+    }
+    staged = AsyncMock(return_value=expected)
     monkeypatch.setattr(
         knowledge_base.Document, "filter", lambda **_kwargs: Query(first=document)
     )
-    monkeypatch.setattr(knowledge_base, "VectorStore", lambda **_kwargs: vector_store)
     monkeypatch.setattr(
-        knowledge_base, "_send_doc_failed_notification", failed_notification
+        "app.services.kb_rechunk_staging.rechunk_document_staged", staged
     )
-    monkeypatch.setattr(knowledge_base, "t", lambda key, **_kwargs: key)
+    knowledge_base.rechunk_document_task.push_request(id="current")
+    try:
+        result = knowledge_base.rechunk_document_task.run(str(document.id))
+    finally:
+        knowledge_base.rechunk_document_task.pop_request()
 
-    result = knowledge_base.rechunk_document_task.run(str(document.id))
-
-    assert result["status"] == "error"
-    assert document.status == DocumentStatus.ERROR.value
-    assert document.error_message == "document_processing_failed_generic"
-    assert document.metadata == {}
-    failed_notification.assert_awaited_once()
+    assert result == expected
+    document.save.assert_not_awaited()
+    staged.assert_awaited_once()
 
 
 def test_retry_single_chunk_guards_and_creates_event_loop(monkeypatch, document):

@@ -21,7 +21,10 @@ async def test_replace_embedded_media_data_uris_saves_assets(tmp_path):
     processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
     kb_id = uuid4()
     document_id = uuid4()
-    image_content = b"image-bytes"
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
     data_uri = "data:image/png;base64," + base64.b64encode(image_content).decode(
         "ascii"
     )
@@ -61,7 +64,10 @@ async def test_extract_text_resourceizes_markdown_data_uri_when_context_is_provi
     processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
     kb_id = uuid4()
     document_id = uuid4()
-    image_content = b"image-bytes"
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
     data_uri = "data:image/png;base64," + base64.b64encode(image_content).decode(
         "ascii"
     )
@@ -157,7 +163,7 @@ async def test_extract_text_resourceizes_docx_embedded_image(tmp_path):
     document_id = uuid4()
     image_content = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
-        "AAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
     )
     docx_path = processor.get_storage_path(kb_id, "sample.docx")
     content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -227,7 +233,7 @@ async def test_extract_pptx_preserves_svg_without_raster_fallback(
 
     image = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
-        "AAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
     )
     svg = (
         b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
@@ -296,3 +302,238 @@ async def test_extract_pptx_preserves_svg_without_raster_fallback(
             ).read_bytes()
             == expected
         )
+
+
+@pytest.mark.asyncio
+async def test_standalone_image_mime_comes_from_bytes_not_extension(tmp_path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    document_id = uuid4()
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    path = processor.get_storage_path(kb_id, "misnamed.jpg")
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(image_content, path)
+        text, metadata = await processor.extract_text(
+            path,
+            DocumentType.IMAGE.value,
+            kb_id=kb_id,
+            document_id=document_id,
+        )
+
+    assert "/media/" in text and text.endswith(".png)")
+    assert metadata["media_assets"][0]["content_type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_replace_embedded_media_respects_custom_byte_limit(tmp_path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    content = b"not-an-image"
+    text = "data:image/png;base64," + base64.b64encode(content).decode()
+    with pytest.raises(ValueError, match="embedded_image_size_exceeded"):
+        await processor.replace_embedded_media_data_uris(
+            text, kb_id=uuid4(), document_id=uuid4(), max_image_bytes=1
+        )
+
+
+@pytest.mark.asyncio
+async def test_replace_embedded_media_drops_images_beyond_count_without_failing(
+    tmp_path,
+):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    uri = "data:image/png;base64," + base64.b64encode(image_content).decode()
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        text, assets = await processor.replace_embedded_media_data_uris(
+            f"![one]({uri}) ![two]({uri})",
+            kb_id=uuid4(),
+            document_id=uuid4(),
+            max_images=1,
+        )
+
+    assert len(assets) == 1
+    assert text.count("data:image") == 0
+    assert "![two]" not in text
+    assert "two" in text
+
+
+@pytest.mark.asyncio
+async def test_replace_embedded_media_can_raise_on_count_limit(tmp_path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    uri = "data:image/png;base64," + base64.b64encode(image_content).decode()
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        with pytest.raises(ValueError, match="embedded_image_count_exceeded"):
+            await processor.replace_embedded_media_data_uris(
+                f"![one]({uri}) ![two]({uri})",
+                kb_id=uuid4(),
+                document_id=uuid4(),
+                max_images=1,
+                raise_on_count_exceeded=True,
+            )
+
+
+@pytest.mark.asyncio
+async def test_standalone_image_rejects_non_raster_content(tmp_path):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    path = processor.get_storage_path(kb_id, "not-image.png")
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(b"not an image", path)
+        with pytest.raises(ValueError, match="document_processing_failed_generic"):
+            await processor.extract_text(
+                path,
+                DocumentType.IMAGE.value,
+                kb_id=kb_id,
+                document_id=uuid4(),
+            )
+
+
+@pytest.mark.asyncio
+async def test_replace_embedded_media_rejects_pixel_and_mime_mismatches(
+    tmp_path, monkeypatch
+):
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    image_content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    encoded = base64.b64encode(image_content).decode()
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        patch.setattr(document_processor_module, "MAX_EMBEDDED_IMAGE_PIXELS", 0)
+        with pytest.raises(ValueError, match="embedded_image_pixels_exceeded"):
+            await processor.replace_embedded_media_data_uris(
+                f"data:image/png;base64,{encoded}",
+                kb_id=uuid4(),
+                document_id=uuid4(),
+            )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        with pytest.raises(ValueError, match="embedded_image_type_mismatch"):
+            await processor.replace_embedded_media_data_uris(
+                f"data:image/jpeg;base64,{encoded}",
+                kb_id=uuid4(),
+                document_id=uuid4(),
+            )
+
+
+def test_markdown_image_bounds_handles_malformed_links():
+    processor = DocumentProcessor()
+    assert processor._markdown_image_bounds("data:image/png", 0, 5) is None
+    assert processor._markdown_image_bounds("![alt]data:image/png", 6, 20) is None
+    assert processor._markdown_image_bounds("![alt](data:image/png", 7, 21) is None
+
+
+@pytest.mark.asyncio
+async def test_standalone_image_rejects_supported_but_disallowed_format(tmp_path):
+    import io
+
+    from PIL import Image
+
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    path = processor.get_storage_path(kb_id, "bitmap.png")
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(buffer, format="BMP")
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(buffer.getvalue(), path)
+        with pytest.raises(ValueError, match="document_processing_failed_generic"):
+            await processor.extract_text(
+                path,
+                DocumentType.IMAGE.value,
+                kb_id=kb_id,
+                document_id=uuid4(),
+            )
+
+
+def test_markdown_image_bounds_requires_uri_to_follow_opener():
+    processor = DocumentProcessor()
+    text = "![a](data:image/png;base64,AAA) data:image/png;base64,BBB"
+    second = text.index("data:", 5)
+    assert processor._markdown_image_bounds(text, second, len(text)) is None
+
+
+def test_markdown_image_bounds_handles_titles_with_parentheses():
+    processor = DocumentProcessor()
+    text = '![a](data:image/png;base64,AAA "figure (detail)")'
+    start = text.index("data:")
+    bounds = processor._markdown_image_bounds(text, start, text.index(" ", start))
+    assert bounds is not None
+    assert bounds[0] == 0
+    assert bounds[1] == len(text)
+    assert bounds[2] == "a"
+
+    paren_title = "![b](data:image/png;base64,BBB (figure (detail)))"
+    start = paren_title.index("data:")
+    bounds = processor._markdown_image_bounds(
+        paren_title, start, paren_title.index(" ", start)
+    )
+    assert bounds is not None
+    assert bounds[1] == len(paren_title)

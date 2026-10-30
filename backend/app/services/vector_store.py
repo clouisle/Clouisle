@@ -46,6 +46,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EMBEDDING_REQUEST_TIMEOUT_SECONDS = 120.0
+_KB_MEDIA_PREFIXES = (
+    "/api/v1/knowledge-bases/",
+    "/api/v1/admin/knowledge-bases/",
+)
+
+
+def _is_kb_media_url(url: str) -> bool:
+    for prefix in _KB_MEDIA_PREFIXES:
+        if not url.startswith(prefix):
+            continue
+        parts = url[len(prefix) :].split("?", 1)[0].split("/")
+        return (
+            len(parts) >= 5
+            and bool(parts[0])
+            and parts[1] == "documents"
+            and bool(parts[2])
+            and parts[3] == "media"
+            and bool(parts[4])
+        )
+    return False
+
+
+def _embedding_content(text: str) -> str:
+    """Remove KB media links from embedding input without regex on document text."""
+    if "![" not in text:
+        return text
+    output: list[str] = []
+    position = 0
+    search = 0
+    while True:
+        start = text.find("![", search)
+        if start == -1:
+            break
+        alt_end = text.find("]", start + 2)
+        if alt_end == -1:
+            break
+        if alt_end + 1 >= len(text) or text[alt_end + 1] != "(":
+            search = start + 1
+            continue
+        close = text.find(")", alt_end + 2)
+        if close == -1:
+            break
+        if _is_kb_media_url(text[alt_end + 2 : close]):
+            output.append(text[position:start])
+            output.append(text[start + 2 : alt_end])
+            position = close + 1
+            search = position
+        else:
+            search = start + 1
+    output.append(text[position:])
+    return "".join(output)
 
 
 class EmbeddingRequestTimeoutError(Exception):
@@ -112,6 +163,21 @@ async def _collection_exists(name: str) -> bool:
         return True
     except Exception:
         return False
+
+
+async def _collection_exists_strict(name: str) -> bool:
+    """Return whether a collection exists, propagating lookup failures."""
+    if name in _qdrant_collections:
+        return True
+    client = await _get_qdrant_client()
+    try:
+        await client.get_collection(name)
+        _qdrant_collections.add(name)
+        return True
+    except Exception as exc:
+        if getattr(exc, "status_code", None) == 404:
+            return False
+        raise
 
 
 async def _ensure_payload_index(collection: str, field_name: str) -> None:
@@ -599,6 +665,7 @@ class VectorStore:
         """
         if not texts:
             return []
+        texts = [_embedding_content(text) for text in texts]
 
         model_manager = _get_model_manager()
 
@@ -1475,7 +1542,7 @@ class VectorStore:
         """
         try:
             # Generate new embedding
-            embedding = await self.embed_query(chunk.content)
+            embedding = await self.embed_query(_embedding_content(chunk.content))
             if kb_id is None:
                 kb_ids = cast(
                     list[UUID],

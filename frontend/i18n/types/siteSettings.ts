@@ -528,6 +528,8 @@ export type SiteSettingsMessages = {
     sendTestEmail: string
     storageDescription: string
     memoryDescription: string
+    parsing: string
+    parsingDescription: string
     memorySettings: {
       title: string
       description: string
@@ -542,6 +544,29 @@ export type SiteSettingsMessages = {
       maxPendingTurnsHint: string
       saved: string
       saveFailed: string
+    }
+    parsingSettings: {
+      title: string
+      description: string
+      enableUnderstanding: string
+      enableUnderstandingDesc: string
+      visionModel: string
+      visionModelDesc: string
+      ocrModel: string
+      ocrModelDesc: string
+      ocrModelNone: string
+      modelNone: string
+      modelRequired: string
+      allowExternal: string
+      allowExternalDesc: string
+      maxImages: string
+      maxImagesHint: string
+      maxImageBytes: string
+      maxImageBytesHint: string
+      maxImagePixels: string
+      maxImagePixelsHint: string
+      concurrency: string
+      concurrencyHint: string
     }
     auditLogStorage: string
     auditLogStorageDescription: string

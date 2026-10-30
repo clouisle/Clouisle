@@ -204,6 +204,17 @@ export interface MemorySiteSettings {
   memory_extraction_max_pending_turns: number
 }
 
+export interface KnowledgeBaseImageSettings {
+  kb_image_understanding_enabled: boolean
+  kb_image_understanding_model_id: string
+  kb_image_ocr_model_id: string
+  kb_image_understanding_allow_external: boolean
+  kb_image_understanding_max_images: number
+  kb_image_understanding_max_image_bytes: number
+  kb_image_understanding_max_image_pixels: number
+  kb_image_understanding_concurrency: number
+}
+
 export const siteSettingsApi = {
   /**
    * Get public site settings (no auth required)

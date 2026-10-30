@@ -108,14 +108,26 @@ Separator: (optional custom separator)
 
 ### Supported Formats
 
-Documents: PDF, DOCX, DOC, TXT, MD, HTML, CSV, XLSX, XLS, JSON, plus web pages added by URL.
+Documents: PDF, DOCX, DOC, TXT, MD, HTML, CSV, XLSX, XLS, JSON, PNG, JPG/JPEG, GIF, WEBP, plus web pages added by URL.
 
-> **Note:** OCR for scanned documents/images and archive auto-extraction (ZIP/TAR/GZ) are **not implemented**. Upload only text-extractable files, and process the document after upload.
+ZIP/TAR/GZ archive auto-extraction is not supported.
+
+### Image understanding
+
+Image understanding is an optional administrator-managed feature and is **off by default**. To use it, an administrator must enable it and select a vision-capable chat model that is enabled and authorized for the relevant team. Users cannot enable or select this model from the knowledge-base settings.
+
+When enabled, document processing can send image content to the configured model provider to extract readable text and describe visual content. This external processing may incur model-provider charges and may send document image data outside your Clouisle deployment. Follow your organization's data-handling rules before processing sensitive content.
+
+For PDFs with both selectable text and image content, image understanding may send a whole page to the vision model. The page's extracted text can overlap with its existing text layer, and duplicate content may remain; complete deduplication is not guaranteed.
+
+External image fetching is controlled separately and **disabled by default**. It only applies when image understanding is enabled; image URLs are not fetched for analysis unless an administrator explicitly enables external image access.
+
+The feature applies to documents processed after it is enabled and configured. **Existing documents are not automatically reprocessed**; reprocess them manually to apply image understanding.
 
 ### Processing Flow
 
 1. Upload (or add by URL) → document status `pending`
-2. Start **Process** from the document action/editor → text extraction → chunking → embedding → `completed`
+2. Start **Process** from the document action/editor → text and, when configured, image understanding → chunking → embedding → `completed`
 3. Failures leave the document in `error` status with an error message
 
 ## RAG Settings
@@ -192,4 +204,4 @@ Per-KB retrieval parameters for agents: `retrieval_top_k` (default 5), `score_th
 
 ---
 
-**Last Updated**: 2026-09-26
+**Last Updated**: 2026-10-30

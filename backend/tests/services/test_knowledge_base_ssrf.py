@@ -175,10 +175,19 @@ async def test_preview_document_chunks_propagates_ssrf_business_error(monkeypatc
         def __init__(self, item):
             self.item = item
 
+        def prefetch_related(self, *_args):
+            return self
+
         async def first(self):
             return self.item
 
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    from app.services.kb_image_ingestion import IMAGE_DEFAULTS
+
+    monkeypatch.setattr(
+        "app.services.kb_image_ingestion.image_settings",
+        AsyncMock(return_value=IMAGE_DEFAULTS),
+    )
     monkeypatch.setattr(
         knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
     )

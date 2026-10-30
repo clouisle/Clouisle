@@ -20,6 +20,7 @@ import {
   Plus,
 } from 'lucide-react'
 import {
+  ApiError,
   adminKnowledgeBasesApi,
   type Document,
   type ProcessInput,
@@ -44,6 +45,8 @@ interface DocumentsPreviewClientProps {
 interface DocumentPreviewState {
   document: Document | null
   previewChunks: ChunkPreviewItem[]
+  previewCleanText?: boolean
+  previewVersion: string | null
   previewStats: {
     total_chunks: number
     total_tokens: number
@@ -92,6 +95,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         updated[docId] = {
           ...state,
           previewChunks: [],
+          previewVersion: null,
           previewStats: null,
         }
       })
@@ -169,6 +173,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
           initialState[targetDocIds[idx]] = {
             document: doc,
             previewChunks: [],
+          previewVersion: null,
             previewStats: null,
             isPreviewing: false,
             isProcessing: false,
@@ -217,6 +222,8 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         [docId]: {
           ...prev[docId],
           previewChunks: result.chunks,
+          previewCleanText: settings.clean_text,
+          previewVersion: result.preview_version ?? null,
           previewStats: {
             total_chunks: result.total_chunks,
             total_tokens: result.total_tokens,
@@ -288,12 +295,22 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         chunk_index: chunk.chunk_index,
       }))
 
-      const result = await adminKnowledgeBasesApi.processDocumentWithChunks(
-        knowledgeBaseId,
-        docId,
-        chunks,
-        batch
-      )
+      const result = docState.previewVersion
+        ? await adminKnowledgeBasesApi.processDocumentWithChunks(
+            knowledgeBaseId,
+            docId,
+            chunks,
+            batch,
+            docState.previewCleanText,
+            docState.previewVersion
+          )
+        : await adminKnowledgeBasesApi.processDocumentWithChunks(
+            knowledgeBaseId,
+            docId,
+            chunks,
+            batch,
+            docState.previewCleanText
+          )
       // 更新文档状态 - API 返回的状态可能是 processing（因为 Celery 任务是异步的）
       setDocumentsState(prev => ({
         ...prev,
@@ -312,7 +329,15 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         if (!silent) toast.success(t('documentProcessingStarted'))
         return true
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setDocumentsState(prev => ({
+          ...prev,
+          [docId]: { ...prev[docId], isProcessing: false }
+        }))
+        toast.error(error.message || t('documentProcessFailed'))
+        return false
+      }
       // 获取最新文档状态以显示错误信息
       try {
         const docData = await adminKnowledgeBasesApi.getDocument(knowledgeBaseId, docId)

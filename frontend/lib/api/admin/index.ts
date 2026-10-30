@@ -25,6 +25,7 @@ export type {
   GeneralSettings,
   SecuritySettings,
   AutoNotificationConfig,
+  KnowledgeBaseImageSettings,
 } from './site-settings'
 
 export { integrationsApi } from './integrations'

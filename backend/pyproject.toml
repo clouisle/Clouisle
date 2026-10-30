@@ -69,6 +69,7 @@ dependencies = [
     "sqlglot>=26.0.0",
     "lark-oapi==1.7.5",
     "pypdf>=6.21.2",
+    "pypdfium2>=5.12.1",
 ]
 
 [tool.uv]

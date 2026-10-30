@@ -488,10 +488,11 @@ async def test_reprocess_and_rechunk_lifecycle_dispatch(
         request=SimpleNamespace(),
         current_user=SimpleNamespace(),
     )
-    assert doc.metadata["rechunk_settings"] == {
+    assert dispatch.await_args.kwargs["metadata_updates"]["rechunk_settings"] == {
         "chunk_size": 80,
         "chunk_overlap": 8,
         "separator": None,
+        "clean_text": True,
     }
     assert dispatch.await_count == 2
 

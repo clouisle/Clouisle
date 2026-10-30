@@ -21,6 +21,7 @@ mock.module('@/lib/utils', () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
   formatDuration: (ms: number) => `${Math.round(ms)}ms`,
 }))
+mock.module('@/components/chat/authenticated-media', () => ({ AuthenticatedImage: 'authenticated-image' }))
 const ui = { Badge: 'badge', Button: 'button', Card: 'card', Input: 'input', Label: 'label', Select: 'select', SelectContent: 'select-content', SelectItem: 'option', SelectTrigger: 'select-trigger', SelectValue: 'select-value', Switch: 'switch' }
 for (const path of ['@/components/ui/badge', '@/components/ui/button', '@/components/ui/card', '@/components/ui/input', '@/components/ui/label', '@/components/ui/select', '@/components/ui/switch']) mock.module(path, () => ui)
 mock.module('@/components/ui/alert-dialog', () => ({
@@ -542,33 +543,38 @@ describe('RetrievalLab', () => {
     expect(find(tree, 'input', props => props.id === 'denseWeightA').props.value).toBe(1)
   })
 
-  test('authenticated markdown image uses bearer token and rejects unsafe sources', async () => {
+  test('always renders only protected KB media images for every lab caller', async () => {
     search.mockResolvedValue(response())
     local.set('access_token', 'token-1')
     const fetch = mock(() => Promise.resolve(new Response(new Blob(['image']))))
     Object.assign(globalThis, { fetch, URL: { createObjectURL: () => 'blob:image', revokeObjectURL: mock() } })
-    let tree = await flush(render({ authenticatedMarkdown: true }))
+    let tree = await flush(render())
     tree = await enterQuery(tree)
     await searchButton(tree).props.onClick()
     await settle()
-    tree = render({ authenticatedMarkdown: true })
+    tree = render()
     find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult')).props.onClick()
-    tree = render({ authenticatedMarkdown: true })
+    tree = render()
     const markdown = find(tree, 'markdown-preview')
-    expect(find(tree, 'div', props => String(props.className).includes('[&_a.anchor]:!ml-0'))).toBeTruthy()
-    const Image = (markdown.props.components as { img: (props: { src?: string; alt?: string }) => ReactElement }).img
-    const imageElement = Image({ src: '/api/v1/knowledge-bases/kb-1/image', alt: 'diagram' })
+    const Image = (markdown.props.components as { img: (props: { src?: string | Blob; alt?: string }) => ReactElement | null }).img
 
-    slots.splice(0); effects = []; cursor = 0
-    local.set('access_token', 'token-1')
-    ;(imageElement.type as (props: { src?: string; alt?: string }) => ReactNode)(imageElement.props)
-    effects.splice(0).forEach(effect => effect())
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
-    expect(fetch).toHaveBeenCalledWith('/api/v1/knowledge-bases/kb-1/image', expect.objectContaining({ headers: { Authorization: 'Bearer token-1' } }))
+    const protectedImage = Image({ src: '/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png', alt: 'diagram' })
+    expect(protectedImage?.type).toBe('authenticated-image')
+    expect(protectedImage?.props.src).toBe('/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png')
 
-    slots.splice(0); effects = []; cursor = 0
-    const unsafe = Image({ src: 'javascript:alert(1)', alt: 'unsafe' })
-    expect(text((unsafe.type as (props: { src?: string; alt?: string }) => ReactNode)(unsafe.props))).toContain('unsafe')
+    const externalImage = Image({ src: 'https://cdn.example.test/page.png', alt: 'external diagram' })
+    expect(externalImage?.type).toBe('span')
+    expect(text(externalImage)).toContain('external diagram')
+    expect(externalImage?.props).not.toHaveProperty('src')
+
+    const apiLookalikeImage = Image({ src: 'https://cdn.example.test/api/v1/knowledge-bases/kb-1/documents/doc-1/media/page.png', alt: 'remote' })
+    expect(apiLookalikeImage?.type).toBe('span')
+    expect(apiLookalikeImage?.props).not.toHaveProperty('src')
+    expect(Image({ src: new Blob(['image']), alt: 'blob source' })).toMatchObject({
+      type: 'span',
+      props: { children: 'blob source' },
+    })
+    expect(fetch).not.toHaveBeenCalled()
   })
   test('highlights query terms in result previews and forwards bounded configuration', async () => {
     const result = response()

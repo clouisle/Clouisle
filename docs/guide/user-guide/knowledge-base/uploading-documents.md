@@ -25,6 +25,7 @@ The knowledge-base upload dialog accepts:
 | HTML | `.html`, `.htm` |
 | CSV | `.csv` |
 | JSON | `.json` |
+| Images | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` |
 
 ### Web Pages
 
@@ -32,7 +33,17 @@ Documents can also be added from a **URL** (web page).
 
 **Max file size:** 50 MB per file by default, configurable by administrators between 1 MB and 1024 MB (`kb_document_max_upload_size_mb`).
 
-> **Note:** The KB upload UI and endpoint support `.pptx`, not legacy `.ppt`. XML files and archive auto-extraction (ZIP/TAR/GZ) are not supported. OCR for scanned documents/images is not implemented.
+> **Note:** The KB upload UI and endpoint support `.pptx`, not legacy `.ppt`. XML files and archive auto-extraction (ZIP/TAR/GZ) are not supported.
+
+### Image understanding
+
+Image understanding is optional and is **off by default**. An administrator must enable it and configure a vision-capable chat model, an image-capable OCR chat model, or both. Each configured model must be authorized for your team. When only an OCR model is configured, processing extracts text and omits visual descriptions. Results depend on the selected model.
+
+For PDFs with both selectable text and image content, image understanding may process a whole page as an image. Text extracted from that page can overlap with the PDF's existing text layer; duplicate content may remain, so do not rely on complete deduplication.
+
+Images sent for analysis are transmitted to the configured model provider and may incur provider charges. Do not process sensitive images unless your organization permits this data transfer. Fetching images from external URLs is separately controlled and is **disabled by default**; it only applies when image understanding is enabled, and external images are not fetched unless an administrator enables that setting.
+
+This feature applies when new documents are processed after it has been enabled and configured. Existing documents are **not automatically reprocessed**; reprocess them manually if you want to apply the feature.
 
 ## Accessing Knowledge Bases
 
@@ -130,13 +141,12 @@ For file uploads, the current UI uses the filename and does not provide a rename
    Possible reasons:
    • File is corrupted
    • File is password-protected
-   • File contains only images (OCR not supported)
+   • File contains images that cannot be processed as configured
 
    Solutions:
-   • Try re-uploading
+   • Check whether image understanding is enabled and configured for your team
    • Remove password protection
-   • Convert to a different format
-```
+   • Convert the document to a supported format
 
 ### Handling Errors
 
@@ -168,7 +178,7 @@ For file uploads, the current UI uses the filename and does not provide a rename
 - Upload password-protected files
 - Upload corrupted files
 - Upload proprietary formats
-- Upload low-quality scans (no OCR)
+- Rely on image understanding for scans when the feature is disabled or not configured
 
 ### Organizing Documents
 
@@ -211,10 +221,10 @@ For file uploads, the current UI uses the filename and does not provide a rename
 **Problem**: Document uploaded but no text extracted
 
 **Solutions:**
-1. Check if the file contains actual text (not just images)
-2. Try converting to a different format
-3. Check if the file is corrupted
-4. Try re-uploading
+1. Check whether the document contains extractable text or images that can be processed with image understanding
+2. Confirm that an administrator enabled image understanding and configured a vision-capable model authorized for your team
+3. Check whether the file is corrupted
+4. Try reprocessing the document
 
 ### Cannot Upload
 
@@ -241,4 +251,4 @@ If you need assistance with uploading documents:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-10-30
