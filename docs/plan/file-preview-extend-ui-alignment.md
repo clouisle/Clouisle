@@ -24,6 +24,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
 - Load every document viewer through `next/dynamic` with `ssr: false`.
 - Add the Glide Data Grid `#portal` mount point required by `CsvViewer`.
 - Pass `showUpload={false}` because previews are read-only.
+- PDF, DOCX, and PPTX previews default to the official `automatic` zoom mode so the document fits the panel on open; XLSX and CSV only expose numeric zoom in the registry components.
 - Localize every viewer string through a `ViewerI18nProvider` context in
   `components/extend/viewer-i18n.tsx`. The panel builds the labels from the
   `common.fileViewer` namespace (`i18n/en|zh/common.json`) so tooltips, menus,
@@ -67,7 +68,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
 
 ## Risks & Mitigation
 
-- **PDFium WASM is self-hosted**: `scripts/copy-pdfium-wasm.ts` copies `@embedpdf/pdfium/dist/pdfium.wasm` to `public/pdfium/pdfium.wasm` via `predev`/`prebuild`, and `lib/pdf-thumbnail-utils.ts` loads `/pdfium/pdfium.wasm`. Keep the direct `@embedpdf/pdfium` dependency aligned with `@embedpdf/engines` when re-vendoring; the generated asset is gitignored.
+- **PDFium WASM is self-hosted**: `scripts/copy-pdfium-wasm.ts` copies `@embedpdf/pdfium/dist/pdfium.wasm` to `public/pdfium/pdfium.wasm` via `predev`/`prebuild`. `lib/pdf-thumbnail-utils.ts` resolves `/pdfium/pdfium.wasm` against `window.location.origin` before passing it to the blob-URL worker engine; a root-relative path does not resolve reliably inside that worker. Keep the direct `@embedpdf/pdfium` dependency aligned with `@embedpdf/engines` when re-vendoring; the generated asset is gitignored.
 - **Upstream strings**: new copy introduced by a future registry sync will stay English until a matching `common.fileViewer` key is added. Re-vendoring must diff the label set.
 - **Bundle size**: viewers are lazily imported, so they only load when a matching file is previewed.
 - **Vendored drift**: files are registry snapshots; upstream fixes require re-vendoring.

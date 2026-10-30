@@ -484,6 +484,7 @@ export function FilePreviewPanel({
         src={previewUrl}
         fileName={file.filename}
         className="h-full w-full"
+        defaultZoom="automatic"
         showUpload={false}
       />
     )
@@ -504,6 +505,7 @@ export function FilePreviewPanel({
         src={previewUrl}
         fileName={file.filename}
         className="h-full w-full"
+        defaultZoom="automatic"
         isDark={isDark}
         onIsDarkChange={setIsDark}
         showUpload={false}
@@ -515,6 +517,7 @@ export function FilePreviewPanel({
         src={previewUrl}
         fileName={file.filename}
         className="h-full w-full"
+        defaultZoom="automatic"
         showUpload={false}
       />
     )
