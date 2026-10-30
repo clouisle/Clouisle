@@ -1729,7 +1729,9 @@ async def process_document_with_chunks(
 
     image_config = await image_settings()
     preview_metadata = {}
-    if image_config["kb_image_understanding_enabled"]:
+    if image_config["kb_image_understanding_enabled"] and (
+        doc.file_path or doc.source_url
+    ):
         if process_request.preview_clean_text is None:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR, msg_key="chunk_preview_failed"
@@ -2028,6 +2030,7 @@ async def preview_document_chunks(
                 model=str(settings["kb_image_understanding_model_id"]),
                 policy=json.dumps(settings, sort_keys=True),
                 compute=compute,
+                refresh=bool(doc.source_url),
             )
             text, extraction_metadata = entry.enriched_text, entry.metadata
         elif doc.file_path:
@@ -2169,7 +2172,9 @@ async def reprocess_document(
                         "separator": doc_meta.get("separator")
                         or kb_settings.get("separator"),
                         "clean_text": doc_meta.get("clean_text", True),
-                    }
+                    },
+                    "rechunk_preview_chunks": None,
+                    "rechunk_preview_metadata": None,
                 },
             )
         except Exception as exc:
@@ -2882,7 +2887,9 @@ async def rechunk_document(
                     "chunk_overlap": rechunk_in.chunk_overlap,
                     "separator": rechunk_in.separator,
                     "clean_text": True,
-                }
+                },
+                "rechunk_preview_chunks": None,
+                "rechunk_preview_metadata": None,
             },
         )
     except Exception as exc:

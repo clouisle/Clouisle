@@ -619,7 +619,12 @@ class KBImageUnderstandingService:
             )
         text = content.strip()
         if text.startswith("```") and text.endswith("```"):
-            text = text[3:-3].strip()
+            inner = text[3:-3]
+            if "\n" in inner:
+                first_line, remainder = inner.split("\n", 1)
+                if first_line.strip():
+                    inner = remainder
+            text = inner.strip()
         if not text and not allow_empty:
             raise KBImageUnderstandingError(
                 f"{label} model returned an empty response",

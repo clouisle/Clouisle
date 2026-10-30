@@ -521,3 +521,51 @@ async def test_vision_response_json_shapes(monkeypatch, content, expected_code) 
             _png_bytes(), team_id="t", model_id=model_id
         )
         assert result.description == "b"
+
+
+@pytest.mark.asyncio
+async def test_image_prompt_strips_fence_language_label(monkeypatch):
+    normalized = normalize_kb_image(
+        _png_bytes(), max_image_bytes=1024, max_image_pixels=100
+    )
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_chat",
+        AsyncMock(return_value=SimpleNamespace(content="```text\nvisible text\n```")),
+    )
+    assert (
+        await _service()._call_image_prompt(
+            normalized,
+            team_id="t",
+            model_id=uuid4(),
+            system_prompt="s",
+            user_prompt="u",
+            label="ocr",
+            allow_empty=True,
+        )
+        == "visible text"
+    )
+
+
+@pytest.mark.asyncio
+async def test_image_prompt_strips_empty_fence_info_line(monkeypatch):
+    normalized = normalize_kb_image(
+        _png_bytes(), max_image_bytes=1024, max_image_pixels=100
+    )
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_chat",
+        AsyncMock(return_value=SimpleNamespace(content="```\nvisible text\n```")),
+    )
+    assert (
+        await _service()._call_image_prompt(
+            normalized,
+            team_id="t",
+            model_id=uuid4(),
+            system_prompt="s",
+            user_prompt="u",
+            label="ocr",
+            allow_empty=True,
+        )
+        == "visible text"
+    )

@@ -839,3 +839,42 @@ async def test_compute_with_lease_lost_after_compute(redis: FakeRedis, monkeypat
     monkeypatch.setattr(preview_module.asyncio, "wait", fake_wait)
     with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
         await cache._compute_with_lease(lease, compute)
+
+
+@pytest.mark.asyncio
+async def test_enriched_text_may_contain_data_uris_and_bearer_strings(redis: FakeRedis):
+    cache = _cache(redis)
+
+    async def compute():
+        return KBPreviewCacheEntry(
+            enriched_text="See data:image/png;base64,abc and Bearer token123"
+        )
+
+    entry = await _get(cache, compute=compute)
+    assert "data:image/png" in entry.enriched_text
+
+
+@pytest.mark.asyncio
+async def test_refresh_recomputes_cached_entry(redis: FakeRedis):
+    cache = _cache(redis)
+
+    async def first():
+        return _entry("old")
+
+    async def second():
+        return _entry("new")
+
+    assert (await _get(cache, compute=first)).enriched_text == "old"
+    assert (
+        await cache.get_or_create(
+            user_id="user-1",
+            knowledge_base_id="kb-1",
+            document_id="doc-1",
+            source=b"same document source",
+            clean_text=True,
+            model="vision-model-1",
+            policy="ocr-policy-v1",
+            compute=second,
+            refresh=True,
+        )
+    ).enriched_text == "new"

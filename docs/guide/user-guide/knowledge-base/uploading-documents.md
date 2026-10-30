@@ -37,7 +37,7 @@ Documents can also be added from a **URL** (web page).
 
 ### Image understanding
 
-Image understanding is optional and is **off by default**. An administrator must enable it and configure a vision-capable chat model that is authorized for your team. When enabled, processing can use that model to extract readable text from image content and describe visual content in supported documents and image files. Results depend on the selected model.
+Image understanding is optional and is **off by default**. An administrator must enable it and configure a vision-capable chat model, an image-capable OCR chat model, or both. Each configured model must be authorized for your team. When only an OCR model is configured, processing extracts text and omits visual descriptions. Results depend on the selected model.
 
 For PDFs with both selectable text and image content, image understanding may process a whole page as an image. Text extracted from that page can overlap with the PDF's existing text layer; duplicate content may remain, so do not rely on complete deduplication.
 

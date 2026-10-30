@@ -1084,14 +1084,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Document processing failed",
         "zh": "文档处理失败",
     },
-    "image_understanding_failed": {
-        "en": "Image understanding failed. Check that the configured vision model endpoint and credentials are available.",
-        "zh": "图片理解失败，请检查配置的视觉模型地址与凭证是否可用。",
-    },
-    "image_no_text_extracted": {
-        "en": "No readable text was found in this image. Add a vision model to generate a visual description, or upload an image that contains text.",
-        "zh": "图片中未识别到可用文字。可配置视觉模型生成图像描述，或上传包含文字的图片。",
-    },
     "document_processing_started": {
         "en": "Document processing started",
         "zh": "文档处理已开始",
@@ -1548,6 +1540,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}. The generated images are already displayed by the interface. Do not include Markdown or HTML images, and do not invent image URLs in the final response.",
         "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}。生成的图片已由界面展示，最终回复中不要输出 Markdown 或 HTML 图片，也不要编造图片地址。",
     },
+    "image_no_text_extracted": {
+        "en": "No readable text was found in this image. Add a vision model to generate a visual description, or upload an image that contains text.",
+        "zh": "图片中未识别到可用文字。可配置视觉模型生成图像描述，或上传包含文字的图片。",
+    },
     "image_reference_image_index_out_of_range": {
         "en": "Reference image index {index} is out of range. Available conversation images: {count}",
         "zh": "参考图片索引 {index} 超出范围。可用会话图片数量：{count}",
@@ -1571,6 +1567,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "image_to_video_removed_from_project": {
         "en": "Image-to-video has been removed from the project",
         "zh": "项目已移除图生视频功能",
+    },
+    "image_understanding_failed": {
+        "en": "Image understanding failed. Check that the configured image model endpoint and credentials are available.",
+        "zh": "图片理解失败，请检查配置的图片模型地址与凭证是否可用。",
     },
     "inactive_user": {"en": "Inactive user", "zh": "用户未激活"},
     "incorrect_email_or_password": {

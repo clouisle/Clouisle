@@ -249,7 +249,9 @@ async def test_strict_vector_cleanup_uses_module_helpers(monkeypatch):
         delete=AsyncMock(),
     )
     monkeypatch.setattr(staging, "_collection_name", lambda _dimension: "kb_dim_2")
-    monkeypatch.setattr(staging, "_collection_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        staging, "_collection_exists_strict", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(staging, "_get_qdrant_client", AsyncMock(return_value=client))
 
     await staging._strict_vector_cleanup(
@@ -283,13 +285,17 @@ async def test_strict_vector_cleanup_skips_missing_collection_and_empty_payload(
 ):
     client = SimpleNamespace(set_payload=AsyncMock(), delete=AsyncMock())
     monkeypatch.setattr(staging, "_collection_name", lambda _d: "kb")
-    monkeypatch.setattr(staging, "_collection_exists", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        staging, "_collection_exists_strict", AsyncMock(return_value=False)
+    )
     monkeypatch.setattr(staging, "_get_qdrant_client", AsyncMock(return_value=client))
 
     await _strict_vector_cleanup(dimension=2, delete_ids=["old"])
     client.delete.assert_not_awaited()
 
-    monkeypatch.setattr(staging, "_collection_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        staging, "_collection_exists_strict", AsyncMock(return_value=True)
+    )
     await _strict_vector_cleanup(
         dimension=2, set_payload={"kb_id": "kb"}, delete_ids=None
     )
@@ -857,3 +863,36 @@ async def test_rechunk_reports_cleanup_pending_when_finish_returns_false(
     )
     assert result["status"] == "cleanup_pending"
     assert result["committed"] is True
+
+
+@pytest.mark.asyncio
+async def test_strict_vector_cleanup_propagates_collection_lookup_errors(monkeypatch):
+    monkeypatch.setattr(
+        staging,
+        "_collection_exists_strict",
+        AsyncMock(side_effect=RuntimeError("qdrant down")),
+    )
+    with pytest.raises(RuntimeError, match="qdrant down"):
+        await _strict_vector_cleanup(dimension=2, delete_ids=["old"])
+
+
+@pytest.mark.asyncio
+async def test_finish_cleanup_keeps_journal_when_vector_cleanup_fails(
+    completed_document, monkeypatch
+):
+    _team, _kb, document, _old_chunk, _old_media_id = completed_document
+    document.metadata = {
+        **(document.metadata or {}),
+        CLEANUP_MARKER: {"promotion_id": "p", "dimension": 2},
+    }
+    await document.save(update_fields=["metadata"])
+    monkeypatch.setattr(
+        staging, "_strict_vector_cleanup", AsyncMock(side_effect=RuntimeError("down"))
+    )
+    with pytest.raises(RuntimeError, match="down"):
+        await _finish_cleanup(document.id)
+    refreshed = await Document.get(id=document.id)
+    assert refreshed.metadata[CLEANUP_MARKER] == {
+        "promotion_id": "p",
+        "dimension": 2,
+    }

@@ -143,7 +143,13 @@ def _reject_sensitive_value(value: str) -> None:
         raise KBPreviewCacheError("Preview metadata contains an invalid URI") from exc
 
 
-def _validate_json_value(value: Any, *, budget: list[int], depth: int = 0) -> None:
+def _validate_json_value(
+    value: Any,
+    *,
+    budget: list[int],
+    depth: int = 0,
+    reject_sensitive: bool = True,
+) -> None:
     if depth > _MAX_METADATA_DEPTH:
         raise KBPreviewCacheEntryTooLarge("Preview metadata nesting is too deep")
     budget[0] -= 1
@@ -157,7 +163,8 @@ def _validate_json_value(value: Any, *, budget: list[int], depth: int = 0) -> No
             raise KBPreviewCacheError("Preview metadata contains a non-finite number")
         return
     if isinstance(value, str):
-        _reject_sensitive_value(value)
+        if reject_sensitive:
+            _reject_sensitive_value(value)
         try:
             size = len(value.encode("utf-8"))
         except UnicodeEncodeError as exc:
@@ -181,8 +188,18 @@ def _validate_json_value(value: Any, *, budget: list[int], depth: int = 0) -> No
             normalized_key = key.lower().replace("-", "_")
             if any(part in normalized_key for part in _SENSITIVE_KEY_PARTS):
                 raise KBPreviewCacheError("Preview metadata contains a forbidden field")
-            _validate_json_value(key, budget=budget, depth=depth + 1)
-            _validate_json_value(item, budget=budget, depth=depth + 1)
+            _validate_json_value(
+                key,
+                budget=budget,
+                depth=depth + 1,
+                reject_sensitive=reject_sensitive,
+            )
+            _validate_json_value(
+                item,
+                budget=budget,
+                depth=depth + 1,
+                reject_sensitive=reject_sensitive,
+            )
         return
     raise KBPreviewCacheError("Preview metadata must contain JSON values only")
 
@@ -200,7 +217,7 @@ def _entry_json(entry: KBPreviewCacheEntry) -> dict[str, Any]:
         raise KBPreviewCacheError("Preview metadata must be a JSON object")
 
     budget = [_MAX_METADATA_NODES, _MAX_STRING_BYTES]
-    _validate_json_value(entry.enriched_text, budget=budget)
+    _validate_json_value(entry.enriched_text, budget=budget, reject_sensitive=False)
     _validate_json_value(entry.image_metadata, budget=budget)
     _validate_json_value(entry.metadata, budget=budget)
     return {
@@ -420,6 +437,12 @@ class KBPreviewCache:
                 raise KBPreviewCacheUnavailable("Preview cache lease was lost")
             return result
         finally:
+            if not compute_task.done():
+                compute_task.cancel()
+            try:
+                await compute_task
+            except BaseException:
+                pass
             lost_task.cancel()
             try:
                 await lost_task
@@ -499,6 +522,7 @@ class KBPreviewCache:
         model: str | None,
         policy: str,
         compute: ComputePreview,
+        refresh: bool = False,
     ) -> KBPreviewCacheEntry:
         """Return a matching entry or compute/publish it under distributed leases.
 
@@ -550,7 +574,7 @@ class KBPreviewCache:
                 document_id=document_id,
                 fingerprint=fingerprint,
             )
-            if cached is not None:
+            if cached is not None and not refresh:
                 return cached
 
             owner_token = secrets.token_urlsafe(24)
@@ -580,7 +604,7 @@ class KBPreviewCache:
                         document_id=document_id,
                         fingerprint=fingerprint,
                     )
-                    if cached is not None:
+                    if cached is not None and not refresh:
                         return cached
 
                     while slot_key is None:

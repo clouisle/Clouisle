@@ -844,3 +844,37 @@ async def test_pdf_pages_without_visual_need_are_collected_without_rendering():
         )
     assert text == "## Page 1\n\ntext"
     assert metadata["media_assets"] == []
+
+
+@pytest.mark.asyncio
+async def test_external_images_preserve_markdown_title():
+    asset = {"url": "/api/v1/kb/media/x.png", "path": "documents/x.png"}
+    with (
+        patch(
+            "app.services.kb_external_images.fetch_external_image",
+            AsyncMock(return_value=(b"image", "image/png")),
+        ),
+        patch.object(
+            ingestion.document_processor,
+            "replace_embedded_media_data_uris",
+            AsyncMock(
+                return_value=(
+                    '![x](data:image/png;base64,aW1hZ2U= "Quarterly chart")',
+                    [asset],
+                )
+            ),
+        ) as replace,
+    ):
+        text, metadata = await ingestion.ingest_external_images(
+            '![x](https://example.test/x.png "Quarterly chart")',
+            {},
+            kb_id=uuid4(),
+            document_id=uuid4(),
+            settings=_settings(
+                kb_image_understanding_enabled=True,
+                kb_image_understanding_allow_external=True,
+            ),
+        )
+    assert '"Quarterly chart"' in text
+    assert metadata["media_assets"] == [asset]
+    assert replace.await_args.args[0].endswith(' "Quarterly chart")')

@@ -146,10 +146,7 @@ def _render_png(
             f"({width_pt!r} x {height_pt!r} pt)"
         )
 
-    rotation = page.get_rotation()
-    display_width, display_height = (
-        (height_pt, width_pt) if rotation in (90, 270) else (width_pt, height_pt)
-    )
+    display_width, display_height = width_pt, height_pt
     scale = min(max_width / display_width, max_height / display_height)
     # PDFium rounds pixel dimensions upward; bias the scale down to keep the
     # actual allocation within the configured width and height limits.
@@ -169,7 +166,7 @@ def _render_png(
         )
 
     try:
-        bitmap = page.render(scale=scale, rotation=rotation, rev_byteorder=True)
+        bitmap = page.render(scale=scale, rotation=0, rev_byteorder=True)
     except Exception as exc:
         raise PDFRenderError(f"Unable to render PDF page {page_number}") from exc
 

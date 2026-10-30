@@ -94,12 +94,27 @@ export default function SiteSettingsParsingPage() {
     }
 
     if (modelsResult.status === 'fulfilled') {
-      setImageModels((modelsResult.value.items || []).filter((model) => {
+      const models = (modelsResult.value.items || []).filter((model) => {
         const modalities = model.capabilities?.input_modalities
         return Boolean(IMAGE_INPUT_PROVIDERS[model.provider])
           && Array.isArray(modalities)
           && modalities.includes('image')
-      }))
+      })
+      if (settingsResult.status === 'fulfilled') {
+        const missingIds = [
+          settingsResult.value.kb_image_understanding_model_id,
+          settingsResult.value.kb_image_ocr_model_id,
+        ].filter((id) => id && !models.some((model) => model.id === id))
+        const savedModels = await Promise.allSettled(
+          missingIds.map((id) => modelsApi.getModel(id)),
+        )
+        for (const result of savedModels) {
+          if (result.status === 'fulfilled' && !models.some((model) => model.id === result.value.id)) {
+            models.push(result.value)
+          }
+        }
+      }
+      setImageModels(models)
     } else {
       console.error('Failed to load image-capable models:', modelsResult.reason)
     }

@@ -26,7 +26,7 @@ from app.services.lexical_store import LexicalStore, chunk_document
 from app.services.vector_store import (
     DimensionMismatchError,
     VectorStore,
-    _collection_exists,
+    _collection_exists_strict,
     _collection_name,
     _get_qdrant_client,
     _validate_embeddings,
@@ -45,6 +45,7 @@ PREVIEW_METADATA_KEY = "rechunk_preview_metadata"
 PREVIEW_METADATA_FIELDS = frozenset(
     {"media_assets", "image_understanding", "format", "doc_type"}
 )
+MEDIA_EXTRACTED_MARKER = "rechunk_media_extracted"
 
 
 class StagedRechunkError(RuntimeError):
@@ -151,16 +152,18 @@ async def _build_stage_chunks(
     chunks: list[dict[str, Any]] | None,
     batch_size: int,
 ) -> tuple[list[DocumentChunk], int | None]:
+    excluded = {
+        PREVIEW_CHUNKS_KEY,
+        PREVIEW_METADATA_KEY,
+        CLEANUP_MARKER,
+        COMPLETED_TASK_MARKER,
+    }
+    if chunks is None:
+        excluded.update({"media_assets", "image_understanding"})
     base_metadata = {
         key: value
         for key, value in (source.metadata or {}).items()
-        if key
-        not in {
-            PREVIEW_CHUNKS_KEY,
-            PREVIEW_METADATA_KEY,
-            CLEANUP_MARKER,
-            COMPLETED_TASK_MARKER,
-        }
+        if key not in excluded
     }
     base_metadata.update(stage.metadata or {})
     base_metadata.update(extracted_metadata)
@@ -170,6 +173,8 @@ async def _build_stage_chunks(
             "rechunk_task_id": (stage.metadata or {}).get("rechunk_task_id"),
         }
     )
+    if chunks is None:
+        base_metadata[MEDIA_EXTRACTED_MARKER] = True
     stage.metadata = base_metadata
     await stage.save(update_fields=["metadata"])
 
@@ -280,7 +285,7 @@ async def _strict_vector_cleanup(
     if not dimension:
         return
     collection = _collection_name(dimension)
-    if not await _collection_exists(collection):
+    if not await _collection_exists_strict(collection):
         return
     client = await _get_qdrant_client()
     if set_payload and set_payload_ids:
@@ -381,6 +386,7 @@ async def _promote_stage(
             "rechunk_task_id",
             PREVIEW_CHUNKS_KEY,
             PREVIEW_METADATA_KEY,
+            MEDIA_EXTRACTED_MARKER,
         ):
             new_metadata.pop(key, None)
         rechunk_settings = metadata.get("rechunk_settings") or {}
@@ -399,6 +405,7 @@ async def _promote_stage(
         )
 
         assets = stage_metadata.get("media_assets") or []
+        fresh_media = bool(stage_metadata.get(MEDIA_EXTRACTED_MARKER))
         staged_media = any(
             f"/media/{stage_id}/" in str(asset.get("path") or "") for asset in assets
         )
@@ -415,20 +422,26 @@ async def _promote_stage(
             new_metadata["media_storage_document_id"] = str(stage_id)
             new_media_id: str | None = str(stage_id)
         else:
-            chosen_assets = assets or metadata.get("media_assets") or []
+            chosen_assets = (
+                assets if fresh_media else assets or metadata.get("media_assets") or []
+            )
             if chosen_assets:
                 new_metadata["media_assets"] = chosen_assets
+            else:
+                new_metadata.pop("media_assets", None)
             if preview_media:
                 new_metadata["media_storage_document_id"] = str(document.id)
                 new_media_id = str(document.id)
             else:
                 new_media_id = old_media_id
-                if metadata.get("media_storage_document_id"):
+                if metadata.get("media_storage_document_id") and not fresh_media:
                     new_metadata["media_storage_document_id"] = metadata[
                         "media_storage_document_id"
                     ]
                 else:
                     new_metadata.pop("media_storage_document_id", None)
+        if fresh_media:
+            new_metadata.pop("image_understanding", None)
         if stage_metadata.get("image_understanding"):
             new_metadata["image_understanding"] = stage_metadata["image_understanding"]
 

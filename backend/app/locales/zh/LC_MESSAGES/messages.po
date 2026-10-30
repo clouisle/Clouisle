@@ -1653,7 +1653,7 @@ msgid "document_processing_failed_generic"
 msgstr "文档处理失败"
 
 msgid "image_understanding_failed"
-msgstr "图片理解失败，请检查配置的视觉模型地址与凭证是否可用。"
+msgstr "图片理解失败，请检查配置的图片模型地址与凭证是否可用。"
 
 msgid "image_no_text_extracted"
 msgstr "图片中未识别到可用文字。可配置视觉模型生成图像描述，或上传包含文字的图片。"

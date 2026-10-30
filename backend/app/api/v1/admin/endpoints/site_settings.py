@@ -328,6 +328,16 @@ async def _validate_setting_value(
                     configured_model_id,
                     pending_settings,
                 )
+                configured_ocr_id = (
+                    pending_settings.get("kb_image_ocr_model_id")
+                    if pending_settings is not None
+                    and "kb_image_ocr_model_id" in pending_settings
+                    else await SiteSetting.get_value("kb_image_ocr_model_id", "")
+                )
+                if configured_ocr_id:
+                    await _validate_setting_value(
+                        "kb_image_ocr_model_id", configured_ocr_id, pending_settings
+                    )
         return
     if key == "kb_image_understanding_model_id":
         if not isinstance(value, str):

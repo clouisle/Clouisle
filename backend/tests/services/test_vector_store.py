@@ -416,3 +416,48 @@ async def test_migrate_existing_chunks_is_noop():
         batch_size=1,
         kb_id=UUID("00000000-0000-0000-0000-000000000001"),
     ) == {"processed": 0, "success": 0, "failed": 0, "skipped": 0}
+
+
+def test_embedding_content_strips_kb_media_links_without_regex():
+    assert vector_store_module._embedding_content("plain") == "plain"
+    assert vector_store_module._embedding_content("![alt") == "![alt"
+    assert vector_store_module._embedding_content("![alt] text") == "![alt] text"
+    assert vector_store_module._embedding_content("![alt](url") == "![alt](url"
+    assert (
+        vector_store_module._embedding_content("![alt](https://example.test/a.png)")
+        == "![alt](https://example.test/a.png)"
+    )
+
+    base = "/api/v1/knowledge-bases/kb/documents/doc/media/"
+    assert vector_store_module._embedding_content(f"![chart]({base}a.png)") == "chart"
+    admin = "/api/v1/admin/knowledge-bases/kb/documents/doc/media/a.png"
+    assert vector_store_module._embedding_content(f"before ![x]({admin}) after") == (
+        "before x after"
+    )
+    assert vector_store_module._embedding_content(f"![x]({base})") == f"![x]({base})"
+    assert (
+        vector_store_module._embedding_content(f"![a]({base}a.png) ![b]({base}b.png)")
+        == "a b"
+    )
+
+
+@pytest.mark.asyncio
+async def test_collection_exists_strict_distinguishes_missing_and_errors(monkeypatch):
+    cached = "strict_cached_test"
+    vector_store_module._qdrant_collections.add(cached)
+    assert await vector_store_module._collection_exists_strict(cached) is True
+
+    class NotFound(Exception):
+        status_code = 404
+
+    client = SimpleNamespace(get_collection=AsyncMock(side_effect=NotFound()))
+    monkeypatch.setattr(
+        vector_store_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    assert (
+        await vector_store_module._collection_exists_strict("missing_strict") is False
+    )
+
+    client.get_collection = AsyncMock(side_effect=RuntimeError("down"))
+    with pytest.raises(RuntimeError, match="down"):
+        await vector_store_module._collection_exists_strict("broken_strict")

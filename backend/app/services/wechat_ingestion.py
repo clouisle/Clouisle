@@ -167,16 +167,21 @@ async def text_for_input(
         text = transcript
         source["wechat_extraction"] = "wechat_transcript"
     elif kind in (2, 3, 5) or mime.startswith(("image/", "audio/", "video/")):
-        text = await extract_media(
-            raw,
-            filename,
-            mime,
-            kind,
-            str(kb.team_id),
-            receipt.vision_model_id,
-            receipt.stt_model_id,
-        )
-        source["wechat_extraction"] = "model_media_extraction"
+        if (kind == 2 or mime.startswith("image/")) and not receipt.vision_model_id:
+            # Let the durable document pipeline apply site-wide OCR-only settings.
+            text = str(spec.get("caption") or filename).strip() or filename
+            source["wechat_extraction"] = "document_image_processing"
+        else:
+            text = await extract_media(
+                raw,
+                filename,
+                mime,
+                kind,
+                str(kb.team_id),
+                receipt.vision_model_id,
+                receipt.stt_model_id,
+            )
+            source["wechat_extraction"] = "model_media_extraction"
     elif doc_type:
         text, metadata = await document_processor.extract_text(original, doc_type)
         source.update(metadata)

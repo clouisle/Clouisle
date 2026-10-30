@@ -7,13 +7,15 @@ import warnings
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
+from types import SimpleNamespace
+from typing import Any
 
 from pathlib import PurePosixPath
 from defusedxml import ElementTree as SafeET
 from openpyxl.drawing.spreadsheet_drawing import (
     AbsoluteAnchor,
+    AnchorMarker,
     OneCellAnchor,
-    SpreadsheetDrawing,
     TwoCellAnchor,
 )
 from openpyxl.utils import get_column_letter
@@ -36,6 +38,8 @@ _OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relation
 _IMAGE_REL_TYPE = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 )
+_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_XDR_NS = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
 _SUPPORTED_IMAGE_MIME_TYPES = {
     "PNG": "image/png",
     "JPEG": "image/jpeg",
@@ -302,8 +306,11 @@ def _worksheet_drawings(
         if sheet_rels_path not in entries:
             continue
         sheet_rels = _read_relationships(archive, entries, worksheet_path)
-        for drawing_path, drawing_type in sheet_rels.values():
-            if drawing_type.endswith("/drawing"):
+        referenced_drawings = _worksheet_drawing_relationship_ids(
+            archive, entries, worksheet_path
+        )
+        for rel_id, (drawing_path, drawing_type) in sheet_rels.items():
+            if drawing_type.endswith("/drawing") and rel_id in referenced_drawings:
                 drawings.append((name, drawing_path))
                 if len(drawings) > MAX_WORKSHEETS:
                     raise XlsxImageExtractionError(
@@ -331,14 +338,8 @@ def _extract_drawn_images(
             )
         seen_drawings.add(drawing_path)
         drawing_root = _safe_xml_part(archive, entries, drawing_path)
-        try:
-            drawing = SpreadsheetDrawing.from_tree(drawing_root)
-        except Exception as exc:
-            raise XlsxImageExtractionError(
-                "Unsupported XLSX worksheet drawing"
-            ) from exc
         relationships = _read_relationships(archive, entries, drawing_path)
-        embedded_blips = _embedded_blip_ids(drawing)
+        embedded_blips = _embedded_blip_ids(drawing_root)
         embedded_rel_ids = {blip.embed for blip, _anchor in embedded_blips}
         image_rel_ids = {
             rel_id
@@ -379,27 +380,64 @@ def _extract_drawn_images(
     return extracted
 
 
-def _embedded_blip_ids(drawing: SpreadsheetDrawing):
+def _worksheet_drawing_relationship_ids(
+    archive: zipfile.ZipFile,
+    entries: dict[str, zipfile.ZipInfo],
+    worksheet_path: str,
+) -> set[str]:
+    root = _safe_xml_part(archive, entries, worksheet_path)
+    return {
+        rel_id
+        for element in root.iter(f"{{{_WORKBOOK_NS}}}drawing")
+        if (rel_id := element.attrib.get(f"{{{_OFFICE_REL_NS}}}id"))
+    }
+
+
+def _anchor_marker(anchor: Any, name: str) -> AnchorMarker:
+    marker = anchor.find(f"{{{_XDR_NS}}}{name}")
+    if marker is None:
+        raise XlsxImageExtractionError("Invalid XLSX image anchor")
+    try:
+        return AnchorMarker(
+            col=int((marker.findtext(f"{{{_XDR_NS}}}col") or "0").strip()),
+            colOff=int((marker.findtext(f"{{{_XDR_NS}}}colOff") or "0").strip()),
+            row=int((marker.findtext(f"{{{_XDR_NS}}}row") or "0").strip()),
+            rowOff=int((marker.findtext(f"{{{_XDR_NS}}}rowOff") or "0").strip()),
+        )
+    except (TypeError, ValueError) as exc:
+        raise XlsxImageExtractionError("Invalid XLSX image anchor") from exc
+
+
+def _drawing_anchor(anchor: Any) -> AbsoluteAnchor | OneCellAnchor | TwoCellAnchor:
+    if anchor.tag == f"{{{_XDR_NS}}}absoluteAnchor":
+        return AbsoluteAnchor()
+    if anchor.tag == f"{{{_XDR_NS}}}oneCellAnchor":
+        return OneCellAnchor(_from=_anchor_marker(anchor, "from"))
+    if anchor.tag == f"{{{_XDR_NS}}}twoCellAnchor":
+        return TwoCellAnchor(
+            _from=_anchor_marker(anchor, "from"),
+            to=_anchor_marker(anchor, "to"),
+        )
+    raise XlsxImageExtractionError("Unsupported XLSX image anchor")
+
+
+def _embedded_blip_ids(drawing_root: Any):
     blips = []
-    anchors = (
-        list(drawing.absoluteAnchor)
-        + list(drawing.oneCellAnchor)
-        + list(drawing.twoCellAnchor)
-    )
-    for anchor in anchors:
-        picture = anchor.pic or (anchor.groupShape and anchor.groupShape.pic)
-        if picture is None or picture.blipFill is None:
+    for anchor in drawing_root:
+        if anchor.tag not in {
+            f"{{{_XDR_NS}}}absoluteAnchor",
+            f"{{{_XDR_NS}}}oneCellAnchor",
+            f"{{{_XDR_NS}}}twoCellAnchor",
+        }:
             continue
-        blip = picture.blipFill.blip
-        if blip is None:
-            raise XlsxImageExtractionError(
-                "XLSX drawing picture has no image reference"
-            )
-        if blip.link:
-            raise XlsxImageExtractionError("Linked XLSX images are not supported")
-        if not blip.embed:
-            raise XlsxImageExtractionError("XLSX drawing picture is not embedded")
-        blips.append((blip, anchor))
+        openpyxl_anchor = _drawing_anchor(anchor)
+        for blip in anchor.iter(f"{{{_DRAWING_NS}}}blip"):
+            if blip.attrib.get(f"{{{_OFFICE_REL_NS}}}link"):
+                raise XlsxImageExtractionError("Linked XLSX images are not supported")
+            embed = blip.attrib.get(f"{{{_OFFICE_REL_NS}}}embed")
+            if not embed:
+                raise XlsxImageExtractionError("XLSX drawing picture is not embedded")
+            blips.append((SimpleNamespace(embed=embed), openpyxl_anchor))
     return blips
 
 

@@ -284,3 +284,46 @@ async def test_download_and_media_reject_invalid_storage_paths(monkeypatch):
             kb_id, doc_id, "image.png", SimpleNamespace()
         )
     assert caught.value.msg_key == "file_not_found"
+
+
+@pytest.mark.anyio
+async def test_completed_source_less_document_skips_image_preview_lookup(monkeypatch):
+    kb_id, doc_id = uuid4(), uuid4()
+    doc = SimpleNamespace(
+        id=doc_id,
+        name="legacy",
+        status=knowledge_bases.DocumentStatus.COMPLETED.value,
+        metadata={},
+        error_message=None,
+        file_path=None,
+        source_url=None,
+        chunk_count=1,
+        token_count=2,
+        save=AsyncMock(),
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(knowledge_bases.Document, "get", lambda **_kwargs: Query(doc))
+    monkeypatch.setattr(
+        "app.services.kb_image_ingestion.image_settings",
+        AsyncMock(return_value={"kb_image_understanding_enabled": True}),
+    )
+    dispatch = AsyncMock(return_value="task")
+    monkeypatch.setattr(knowledge_bases, "_dispatch_document_task", dispatch)
+    monkeypatch.setattr(
+        knowledge_bases, "serialize_document", AsyncMock(return_value={"id": doc_id})
+    )
+    request = ProcessWithChunksRequest(
+        chunks=[{"content": "content", "chunk_index": 0}]
+    )
+    result = await knowledge_bases.process_document_with_chunks(
+        kb_id=kb_id,
+        doc_id=doc_id,
+        request=SimpleNamespace(),
+        process_request=request,
+        current_user=SimpleNamespace(),
+    )
+    assert result["data"] == {"id": doc_id}
+    dispatch.assert_awaited_once()

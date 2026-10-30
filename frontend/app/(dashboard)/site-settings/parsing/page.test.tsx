@@ -23,6 +23,15 @@ const getModels = mock(() => Promise.resolve({
   page: 1,
   pageSize: 100,
 }))
+const getModel = mock((id: string) => Promise.resolve({
+  id,
+  name: 'Saved Model',
+  provider: 'openai',
+  provider_display_name: 'Acme',
+  model_type: 'chat',
+  is_enabled: true,
+  capabilities: { input_modalities: ['text', 'image'] },
+}))
 let canUpdate = true
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
@@ -53,7 +62,7 @@ mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: 
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: () => <div /> }))
 mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: React.PropsWithChildren) => <p>{children}</p> }))
 mock.module('@/lib/api/admin/site-settings', () => ({ siteSettingsApi: { getKnowledgeBaseImages, updateKnowledgeBaseImages } }))
-mock.module('@/lib/api/admin/models', () => ({ modelsApi: { getModels } }))
+mock.module('@/lib/api/admin/models', () => ({ modelsApi: { getModels, getModel } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => canUpdate }) }))
 
 // Mock.module must run before this import; a static import would bypass mocks.
@@ -111,4 +120,16 @@ test('allows saving with only an OCR model configured', async () => {
     kb_image_understanding_model_id: '',
     kb_image_ocr_model_id: 'vision-1',
   }))
+})
+
+
+test('loads a saved image model that is outside the first model page', async () => {
+  getKnowledgeBaseImages.mockResolvedValueOnce({
+    ...imageSettings,
+    kb_image_understanding_enabled: true,
+    kb_image_understanding_model_id: 'saved-99',
+  })
+  renderer = await render()
+  expect(getModel).toHaveBeenCalledWith('saved-99')
+  expect(renderer.root.findAll((node) => node.children.includes('Acme / Saved Model')).length).toBeGreaterThan(0)
 })

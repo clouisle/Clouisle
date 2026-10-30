@@ -359,24 +359,31 @@ class DocumentProcessor:
         *,
         kb_id: UUID,
         document_id: UUID,
+        max_image_bytes: int = MAX_EMBEDDED_IMAGE_BYTES,
+        max_images: int | None = None,
+        raise_on_count_exceeded: bool = False,
     ) -> tuple[str, list[dict[str, Any]]]:
         assets: list[dict[str, Any]] = []
-        replacements: dict[str, str] = {}
+        replacements: list[tuple[int, int, str]] = []
+        image_limit = MAX_EMBEDDED_IMAGE_COUNT if max_images is None else max_images
 
         for match in DATA_URI_IMAGE_RE.finditer(text):
-            if len(assets) >= MAX_EMBEDDED_IMAGE_COUNT:
-                raise ValueError("embedded_image_count_exceeded")
+            if len(assets) >= image_limit:
+                if raise_on_count_exceeded:
+                    raise ValueError("embedded_image_count_exceeded")
+                replacements.append((match.start(), match.end(), ""))
+                continue
             content_type = match.group(1).lower()
             if content_type not in ALLOWED_MEDIA_MIME_TYPES:
                 raise ValueError("embedded_image_type_unsupported")
             encoded = match.group(2)
-            if len(encoded) > ((MAX_EMBEDDED_IMAGE_BYTES + 2) // 3) * 4:
+            if len(encoded) > ((max_image_bytes + 2) // 3) * 4:
                 raise ValueError("embedded_image_size_exceeded")
             try:
                 content = base64.b64decode(encoded, validate=True)
             except binascii.Error as exc:
                 raise ValueError("embedded_image_invalid") from exc
-            if len(content) > MAX_EMBEDDED_IMAGE_BYTES:
+            if len(content) > max_image_bytes:
                 raise ValueError("embedded_image_size_exceeded")
             if content_type != "image/svg+xml":
                 from PIL import Image, UnidentifiedImageError
@@ -403,12 +410,16 @@ class DocumentProcessor:
                 content=content,
             )
             assets.append(asset)
-            replacements[match.group(0)] = asset["url"]
+            replacements.append((match.start(), match.end(), asset["url"]))
 
-        def replace(match: re.Match[str]) -> str:
-            return replacements.get(match.group(0), match.group(0))
-
-        return DATA_URI_IMAGE_RE.sub(replace, text), assets
+        pieces: list[str] = []
+        position = 0
+        for start, end, replacement in replacements:
+            pieces.append(text[position:start])
+            pieces.append(replacement)
+            position = end
+        pieces.append(text[position:])
+        return "".join(pieces), assets
 
     async def extract_text(
         self,
@@ -438,14 +449,26 @@ class DocumentProcessor:
 
         try:
             if doc_type == DocumentType.IMAGE.value:
-                content_type = mimetypes.guess_type(storage_key)[0]
-                if content_type not in {
-                    "image/png",
-                    "image/jpeg",
-                    "image/gif",
-                    "image/webp",
-                }:
-                    raise ValueError("embedded_image_type_unsupported")
+                from PIL import Image, UnidentifiedImageError
+
+                try:
+                    with Image.open(io.BytesIO(content)) as image:
+                        content_type = Image.MIME.get(image.format or "")
+                        if content_type not in {
+                            "image/png",
+                            "image/jpeg",
+                            "image/gif",
+                            "image/webp",
+                        }:
+                            raise ValueError("embedded_image_type_unsupported")
+                        image.verify()
+                except (
+                    UnidentifiedImageError,
+                    OSError,
+                    SyntaxError,
+                    Image.DecompressionBombError,
+                ) as exc:
+                    raise ValueError("embedded_image_invalid") from exc
                 encoded = base64.b64encode(content).decode("ascii")
                 text = f"![Image](data:{content_type};base64,{encoded})"
                 metadata["format"] = "markdown"

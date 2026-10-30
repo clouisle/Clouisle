@@ -1728,6 +1728,9 @@ async def test_media_rejects_binary_disguised_as_document(
         message_id="binary",
         payload=encrypt_secret("{}"),
     )
+    if filename == "vision.png":
+        receipt.vision_model_id = "vision-model"
+        await receipt.save(update_fields=["vision_model_id"])
     item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
     monkeypatch.setattr(
         knowledge_bases,
@@ -1764,7 +1767,8 @@ async def test_media_rejects_binary_disguised_as_document(
             "Provider transcript",
             "Provider transcript",
         ),
-        (2, "photo.png", "image/png", b"image", "", "Image description"),
+        (2, "photo.png", "image/png", b"image", "", "Context"),
+        (2, "vision.png", "image/png", b"image", "", "Image description"),
     ],
 )
 async def test_media_extraction_preserves_private_original_provenance(
@@ -1783,6 +1787,9 @@ async def test_media_extraction_preserves_private_original_provenance(
         message_id="valid-media",
         payload=encrypt_secret("{}"),
     )
+    if filename == "vision.png":
+        receipt.vision_model_id = "vision-model"
+        await receipt.save(update_fields=["vision_model_id"])
     item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
     monkeypatch.setattr(
         knowledge_bases,
@@ -1816,6 +1823,11 @@ async def test_media_extraction_preserves_private_original_provenance(
     assert source["wechat_original_size"] == len(raw)
     assert source["wechat_original_mime"] == mime
     assert source["wechat_caption"] == "Context"
+    if kind == 2 and filename != "vision.png":
+        ingestion.extract_media.assert_not_awaited()
+        assert source["wechat_extraction"] == "document_image_processing"
+    elif kind == 2:
+        ingestion.extract_media.assert_awaited_once()
     await item.refresh_from_db()
     assert source["wechat_original_path"] == item.original_path
     assert item.original_path.startswith(

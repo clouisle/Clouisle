@@ -25,10 +25,12 @@ from app.services.kb_pdf_images import (
 )
 
 
-def make_pdf(*page_contents: bytes, encrypt: bool = False) -> bytes:
+def make_pdf(*page_contents: bytes, encrypt: bool = False, rotate: int = 0) -> bytes:
     writer = PdfWriter()
     for contents in page_contents:
         page = writer.add_blank_page(width=612, height=792)
+        if rotate:
+            page.rotate(rotate)
         stream = DecodedStreamObject()
         stream.set_data(contents)
         page.replace_contents(stream)
@@ -326,3 +328,10 @@ def test_text_length_and_page_lookup_errors(monkeypatch):
     monkeypatch.setattr(pdf_module.pdfium, "PdfDocument", BrokenPageDocument)
     with pytest.raises(InvalidPDFError, match="Unable to extract PDF page"):
         list(iter_pdf_pages(make_pdf(b"")))
+
+
+def test_page_rotation_is_not_applied_twice():
+    (page,) = iter_pdf_pages(make_pdf(b"", rotate=90))
+    assert page.needs_visual_recognition is True
+    assert page.image_width is not None and page.image_height is not None
+    assert page.image_width > page.image_height

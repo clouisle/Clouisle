@@ -148,7 +148,10 @@ async def ingest_external_images(
         return text, metadata
     from app.services.kb_external_images import fetch_external_image
 
-    pattern = re.compile(r"(!\[[^\]]*\]\()(https?://[^\s)]+)(\))", re.IGNORECASE)
+    pattern = re.compile(
+        r"(!\[[^\]]*\]\()(https?://[^\s)]+)(\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?(\))",
+        re.IGNORECASE,
+    )
     matches = list(pattern.finditer(text))
     assets = list(metadata.get("media_assets") or [])
     if len(matches) + len(assets) > settings["kb_image_understanding_max_images"]:
@@ -161,7 +164,10 @@ async def ingest_external_images(
         )
         uri = f"data:{mime};base64,{base64.b64encode(payload).decode('ascii')}"
         replacement, saved = await document_processor.replace_embedded_media_data_uris(
-            match.group(1) + uri + match.group(3), kb_id=kb_id, document_id=document_id
+            match.group(1) + uri + (match.group(3) or "") + match.group(4),
+            kb_id=kb_id,
+            document_id=document_id,
+            max_image_bytes=settings["kb_image_understanding_max_image_bytes"],
         )
         text = text[: match.start()] + replacement + text[match.end() :]
         assets.extend(saved)
@@ -195,7 +201,10 @@ async def ingest_xlsx_images(
         label = f"Sheet {image.sheet_name}, cell {image.anchor}"
         uri = f"data:{image.content_type};base64,{base64.b64encode(image.data).decode('ascii')}"
         markdown, saved = await document_processor.replace_embedded_media_data_uris(
-            f"![{label}]({uri})", kb_id=kb_id, document_id=document_id
+            f"![{label}]({uri})",
+            kb_id=kb_id,
+            document_id=document_id,
+            max_image_bytes=settings["kb_image_understanding_max_image_bytes"],
         )
         for asset in saved:
             asset.update({"sheet": image.sheet_name, "anchor": image.anchor})
@@ -252,6 +261,7 @@ async def ingest_pdf_pages(
                 f"![Page {page.page_number}]({uri})",
                 kb_id=kb_id,
                 document_id=document_id,
+                max_image_bytes=settings["kb_image_understanding_max_image_bytes"],
             )
             for asset in saved:
                 asset["page"] = page.page_number
@@ -332,7 +342,11 @@ async def enrich_document_images(
                 code="image_no_text_extracted",
             )
         if annotation:
-            image_pattern = re.compile(r"(!\[[^\]]*\]\(" + re.escape(url) + r"\))")
+            image_pattern = re.compile(
+                r"(!\[[^\]]*\]\("
+                + re.escape(url)
+                + r"(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\))"
+            )
             match = image_pattern.search(text, offsets.get(url, 0))
             if not match:
                 raise ValueError("image_reference_missing")

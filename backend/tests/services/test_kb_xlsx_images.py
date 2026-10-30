@@ -323,50 +323,62 @@ def test_read_relationships_rejects_invalid_entries(monkeypatch, xml):
         )
 
 
-def test_embedded_blips_validate_picture_references():
-    def anchor(picture):
-        return SimpleNamespace(pic=picture, groupShape=None)
-
-    drawing = SimpleNamespace(
-        absoluteAnchor=[anchor(None)],
-        oneCellAnchor=[anchor(SimpleNamespace(blipFill=None))],
-        twoCellAnchor=[],
+def _drawing_xml(*anchors: str) -> ET.Element:
+    return ET.fromstring(
+        f'<xdr:wsDr xmlns:xdr="{xlsx_module._XDR_NS}" '
+        f'xmlns:a="{xlsx_module._DRAWING_NS}" '
+        f'xmlns:r="{xlsx_module._OFFICE_REL_NS}">' + "".join(anchors) + "</xdr:wsDr>"
     )
-    assert xlsx_module._embedded_blip_ids(drawing) == []
 
-    drawing.oneCellAnchor = [
-        anchor(SimpleNamespace(blipFill=SimpleNamespace(blip=None)))
-    ]
-    with pytest.raises(XlsxImageExtractionError, match="no image reference"):
-        xlsx_module._embedded_blip_ids(drawing)
 
-    drawing.oneCellAnchor = [
-        anchor(
-            SimpleNamespace(
-                blipFill=SimpleNamespace(blip=SimpleNamespace(link="x", embed="r"))
+def _anchor_xml(*blips: str) -> str:
+    return (
+        "<xdr:oneCellAnchor><xdr:from><xdr:col>1</xdr:col>"
+        "<xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row>"
+        "<xdr:rowOff>0</xdr:rowOff></xdr:from>"
+        "<xdr:pic><xdr:blipFill>" + "".join(blips) + "</xdr:blipFill></xdr:pic>"
+        "</xdr:oneCellAnchor>"
+    )
+
+
+def test_embedded_blips_validate_picture_references():
+    assert (
+        xlsx_module._embedded_blip_ids(
+            _drawing_xml(
+                "<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col>"
+                "<xdr:row>0</xdr:row></xdr:from></xdr:oneCellAnchor>"
             )
         )
-    ]
+        == []
+    )
+
     with pytest.raises(XlsxImageExtractionError, match="Linked"):
-        xlsx_module._embedded_blip_ids(drawing)
-
-    drawing.oneCellAnchor = [
-        anchor(
-            SimpleNamespace(
-                blipFill=SimpleNamespace(blip=SimpleNamespace(link=None, embed=None))
-            )
+        xlsx_module._embedded_blip_ids(
+            _drawing_xml(_anchor_xml('<a:blip r:link="rId1"/>'))
         )
-    ]
-    with pytest.raises(XlsxImageExtractionError, match="not embedded"):
-        xlsx_module._embedded_blip_ids(drawing)
 
-    valid = SimpleNamespace(link=None, embed="rId1")
-    drawing.oneCellAnchor = [
-        anchor(SimpleNamespace(blipFill=SimpleNamespace(blip=valid)))
-    ]
-    assert xlsx_module._embedded_blip_ids(drawing) == [
-        (valid, drawing.oneCellAnchor[0])
-    ]
+    with pytest.raises(XlsxImageExtractionError, match="not embedded"):
+        xlsx_module._embedded_blip_ids(_drawing_xml(_anchor_xml("<a:blip/>")))
+
+    blips = xlsx_module._embedded_blip_ids(
+        _drawing_xml(_anchor_xml('<a:blip r:embed="rId1"/>'))
+    )
+    assert len(blips) == 1
+    assert blips[0][0].embed == "rId1"
+    assert blips[0][1]._from.col == 1
+    assert blips[0][1]._from.row == 2
+
+
+def test_embedded_blips_collect_repeated_grouped_pictures():
+    root = _drawing_xml(
+        _anchor_xml(
+            '<a:blip r:embed="rId1"/>',
+            '<xdr:grpSp><xdr:grpSpPr/><a:blip r:embed="rId2"/></xdr:grpSp>',
+        )
+    )
+    blips = xlsx_module._embedded_blip_ids(root)
+    assert [blip.embed for blip, _anchor in blips] == ["rId1", "rId2"]
+    assert blips[0][1] is blips[1][1]
 
 
 def test_validate_image_rejects_unsupported_animated_and_corrupt(monkeypatch):
@@ -490,9 +502,17 @@ def test_worksheet_drawings_skips_non_worksheets_and_missing_rels(monkeypatch):
 
 def test_worksheet_drawings_skips_other_rel_types_and_enforces_count(monkeypatch):
     sheet = '<sheet name="S" r:id="rId1"/>'
-    monkeypatch.setattr(
-        xlsx_module, "_safe_xml_part", lambda *a, **k: _workbook_xml(sheet)
-    )
+
+    def worksheet_xml(*args, **_kwargs):
+        if args[2] == "xl/workbook.xml":
+            return _workbook_xml(sheet)
+        return ET.fromstring(
+            f'<worksheet xmlns="{xlsx_module._WORKBOOK_NS}" '
+            f'xmlns:r="{xlsx_module._OFFICE_REL_NS}">'
+            '<drawing r:id="rId2"/><drawing r:id="rId3"/></worksheet>'
+        )
+
+    monkeypatch.setattr(xlsx_module, "_safe_xml_part", worksheet_xml)
     entries = {"xl/worksheets/_rels/sheet1.xml.rels": _info("x")}
     monkeypatch.setattr(
         xlsx_module,
@@ -522,14 +542,34 @@ def test_worksheet_drawings_skips_other_rel_types_and_enforces_count(monkeypatch
         xlsx_module._worksheet_drawings(_Archive([]), entries)
 
 
+def test_worksheet_drawings_ignores_stale_drawing_relationship(monkeypatch):
+    sheet = '<sheet name="S" r:id="rId1"/>'
+
+    def worksheet_xml(*args, **_kwargs):
+        if args[2] == "xl/workbook.xml":
+            return _workbook_xml(sheet)
+        return ET.fromstring(
+            f'<worksheet xmlns="{xlsx_module._WORKBOOK_NS}" '
+            f'xmlns:r="{xlsx_module._OFFICE_REL_NS}"/>'
+        )
+
+    monkeypatch.setattr(xlsx_module, "_safe_xml_part", worksheet_xml)
+    entries = {"xl/worksheets/_rels/sheet1.xml.rels": _info("x")}
+    monkeypatch.setattr(
+        xlsx_module,
+        "_read_relationships",
+        lambda *a, **k: (
+            {"rId1": ("xl/worksheets/sheet1.xml", "http://x/worksheet")}
+            if a[2] == "xl/workbook.xml"
+            else {"rId2": ("xl/drawings/drawing1.xml", "http://x/drawing")}
+        ),
+    )
+    assert xlsx_module._worksheet_drawings(_Archive([]), entries) == []
+
+
 def test_extract_rejects_drawing_attached_to_multiple_sheets(monkeypatch):
     monkeypatch.setattr(
         xlsx_module, "_safe_xml_part", lambda *a, **k: ET.fromstring("<xdr/>")
-    )
-    monkeypatch.setattr(
-        xlsx_module.SpreadsheetDrawing,
-        "from_tree",
-        classmethod(lambda cls, _root: SimpleNamespace()),
     )
     monkeypatch.setattr(xlsx_module, "_read_relationships", lambda *a, **k: {})
     monkeypatch.setattr(xlsx_module, "_embedded_blip_ids", lambda _drawing: [])
@@ -547,16 +587,10 @@ def test_extract_rejects_drawing_attached_to_multiple_sheets(monkeypatch):
 def test_extract_drawn_images_rejects_unanchored_missing_and_mismatched_images(
     monkeypatch,
 ):
-    drawing = SimpleNamespace()
     blip = SimpleNamespace(embed="rId1")
     anchor = SimpleNamespace()
     monkeypatch.setattr(
         xlsx_module, "_safe_xml_part", lambda *a, **k: ET.fromstring("<xdr/>")
-    )
-    monkeypatch.setattr(
-        xlsx_module.SpreadsheetDrawing,
-        "from_tree",
-        classmethod(lambda cls, _root: drawing),
     )
     monkeypatch.setattr(
         xlsx_module, "_embedded_blip_ids", lambda _drawing: [(blip, anchor)]
