@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from typing import Any
 
 import pytest
 import pytest_asyncio
 
+from app.services import kb_preview_cache as preview_module
 from app.services.kb_preview_cache import (
     KBPreviewCache,
     KBPreviewCacheEntry,
     KBPreviewCacheEntryTooLarge,
     KBPreviewCacheError,
     KBPreviewCacheUnavailable,
+    _Lease,
+    _canonical_json,
+    _entry_json,
+    _reject_sensitive_value,
+    _validate_json_value,
+    get_kb_preview_cache,
 )
 
 
@@ -94,13 +104,13 @@ def _cache(redis: FakeRedis, **options: Any) -> KBPreviewCache:
     async def redis_factory() -> FakeRedis:
         return redis
 
-    return KBPreviewCache(
-        redis_factory=redis_factory,
-        poll_interval_seconds=0.001,
-        max_wait_seconds=2,
-        compute_timeout_seconds=1,
-        **options,
-    )
+    defaults: dict[str, Any] = {
+        "poll_interval_seconds": 0.001,
+        "max_wait_seconds": 2,
+        "compute_timeout_seconds": 1,
+    }
+    defaults.update(options)
+    return KBPreviewCache(redis_factory=redis_factory, **defaults)
 
 
 def _entry(text: str = "plain text") -> KBPreviewCacheEntry:
@@ -353,3 +363,479 @@ async def test_media_asset_urls_are_cacheable(redis: FakeRedis) -> None:
 
     entry = await _get(cache, compute=compute)
     assert entry.metadata["media_assets"][0]["url"].endswith("/media/a.png")
+
+
+def test_canonical_json_and_sensitive_value_validation():
+    with pytest.raises(KBPreviewCacheError, match="canonical JSON"):
+        _canonical_json({1, 2})
+    with pytest.raises(KBPreviewCacheError, match="URL credentials"):
+        _reject_sensitive_value("https://user:pass@example.test/a")
+    with pytest.raises(KBPreviewCacheError, match="URL credentials"):
+        _reject_sensitive_value("https://example.test/a?token=secret")
+    with pytest.raises(KBPreviewCacheError, match="invalid URI"):
+        _reject_sensitive_value("http://[invalid")
+
+
+def test_json_value_validation_limits(monkeypatch):
+    with pytest.raises(KBPreviewCacheEntryTooLarge, match="nesting"):
+        _validate_json_value(
+            "x", budget=[100, 100], depth=preview_module._MAX_METADATA_DEPTH + 1
+        )
+    with pytest.raises(KBPreviewCacheEntryTooLarge, match="too many values"):
+        _validate_json_value("x", budget=[0, 100])
+    with pytest.raises(KBPreviewCacheError, match="non-finite"):
+        _validate_json_value(float("inf"), budget=[100, 100])
+    with pytest.raises(KBPreviewCacheError, match="forbidden field"):
+        _validate_json_value({"api-key": "x"}, budget=[100, 100])
+    with pytest.raises(KBPreviewCacheError, match="keys must be strings"):
+        _validate_json_value({1: "x"}, budget=[100, 100])
+    with pytest.raises(KBPreviewCacheError, match="JSON values only"):
+        _validate_json_value({1, 2}, budget=[100, 100])
+    with pytest.raises(KBPreviewCacheError, match="invalid Unicode"):
+        _validate_json_value("\ud800", budget=[100, 100])
+    with pytest.raises(KBPreviewCacheEntryTooLarge, match="cache limit"):
+        _validate_json_value("long", budget=[100, 2])
+    assert _validate_json_value(1.5, budget=[100, 100]) is None
+
+
+def test_entry_json_validates_shape():
+    with pytest.raises(KBPreviewCacheError, match="invalid entry"):
+        _entry_json("not an entry")
+    with pytest.raises(KBPreviewCacheError, match="must be a string"):
+        _entry_json(KBPreviewCacheEntry(enriched_text=None))
+    with pytest.raises(KBPreviewCacheError, match="list of JSON"):
+        _entry_json(KBPreviewCacheEntry(enriched_text="x", image_metadata=["x"]))
+    with pytest.raises(KBPreviewCacheError, match="JSON object"):
+        _entry_json(KBPreviewCacheEntry(enriched_text="x", metadata=[]))
+
+
+def test_cache_constructor_validates_timing():
+    with pytest.raises(ValueError, match="positive"):
+        KBPreviewCache(ttl_seconds=0)
+    with pytest.raises(ValueError, match="shorter than"):
+        KBPreviewCache(lease_seconds=10, lease_renew_interval_seconds=10)
+    with pytest.raises(ValueError, match="timing limits"):
+        KBPreviewCache(poll_interval_seconds=0)
+
+
+@pytest.mark.asyncio
+async def test_get_entry_rejects_oversize_identity_and_expiry(monkeypatch):
+    cache = _cache(FakeRedis())
+    monkeypatch.setattr(preview_module, "_MAX_CACHE_BYTES", 2)
+    with pytest.raises(KBPreviewCacheEntryTooLarge):
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(return_value=b"xxxx")),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+    with pytest.raises(KBPreviewCacheEntryTooLarge):
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(return_value=123)),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+    monkeypatch.setattr(preview_module, "_MAX_CACHE_BYTES", 5 * 1024 * 1024)
+    record = {
+        "identity": {
+            "user_id": "other",
+            "knowledge_base_id": "kb",
+            "document_id": "d",
+            "fingerprint": "f",
+        },
+        "expires_at": time.time() + 10,
+        "entry": {"enriched_text": "x", "image_metadata": [], "metadata": {}},
+    }
+    with pytest.raises(KBPreviewCacheUnavailable, match="identity"):
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(return_value=json.dumps(record))),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+
+    record["identity"]["user_id"] = "u"
+    record["expires_at"] = 0
+    assert (
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(return_value=json.dumps(record))),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+        is None
+    )
+
+    assert (
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(return_value=None)),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+        is None
+    )
+
+    with pytest.raises(KBPreviewCacheUnavailable, match="read failed"):
+        await cache._get_entry(
+            SimpleNamespace(get=AsyncMock(side_effect=ConnectionError())),
+            "k",
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            fingerprint="f",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_existing_and_get_or_create_validate_inputs():
+    cache = _cache(FakeRedis())
+    common = {
+        "user_id": "u",
+        "knowledge_base_id": "kb",
+        "document_id": "d",
+        "source": b"x",
+        "clean_text": True,
+        "model": None,
+        "policy": "p",
+    }
+    with pytest.raises(KBPreviewCacheError, match="clean_text"):
+        await cache.get_existing(**{**common, "clean_text": "yes"})
+    with pytest.raises(KBPreviewCacheError, match="model"):
+        await cache.get_existing(**{**common, "model": 1})
+    with pytest.raises(KBPreviewCacheError, match="policy"):
+        await cache.get_existing(**{**common, "policy": None})
+    with pytest.raises(KBPreviewCacheError, match="IDs are required"):
+        await cache.get_existing(**{**common, "user_id": ""})
+
+    async def compute():
+        return _entry()
+
+    with pytest.raises(KBPreviewCacheError, match="clean_text"):
+        await cache.get_or_create(**{**common, "clean_text": "yes"}, compute=compute)
+    with pytest.raises(KBPreviewCacheError, match="model"):
+        await cache.get_or_create(**{**common, "model": 1}, compute=compute)
+    with pytest.raises(KBPreviewCacheError, match="policy"):
+        await cache.get_or_create(**{**common, "policy": None}, compute=compute)
+    with pytest.raises(KBPreviewCacheError, match="IDs are required"):
+        await cache.get_or_create(**{**common, "document_id": ""}, compute=compute)
+
+
+@pytest.mark.asyncio
+async def test_release_and_acquire_slot_edges(redis: FakeRedis, monkeypatch):
+    cache = _cache(redis)
+    await cache._release(redis, [], "owner")
+    await cache._release(
+        SimpleNamespace(eval=AsyncMock(side_effect=ConnectionError())), ["k"], "o"
+    )
+
+    redis.fail = True
+    with pytest.raises(KBPreviewCacheUnavailable, match="acquisition"):
+        await cache._acquire_slot(redis, "o")
+    redis.fail = False
+
+
+@pytest.mark.asyncio
+async def test_acquire_slot_exhaustion_and_existing_singleton(redis: FakeRedis):
+    cache = _cache(redis, max_concurrent_ocr=1)
+    await redis.set("kb:preview:ocr:v1:slot:0", "other")
+    assert await cache._acquire_slot(redis, "owner") is None
+    assert isinstance(get_kb_preview_cache(), KBPreviewCache)
+
+
+@pytest.mark.asyncio
+async def test_compute_with_lease_rejects_non_async_and_lost_lease(redis: FakeRedis):
+    cache = _cache(redis)
+    lease = _Lease(redis, "owner")
+    lease.lost.set()
+    with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
+        await cache._compute_with_lease(lease, lambda: _entry())
+
+    lease = _Lease(redis, "owner")
+    with pytest.raises(KBPreviewCacheError, match="asynchronous"):
+        await cache._compute_with_lease(lease, lambda: _entry())
+
+
+@pytest.mark.asyncio
+async def test_lease_renewal_marks_lost_when_token_expires(monkeypatch):
+    monkeypatch.setattr(preview_module, "_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    redis = SimpleNamespace(eval=AsyncMock(side_effect=[1, 1, 0]))
+    lease = _Lease(redis, "owner")
+    lease.add("a")
+    lease.add("b")
+    await lease._renew()
+    assert lease.lost.is_set()
+
+
+@pytest.mark.asyncio
+async def test_get_entry_accepts_valid_bytes_and_returns_entry(redis: FakeRedis):
+    cache = _cache(redis)
+    entry = _entry("cached")
+    identity = {
+        "user_id": "u",
+        "knowledge_base_id": "kb",
+        "document_id": "d",
+        "fingerprint": "f",
+    }
+    record = {
+        "identity": identity,
+        "expires_at": time.time() + 10,
+        "entry": {
+            "enriched_text": entry.enriched_text,
+            "image_metadata": entry.image_metadata,
+            "metadata": entry.metadata,
+        },
+    }
+    result = await cache._get_entry(
+        SimpleNamespace(get=AsyncMock(return_value=json.dumps(record).encode())),
+        "k",
+        user_id="u",
+        knowledge_base_id="kb",
+        document_id="d",
+        fingerprint="f",
+    )
+    assert result == entry
+
+
+@pytest.mark.asyncio
+async def test_compute_with_lease_lost_and_timeout(redis: FakeRedis):
+    cache = _cache(redis)
+    lease = _Lease(redis, "owner")
+    started = asyncio.Event()
+
+    async def blocked():
+        started.set()
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(cache._compute_with_lease(lease, blocked))
+    await started.wait()
+    lease.lost.set()
+    with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
+        await task
+
+    async def never():
+        await asyncio.Event().wait()
+
+    fast = _cache(redis, compute_timeout_seconds=0.01)
+    with pytest.raises(KBPreviewCacheUnavailable, match="timed out"):
+        await fast._compute_with_lease(_Lease(redis, "owner"), never)
+
+
+@pytest.mark.asyncio
+async def test_compute_with_lease_marks_lost_after_result(redis: FakeRedis):
+    cache = _cache(redis)
+    lease = _Lease(redis, "owner")
+
+    async def compute():
+        lease.lost.set()
+        return _entry()
+
+    with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
+        await cache._compute_with_lease(lease, compute)
+
+
+@pytest.mark.asyncio
+async def test_get_existing_rejects_non_bytes_source(redis: FakeRedis):
+    cache = _cache(redis)
+    with pytest.raises(KBPreviewCacheError, match="source must be bytes"):
+        await cache.get_existing(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source="text",
+            clean_text=True,
+            model=None,
+            policy="p",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_returns_entry_found_after_lock(
+    redis: FakeRedis, monkeypatch
+):
+    cache = _cache(redis)
+    cached = _entry("second read")
+
+    async def compute():
+        return _entry("computed")
+
+    monkeypatch.setattr(cache, "_get_entry", AsyncMock(side_effect=[None, cached]))
+    assert (
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=compute,
+        )
+        == cached
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_slot_wait_and_success(redis: FakeRedis, monkeypatch):
+    cache = _cache(redis)
+    entry = _entry("slot")
+    monkeypatch.setattr(cache, "_get_entry", AsyncMock(side_effect=[None, None]))
+
+    async def acquire(_redis, token):
+        await redis.set("slot", token)
+        return "slot"
+
+    calls = 0
+
+    async def acquire_slot(_redis, token):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return None
+        return await acquire(_redis, token)
+
+    monkeypatch.setattr(cache, "_acquire_slot", acquire_slot)
+    result = await cache.get_or_create(
+        user_id="u",
+        knowledge_base_id="kb",
+        document_id="d",
+        source=b"x",
+        clean_text=True,
+        model=None,
+        policy="p",
+        compute=AsyncMock(return_value=entry),
+    )
+    assert result == entry
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_lease_lost_while_waiting_for_slot(
+    redis: FakeRedis, monkeypatch
+):
+    class LostLease(_Lease):
+        def start(self):
+            self.lost.set()
+
+    monkeypatch.setattr(preview_module, "_Lease", LostLease)
+    cache = _cache(redis)
+    with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=AsyncMock(return_value=_entry()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_capacity_wait_timeout(redis: FakeRedis, monkeypatch):
+    cache = _cache(redis, max_wait_seconds=0.0001)
+    monkeypatch.setattr(cache, "_get_entry", AsyncMock(return_value=None))
+    monkeypatch.setattr(cache, "_acquire_slot", AsyncMock(return_value=None))
+    with pytest.raises(KBPreviewCacheUnavailable, match="capacity wait timed out"):
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=AsyncMock(return_value=_entry()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_rejects_oversize_encoded_record(
+    redis: FakeRedis, monkeypatch
+):
+    cache = _cache(redis)
+    monkeypatch.setattr(preview_module, "_MAX_CACHE_BYTES", 100)
+    with pytest.raises(KBPreviewCacheEntryTooLarge, match="Serialized preview"):
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=AsyncMock(return_value=_entry("x" * 10)),
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_publish_not_committed(redis: FakeRedis):
+    class Uncommitted(FakeRedis):
+        async def eval(self, script, numkeys, *args):
+            if "redis.call('SET', KEYS[3]" in script:
+                return 0
+            return await super().eval(script, numkeys, *args)
+
+    cache = _cache(Uncommitted())
+    with pytest.raises(KBPreviewCacheUnavailable, match="before publish"):
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=AsyncMock(return_value=_entry()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_single_flight_timeout(redis: FakeRedis, monkeypatch):
+    cache = _cache(redis, max_wait_seconds=0.0001)
+    monkeypatch.setattr(cache, "_get_entry", AsyncMock(return_value=None))
+    monkeypatch.setattr(redis, "set", AsyncMock(return_value=False))
+    with pytest.raises(KBPreviewCacheUnavailable, match="single-flight wait timed out"):
+        await cache.get_or_create(
+            user_id="u",
+            knowledge_base_id="kb",
+            document_id="d",
+            source=b"x",
+            clean_text=True,
+            model=None,
+            policy="p",
+            compute=AsyncMock(return_value=_entry()),
+        )
+
+
+def test_get_kb_preview_cache_returns_singleton():
+    first = get_kb_preview_cache()
+    assert get_kb_preview_cache() is first
+
+
+@pytest.mark.asyncio
+async def test_compute_with_lease_lost_after_compute(redis: FakeRedis, monkeypatch):
+    cache = _cache(redis)
+    lease = _Lease(redis, "owner")
+
+    async def compute():
+        lease.lost.set()
+        return _entry()
+
+    async def fake_wait(tasks, **_kwargs):
+        return {task for task in tasks if task.get_coro().__name__ == "compute"}, set()
+
+    monkeypatch.setattr(preview_module.asyncio, "wait", fake_wait)
+    with pytest.raises(KBPreviewCacheUnavailable, match="lost"):
+        await cache._compute_with_lease(lease, compute)

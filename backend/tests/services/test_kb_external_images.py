@@ -1,12 +1,17 @@
 import socket
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
+from yarl import URL
 
 from app.core.network_security import validate_external_http_url
 from app.schemas.response import BusinessError
+from app.services import kb_external_images as external_module
 from app.services.kb_external_images import (
+    _PinnedResolver,
+    _address_records,
     _normalize_destination,
     _resolve_and_validate,
     fetch_external_image,
@@ -271,3 +276,208 @@ async def test_streamed_size_limit_is_enforced(monkeypatch):
             )
     finally:
         await runner.cleanup()
+
+
+def test_address_records_skip_unsupported_socket_records():
+    resolved = [
+        (socket.AF_UNIX, socket.SOCK_STREAM, 0, "", "/tmp/socket"),
+        (socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("127.0.0.1", 80)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80)),
+    ]
+    assert _address_records("images.example", 80, resolved) == [
+        {
+            "hostname": "images.example",
+            "host": "127.0.0.1",
+            "port": 80,
+            "family": socket.AF_INET,
+            "proto": 6,
+            "flags": 0,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_pinned_resolver_rejects_other_hosts_and_filters_family():
+    record = {
+        "hostname": "images.example",
+        "host": "127.0.0.1",
+        "port": 80,
+        "family": socket.AF_INET,
+        "proto": 6,
+        "flags": 0,
+    }
+    resolver = _PinnedResolver("images.example.", 80, [record])
+    with pytest.raises(OSError, match="different destination"):
+        await resolver.resolve("other.example", 80)
+    with pytest.raises(OSError, match="different destination"):
+        await resolver.resolve("images.example", 81)
+    assert await resolver.resolve("images.example", 80) == [record]
+    with pytest.raises(OSError, match="No validated address"):
+        await resolver.resolve("images.example", 80, socket.AF_INET6)
+    await resolver.close()
+
+
+@pytest.mark.anyio
+async def test_resolve_and_validate_rejects_missing_host_empty_dns_and_empty_records(
+    monkeypatch,
+):
+    with pytest.raises(ValueError, match="no hostname"):
+        await _resolve_and_validate(SimpleNamespace(raw_host="", port=80), [])
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [])
+    with pytest.raises(BusinessError, match="cannot_be_resolved"):
+        await _resolve_and_validate(URL("http://images.example/a.png"), [])
+
+    resolved = [(socket.AF_UNIX, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 80))]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: resolved)
+    monkeypatch.setattr(
+        external_module, "validate_external_http_url", lambda *a, **k: None
+    )
+    with pytest.raises(BusinessError, match="cannot_be_resolved"):
+        await _resolve_and_validate(URL("http://images.example/a.png"), [])
+
+
+@pytest.mark.anyio
+async def test_fetch_rejects_bad_limits_and_missing_ssrf_policy(monkeypatch):
+    with pytest.raises(ValueError, match="byte limit"):
+        await fetch_external_image("https://images.example/a.png", max_image_bytes=0)
+    with pytest.raises(ValueError, match="pixel limit"):
+        await fetch_external_image("https://images.example/a.png", max_image_pixels=0)
+
+    monkeypatch.setattr(
+        "app.services.kb_external_images.SiteSetting.get_value",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.services.kb_external_images.get_ssrf_allowed_targets",
+        AsyncMock(return_value=None),
+    )
+    with pytest.raises(PermissionError, match="requires SSRF"):
+        await fetch_external_image("https://images.example/a.png")
+
+
+class _FakeContent:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def iter_chunked(self, _size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeResponse:
+    def __init__(self, *, status=200, headers=None, chunks=()):
+        self.status = status
+        self.headers = headers or {}
+        self.content = _FakeContent(list(chunks))
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+
+class _FakeSession:
+    responses = []
+
+    def __init__(self, **_kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    def get(self, _url, **_kwargs):
+        return _FakeSession.responses.pop(0)
+
+
+def _patch_fetch(monkeypatch, responses):
+    import io
+
+    from PIL import Image
+
+    monkeypatch.setattr(
+        "app.services.kb_external_images.SiteSetting.get_value",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.services.kb_external_images.get_ssrf_allowed_targets",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        external_module,
+        "_resolve_and_validate",
+        AsyncMock(return_value=("images.example", 80, [])),
+    )
+    monkeypatch.setattr(external_module.aiohttp, "ClientSession", _FakeSession)
+    _FakeSession.responses = responses
+    buffer = io.BytesIO()
+    Image.new("RGB", (1, 1), "red").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.mark.anyio
+async def test_fetch_rejects_redirect_without_location(monkeypatch):
+    _patch_fetch(monkeypatch, [_FakeResponse(status=302)])
+    with pytest.raises(ValueError, match="no destination"):
+        await fetch_external_image("https://images.example/a.png")
+
+
+@pytest.mark.anyio
+async def test_fetch_rejects_redirect_loop(monkeypatch):
+    responses = [
+        _FakeResponse(status=302, headers={"Location": "https://images.example/a.png"})
+        for _ in range(6)
+    ]
+    _patch_fetch(monkeypatch, responses)
+    with pytest.raises(ValueError, match="redirect limit"):
+        await fetch_external_image("https://images.example/a.png")
+
+
+@pytest.mark.anyio
+async def test_fetch_rejects_bad_content_length_and_mime(monkeypatch):
+    png = _patch_fetch(
+        monkeypatch,
+        [_FakeResponse(headers={"Content-Type": "image/png", "Content-Length": "abc"})],
+    )
+    with pytest.raises(ValueError, match="content length"):
+        await fetch_external_image("https://images.example/a.png")
+
+    _patch_fetch(
+        monkeypatch,
+        [_FakeResponse(headers={"Content-Type": "text/plain"}, chunks=[png])],
+    )
+    with pytest.raises(ValueError, match="supported image type"):
+        await fetch_external_image("https://images.example/a.png")
+
+    _patch_fetch(
+        monkeypatch,
+        [
+            _FakeResponse(
+                headers={"Content-Type": "image/gif", "Content-Length": str(len(png))},
+                chunks=[png],
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        await fetch_external_image("https://images.example/a.png")
+
+
+@pytest.mark.anyio
+async def test_fetch_streams_without_content_length_and_enforces_limit(monkeypatch):
+    _patch_fetch(
+        monkeypatch,
+        [
+            _FakeResponse(
+                headers={"Content-Type": "image/png"}, chunks=[b"x" * 4, b"y" * 4]
+            )
+        ],
+    )
+    with pytest.raises(ValueError, match="size limit"):
+        await fetch_external_image("https://images.example/a.png", max_image_bytes=4)

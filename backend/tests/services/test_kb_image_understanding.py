@@ -279,3 +279,245 @@ async def test_ocr_only_extracts_text_without_description(monkeypatch):
 
     assert results[0].ocr_text == "ONLY OCR TEXT"
     assert results[0].description == ""
+
+
+def test_normalize_rejects_empty_limits_formats_and_covers_transparency() -> None:
+    with pytest.raises(KBImageValidationError, match="non-empty bytes"):
+        normalize_kb_image(b"", max_image_bytes=10, max_image_pixels=10)
+    with pytest.raises(KBImageValidationError, match="limits must be positive"):
+        normalize_kb_image(_png_bytes(), max_image_bytes=0, max_image_pixels=10)
+
+    bmp = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(bmp, format="BMP")
+    with pytest.raises(KBImageValidationError, match="Unsupported raster"):
+        normalize_kb_image(bmp.getvalue(), max_image_bytes=1024, max_image_pixels=100)
+
+    gif = io.BytesIO()
+    Image.new("P", (2, 2)).save(gif, format="GIF")
+    assert (
+        normalize_kb_image(
+            gif.getvalue(), max_image_bytes=1024, max_image_pixels=100
+        ).mime_type
+        == "image/jpeg"
+    )
+
+    rgba = io.BytesIO()
+    Image.new("RGBA", (2, 2), (255, 0, 0, 0)).save(rgba, format="PNG")
+    normalized = normalize_kb_image(
+        rgba.getvalue(), max_image_bytes=1024, max_image_pixels=100
+    )
+    assert normalized.mime_type == "image/jpeg"
+
+
+def test_normalize_rejects_output_larger_than_byte_limit() -> None:
+    tiny = io.BytesIO()
+    Image.new("RGB", (1, 1), "red").save(tiny, format="PNG")
+    payload = tiny.getvalue()
+    with pytest.raises(KBImageValidationError, match="Normalized image"):
+        normalize_kb_image(payload, max_image_bytes=len(payload), max_image_pixels=100)
+
+
+def test_service_constructor_rejects_non_positive_limits() -> None:
+    with pytest.raises(ValueError, match="must be positive"):
+        KBImageUnderstandingService(
+            max_images=0,
+            max_image_bytes=1,
+            max_image_pixels=1,
+            concurrency=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_batch_validation_paths_return_early_or_reject_bad_payloads() -> None:
+    service = _service(max_image_bytes=4)
+    model_id = uuid4()
+
+    assert await service.analyze_images([], team_id="t", model_id=model_id) == []
+    assert (
+        await service.analyze_images_split(
+            [], team_id="t", ocr_model_id=model_id, vision_model_id=model_id
+        )
+        == []
+    )
+    assert await service.extract_ocr_images([], team_id="t", model_id=model_id) == []
+
+    with pytest.raises(KBImageValidationError, match="model UUID"):
+        await service.analyze_images([_png_bytes()], team_id="t", model_id="not-a-uuid")
+    with pytest.raises(KBImageValidationError, match="model UUIDs"):
+        await service.analyze_images_split(
+            [_png_bytes()], team_id="t", ocr_model_id="x", vision_model_id=model_id
+        )
+    with pytest.raises(KBImageValidationError, match="model UUID"):
+        await service.extract_ocr_images(
+            [_png_bytes()], team_id="t", model_id="not-a-uuid"
+        )
+
+    with pytest.raises(KBImageValidationError, match="non-empty bytes"):
+        await service.analyze_images([""], team_id="t", model_id=model_id)
+    with pytest.raises(KBImageValidationError, match="byte limit"):
+        await service.analyze_images([b"x" * 5], team_id="t", model_id=model_id)
+
+    with pytest.raises(KBImageValidationError, match="count"):
+        await _service(max_images=1).analyze_images_split(
+            [_png_bytes(), _png_bytes()],
+            team_id="t",
+            ocr_model_id=model_id,
+            vision_model_id=model_id,
+        )
+    with pytest.raises(KBImageValidationError, match="count"):
+        await _service(max_images=1).extract_ocr_images(
+            [_png_bytes(), _png_bytes()], team_id="t", model_id=model_id
+        )
+
+
+@pytest.mark.asyncio
+async def test_batch_cancellation_paths_cancel_pending_tasks(monkeypatch) -> None:
+    model_id = uuid4()
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_chat_model",
+        AsyncMock(return_value=(_vision_model(), SimpleNamespace())),
+    )
+
+    async def analyze(self, payload, **_kwargs):
+        if payload == _png_bytes(size=(3, 2)):
+            raise KBImageUnderstandingError("boom")
+        await asyncio.Event().wait()
+
+    async def split(self, payload, **_kwargs):
+        if payload == _png_bytes(size=(3, 2)):
+            raise KBImageUnderstandingError("boom")
+        await asyncio.Event().wait()
+
+    async def ocr(self, payload, **_kwargs):
+        if payload == _png_bytes(size=(3, 2)):
+            raise KBImageUnderstandingError("boom")
+        await asyncio.Event().wait()
+
+    for method, kwargs in (
+        ("_analyze_payload", {}),
+        ("_analyze_split_payload", {}),
+        ("_analyze_ocr_payload", {}),
+    ):
+        monkeypatch.setattr(
+            KBImageUnderstandingService,
+            method,
+            analyze
+            if method == "_analyze_payload"
+            else split
+            if method == "_analyze_split_payload"
+            else ocr,
+        )
+        service = _service()
+        payloads = [_png_bytes(size=(3, 2)), _png_bytes(size=(2, 2))]
+        with pytest.raises(KBImageUnderstandingError):
+            if method == "_analyze_payload":
+                await service.analyze_images(payloads, team_id="t", model_id=model_id)
+            elif method == "_analyze_split_payload":
+                await service.analyze_images_split(
+                    payloads,
+                    team_id="t",
+                    ocr_model_id=model_id,
+                    vision_model_id=model_id,
+                )
+            else:
+                await service.extract_ocr_images(
+                    payloads, team_id="t", model_id=model_id
+                )
+
+
+@pytest.mark.asyncio
+async def test_split_payload_cancels_peer_when_one_call_fails(monkeypatch) -> None:
+    async def team_chat(**kwargs):
+        if "transcribe visible text" in kwargs["messages"][0].content.lower():
+            raise KBImageUnderstandingError("ocr failed")
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(image_service_module.model_manager, "team_chat", team_chat)
+    with pytest.raises(KBImageUnderstandingError):
+        await _service()._analyze_split_payload(
+            _png_bytes(),
+            team_id="t",
+            ocr_model_id=uuid4(),
+            vision_model_id=uuid4(),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "allow_empty", "expected_code"),
+    [
+        (None, True, "invalid_ocr_response"),
+        ("x" * 16_385, True, "ocr_response_too_large"),
+        ("```text```", True, None),
+        ("", False, "empty_description_response"),
+    ],
+)
+async def test_image_prompt_response_validation(
+    monkeypatch, content, allow_empty, expected_code
+) -> None:
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_chat",
+        AsyncMock(return_value=SimpleNamespace(content=content)),
+    )
+    normalized = normalize_kb_image(
+        _png_bytes(), max_image_bytes=1024, max_image_pixels=100
+    )
+    if expected_code:
+        with pytest.raises(KBImageUnderstandingError) as error:
+            await _service()._call_image_prompt(
+                normalized,
+                team_id="t",
+                model_id=uuid4(),
+                system_prompt="s",
+                user_prompt="u",
+                label="ocr" if allow_empty else "description",
+                allow_empty=allow_empty,
+            )
+        assert error.value.code == expected_code
+    else:
+        assert (
+            await _service()._call_image_prompt(
+                normalized,
+                team_id="t",
+                model_id=uuid4(),
+                system_prompt="s",
+                user_prompt="u",
+                label="ocr",
+                allow_empty=True,
+            )
+            == "text"
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "expected_code"),
+    [
+        ("[]", "invalid_vision_response"),
+        ('```json{"ocr_text":"a","description":"b"}', None),
+        ('```json\n{"ocr_text":"a","description":"b"}', None),
+    ],
+)
+async def test_vision_response_json_shapes(monkeypatch, content, expected_code) -> None:
+    model_id = uuid4()
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_chat_model",
+        AsyncMock(return_value=(_vision_model(), SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_chat",
+        AsyncMock(return_value=SimpleNamespace(content=content)),
+    )
+    if expected_code:
+        with pytest.raises(KBImageUnderstandingError) as error:
+            await _service().analyze_image(_png_bytes(), team_id="t", model_id=model_id)
+        assert error.value.code == expected_code
+    else:
+        result = await _service().analyze_image(
+            _png_bytes(), team_id="t", model_id=model_id
+        )
+        assert result.description == "b"
