@@ -45,6 +45,7 @@ interface DocumentPreviewState {
   document: Document | null
   previewChunks: ChunkPreviewItem[]
   previewCleanText?: boolean
+  previewVersion: string | null
   previewStats: {
     total_chunks: number
     total_tokens: number
@@ -93,6 +94,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         updated[docId] = {
           ...state,
           previewChunks: [],
+          previewVersion: null,
           previewStats: null,
         }
       })
@@ -171,6 +173,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
           initialState[targetDocIds[idx]] = {
             document: doc,
             previewChunks: [],
+          previewVersion: null,
             previewStats: null,
             isPreviewing: false,
             isProcessing: false,
@@ -220,6 +223,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
           ...prev[docId],
           previewChunks: result.chunks,
           previewCleanText: settings.clean_text,
+          previewVersion: result.preview_version ?? null,
           previewStats: {
             total_chunks: result.total_chunks,
             total_tokens: result.total_tokens,
@@ -291,13 +295,22 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         chunk_index: chunk.chunk_index,
       }))
 
-      const result = await knowledgeBasesApi.processDocumentWithChunks(
-        knowledgeBaseId,
-        docId,
-        chunks,
-        batch,
-        docState.previewCleanText
-      )
+      const result = docState.previewVersion
+        ? await knowledgeBasesApi.processDocumentWithChunks(
+            knowledgeBaseId,
+            docId,
+            chunks,
+            batch,
+            docState.previewCleanText,
+            docState.previewVersion
+          )
+        : await knowledgeBasesApi.processDocumentWithChunks(
+            knowledgeBaseId,
+            docId,
+            chunks,
+            batch,
+            docState.previewCleanText
+          )
       // 更新文档状态 - API 返回的状态可能是 processing（因为 Celery 任务是异步的）
       setDocumentsState(prev => ({
         ...prev,

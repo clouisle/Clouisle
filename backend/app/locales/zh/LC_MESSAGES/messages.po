@@ -1033,6 +1033,9 @@ msgstr "分块未找到"
 msgid "chunk_not_failed"
 msgstr "只能重试失败的分块"
 
+msgid "chunk_preview_stale"
+msgstr "预览已过期，请刷新预览后重试。"
+
 msgid "chunk_preview_failed"
 msgstr "生成分块预览失败"
 

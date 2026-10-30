@@ -294,6 +294,25 @@ describe('DocumentsPreviewClient', () => {
     expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
   })
 
+  test('sends the preview version returned by the preview endpoint', async () => {
+    api.previewChunks.mockResolvedValue({ ...preview, preview_version: 'pv-1' })
+    let tree = await load()
+    await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()
+    tree = render()
+    await (button(tree, 'startProcessingAll (1)').props.onClick as () => Promise<void>)()
+    expect(api.processDocumentWithChunks).toHaveBeenCalledWith(
+      'kb-1',
+      'doc-1',
+      [
+        { content: 'Alpha beta', chunk_index: 0 },
+        { content: 'Beta gamma', chunk_index: 1 },
+      ],
+      undefined,
+      true,
+      'pv-1',
+    )
+  })
+
   test('reports processing errors from refreshed state and from a failed refresh', async () => {
     let tree = await load()
     await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()

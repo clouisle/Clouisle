@@ -1032,6 +1032,9 @@ msgstr "Chunk not found"
 msgid "chunk_not_failed"
 msgstr "Only failed chunks can be retried"
 
+msgid "chunk_preview_stale"
+msgstr "The preview is out of date. Refresh the preview and try again."
+
 msgid "chunk_preview_failed"
 msgstr "Failed to generate chunk preview"
 

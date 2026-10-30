@@ -851,6 +851,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Chunk preview generated successfully",
         "zh": "分块预览生成成功",
     },
+    "chunk_preview_stale": {
+        "en": "The preview is out of date. Refresh the preview and try again.",
+        "zh": "预览已过期，请刷新预览后重试。",
+    },
     "chunk_updated": {"en": "Chunk updated successfully", "zh": "分块更新成功"},
     "chunks_failed_to_embed": {
         "en": "{failed_count}/{total_chunks} chunks failed to embed: {error}",

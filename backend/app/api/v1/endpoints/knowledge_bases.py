@@ -1724,7 +1724,7 @@ async def process_document_with_chunks(
             msg_key="document_is_processing",
         )
     from app.services.kb_image_ingestion import image_settings
-    from app.services.kb_preview_cache import get_kb_preview_cache
+    from app.services.kb_preview_cache import get_kb_preview_cache, preview_version
     import json
 
     image_config = await image_settings()
@@ -1753,6 +1753,15 @@ async def process_document_with_chunks(
         if entry is None:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR, msg_key="chunk_preview_failed"
+            )
+        expected_version = preview_version(entry)
+        if (
+            not process_request.preview_version
+            or process_request.preview_version != expected_version
+        ):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="chunk_preview_stale",
             )
         preview_metadata = entry.metadata
 
@@ -2003,10 +2012,12 @@ async def preview_document_chunks(
         from app.services.kb_preview_cache import (
             KBPreviewCacheEntry,
             get_kb_preview_cache,
+            preview_version,
         )
         import json
 
         settings = await image_settings()
+        preview_version_value: str | None = None
         if settings["kb_image_understanding_enabled"]:
             await check_kb_access(kb_id, current_user, require_write=True)
             source = (
@@ -2033,6 +2044,7 @@ async def preview_document_chunks(
                 refresh=bool(doc.source_url),
             )
             text, extraction_metadata = entry.enriched_text, entry.metadata
+            preview_version_value = preview_version(entry)
         elif doc.file_path:
             text, extraction_metadata = await document_processor.extract_text(
                 doc.file_path,
@@ -2084,6 +2096,7 @@ async def preview_document_chunks(
                 total_tokens=total_tokens,
                 total_chars=total_chars,
                 chunks=preview_items,
+                preview_version=preview_version_value,
             ),
             msg_key="chunk_preview_generated",
         )

@@ -308,7 +308,12 @@ async def test_completed_source_less_document_skips_image_preview_lookup(monkeyp
     monkeypatch.setattr(knowledge_bases.Document, "get", lambda **_kwargs: Query(doc))
     monkeypatch.setattr(
         "app.services.kb_image_ingestion.image_settings",
-        AsyncMock(return_value={"kb_image_understanding_enabled": True}),
+        AsyncMock(
+            return_value={
+                "kb_image_understanding_enabled": True,
+                "kb_image_understanding_model_id": "",
+            }
+        ),
     )
     dispatch = AsyncMock(return_value="task")
     monkeypatch.setattr(knowledge_bases, "_dispatch_document_task", dispatch)
@@ -327,3 +332,114 @@ async def test_completed_source_less_document_skips_image_preview_lookup(monkeyp
     )
     assert result["data"] == {"id": doc_id}
     dispatch.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_preview_chunks_returns_preview_version(monkeypatch):
+    from app.services.kb_preview_cache import KBPreviewCacheEntry, preview_version
+
+    kb_id, doc_id = uuid4(), uuid4()
+    doc = SimpleNamespace(
+        id=doc_id,
+        file_path="documents/a.md",
+        source_url=None,
+        doc_type="markdown",
+        metadata={},
+    )
+    entry = KBPreviewCacheEntry(
+        enriched_text="content", metadata={"format": "markdown"}
+    )
+    cache = SimpleNamespace(get_or_create=AsyncMock(return_value=entry))
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.document_processor, "read_file", AsyncMock(return_value=b"x")
+    )
+    monkeypatch.setattr(
+        "app.services.kb_image_ingestion.image_settings",
+        AsyncMock(
+            return_value={
+                "kb_image_understanding_enabled": True,
+                "kb_image_understanding_model_id": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.kb_preview_cache.get_kb_preview_cache", lambda: cache
+    )
+    processor_module = importlib.import_module("app.services.document_processor")
+    monkeypatch.setattr(
+        processor_module,
+        "chunk_text",
+        lambda *_args, **_kwargs: [
+            {
+                "chunk_index": 0,
+                "content": "content",
+                "token_count": 2,
+                "char_count": 7,
+            }
+        ],
+    )
+    response = await knowledge_bases.preview_document_chunks(
+        kb_id=kb_id,
+        doc_id=doc_id,
+        preview_in=ChunkPreviewRequest(chunk_size=100, chunk_overlap=10),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    assert response["data"].preview_version == preview_version(entry)
+
+
+@pytest.mark.anyio
+async def test_process_with_chunks_rejects_stale_preview_version(monkeypatch):
+    from app.services.kb_preview_cache import KBPreviewCacheEntry
+
+    kb_id, doc_id = uuid4(), uuid4()
+    doc = SimpleNamespace(
+        id=doc_id,
+        name="legacy",
+        status=knowledge_bases.DocumentStatus.COMPLETED.value,
+        metadata={},
+        error_message=None,
+        file_path="documents/a.md",
+        source_url=None,
+        chunk_count=1,
+        token_count=2,
+        save=AsyncMock(),
+    )
+    entry = KBPreviewCacheEntry(enriched_text="content", metadata={})
+    cache = SimpleNamespace(get_existing=AsyncMock(return_value=entry))
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.document_processor, "read_file", AsyncMock(return_value=b"x")
+    )
+    monkeypatch.setattr(
+        "app.services.kb_image_ingestion.image_settings",
+        AsyncMock(
+            return_value={
+                "kb_image_understanding_enabled": True,
+                "kb_image_understanding_model_id": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.kb_preview_cache.get_kb_preview_cache", lambda: cache
+    )
+    request = ProcessWithChunksRequest(
+        chunks=[{"content": "content", "chunk_index": 0}],
+        preview_clean_text=True,
+        preview_version="stale",
+    )
+    with pytest.raises(BusinessError) as caught:
+        await knowledge_bases.process_document_with_chunks(
+            kb_id=kb_id,
+            doc_id=doc_id,
+            request=SimpleNamespace(),
+            process_request=request,
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+    assert caught.value.msg_key == "chunk_preview_stale"

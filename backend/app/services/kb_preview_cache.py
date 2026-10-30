@@ -204,6 +204,11 @@ def _validate_json_value(
     raise KBPreviewCacheError("Preview metadata must contain JSON values only")
 
 
+def preview_version(entry: KBPreviewCacheEntry) -> str:
+    """Return a stable version for the exact preview entry content."""
+    return hashlib.sha256(_canonical_json(_entry_json(entry))).hexdigest()
+
+
 def _entry_json(entry: KBPreviewCacheEntry) -> dict[str, Any]:
     if not isinstance(entry, KBPreviewCacheEntry):
         raise KBPreviewCacheError("Preview computation returned an invalid entry")

@@ -317,6 +317,7 @@ export interface ChunkPreviewResponse {
   total_tokens: number
   total_chars: number
   chunks: ChunkPreviewItem[]
+  preview_version?: string | null
 }
 
 // ============ Knowledge Base API ============
@@ -490,7 +491,8 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     docId: string, 
     chunks: Array<{ content: string; chunk_index: number }>,
     batch?: { batch_id: string; batch_total: number },
-    previewCleanText?: boolean
+    previewCleanText?: boolean,
+    previewVersion?: string | null
   ): Promise<Document> => {
     return api.post<Document>(
       `${prefix}/${kbId}/documents/${docId}/process-with-chunks`,
@@ -499,6 +501,7 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
         batch_id: batch?.batch_id,
         batch_total: batch?.batch_total,
         preview_clean_text: previewCleanText,
+        preview_version: previewVersion,
       }
     )
   },
