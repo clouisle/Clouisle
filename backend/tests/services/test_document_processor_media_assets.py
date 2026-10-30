@@ -473,3 +473,41 @@ async def test_replace_embedded_media_rejects_pixel_and_mime_mismatches(
                 kb_id=uuid4(),
                 document_id=uuid4(),
             )
+
+
+def test_markdown_image_bounds_handles_malformed_links():
+    processor = DocumentProcessor()
+    assert processor._markdown_image_bounds("data:image/png", 0, 5) is None
+    assert processor._markdown_image_bounds("![alt]data:image/png", 6, 20) is None
+    assert processor._markdown_image_bounds("![alt](data:image/png", 7, 21) is None
+
+
+@pytest.mark.asyncio
+async def test_standalone_image_rejects_supported_but_disallowed_format(tmp_path):
+    import io
+
+    from PIL import Image
+
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id = uuid4()
+    path = processor.get_storage_path(kb_id, "bitmap.png")
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(buffer, format="BMP")
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            document_processor_module,
+            "get_upload_storage_backend",
+            local_storage,
+        )
+        await processor.save_file(buffer.getvalue(), path)
+        with pytest.raises(ValueError, match="document_processing_failed_generic"):
+            await processor.extract_text(
+                path,
+                DocumentType.IMAGE.value,
+                kb_id=kb_id,
+                document_id=uuid4(),
+            )
