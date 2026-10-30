@@ -353,6 +353,21 @@ class DocumentProcessor:
             "size": len(content),
         }
 
+    @staticmethod
+    def _markdown_image_bounds(
+        text: str, data_uri_start: int, data_uri_end: int
+    ) -> tuple[int, int, str] | None:
+        open_index = text.rfind("![", 0, data_uri_start)
+        if open_index == -1:
+            return None
+        alt_end = text.find("](", open_index + 2, data_uri_start)
+        if alt_end == -1:
+            return None
+        close_index = text.find(")", data_uri_end)
+        if close_index == -1:
+            return None
+        return open_index, close_index + 1, text[open_index + 2 : alt_end]
+
     async def replace_embedded_media_data_uris(
         self,
         text: str,
@@ -371,7 +386,11 @@ class DocumentProcessor:
             if len(assets) >= image_limit:
                 if raise_on_count_exceeded:
                     raise ValueError("embedded_image_count_exceeded")
-                replacements.append((match.start(), match.end(), ""))
+                bounds = self._markdown_image_bounds(text, match.start(), match.end())
+                if bounds is not None:
+                    replacements.append(bounds)
+                else:
+                    replacements.append((match.start(), match.end(), ""))
                 continue
             content_type = match.group(1).lower()
             if content_type not in ALLOWED_MEDIA_MIME_TYPES:

@@ -376,6 +376,8 @@ async def test_replace_embedded_media_drops_images_beyond_count_without_failing(
 
     assert len(assets) == 1
     assert text.count("data:image") == 0
+    assert "![two]" not in text
+    assert "two" in text
 
 
 @pytest.mark.asyncio

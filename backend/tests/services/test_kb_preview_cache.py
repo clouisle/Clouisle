@@ -383,6 +383,9 @@ def test_json_value_validation_limits(monkeypatch):
         )
     with pytest.raises(KBPreviewCacheEntryTooLarge, match="too many values"):
         _validate_json_value("x", budget=[0, 100])
+    assert _reject_sensitive_value("Data: quarterly results") is None
+    with pytest.raises(KBPreviewCacheError, match="binary URI"):
+        _reject_sensitive_value("data:image/png;base64,abc")
     with pytest.raises(KBPreviewCacheError, match="non-finite"):
         _validate_json_value(float("inf"), budget=[100, 100])
     with pytest.raises(KBPreviewCacheError, match="forbidden field"):

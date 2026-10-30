@@ -896,3 +896,28 @@ async def test_finish_cleanup_keeps_journal_when_vector_cleanup_fails(
         "promotion_id": "p",
         "dimension": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_promote_fresh_media_releases_old_directory_pointer(
+    completed_document, monkeypatch
+):
+    _team, _kb, document, _old_chunk, old_media_id = completed_document
+    stage, chunk = await _stage_with_chunk(document)
+    monkeypatch.setattr(staging, "LexicalStore", _FakeLexical)
+
+    await _promote_stage(
+        document.id,
+        stage.id,
+        "rechunk-task",
+        chunks=[chunk],
+        stage_metadata={staging.MEDIA_EXTRACTED_MARKER: True},
+        dimension=None,
+        chunk_size=100,
+        chunk_overlap=0,
+    )
+    refreshed = await Document.get(id=document.id)
+    assert "media_assets" not in refreshed.metadata
+    journal = refreshed.metadata[staging.CLEANUP_MARKER]
+    assert journal["old_media_document_id"] == str(old_media_id)
+    assert journal["new_media_document_id"] is None

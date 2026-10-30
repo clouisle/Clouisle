@@ -433,7 +433,7 @@ async def _promote_stage(
                 new_metadata["media_storage_document_id"] = str(document.id)
                 new_media_id = str(document.id)
             else:
-                new_media_id = old_media_id
+                new_media_id = None if fresh_media else old_media_id
                 if metadata.get("media_storage_document_id") and not fresh_media:
                     new_metadata["media_storage_document_id"] = metadata[
                         "media_storage_document_id"

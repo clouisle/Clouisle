@@ -1826,6 +1826,7 @@ async def test_media_extraction_preserves_private_original_provenance(
     if kind == 2 and filename != "vision.png":
         ingestion.extract_media.assert_not_awaited()
         assert source["wechat_extraction"] == "document_image_processing"
+        assert source["wechat_original_sha256"]
     elif kind == 2:
         ingestion.extract_media.assert_awaited_once()
     await item.refresh_from_db()
