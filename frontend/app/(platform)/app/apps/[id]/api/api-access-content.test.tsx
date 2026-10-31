@@ -133,6 +133,9 @@ async function renderApiContent(agent: Partial<Agent> = {}) {
     HTMLElement: cleanupWindow.HTMLElement,
     SVGElement: cleanupWindow.SVGElement,
     MouseEvent: cleanupWindow.MouseEvent,
+    // Base UI schedules animation-frame work; without these the render throws in Bun.
+    requestAnimationFrame: cleanupWindow.requestAnimationFrame.bind(cleanupWindow),
+    cancelAnimationFrame: cleanupWindow.cancelAnimationFrame.bind(cleanupWindow),
   })
 
   container = document.createElement('div')
