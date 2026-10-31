@@ -346,7 +346,7 @@ function PptxSlideNumberControl({
           {displaySlide}
         </Button>
       )}
-      <span>{labels.slideOf} {slideCount || "-"}</span>
+      <span>{labels.slideTotal({ total: slideCount || "-" })}</span>
     </div>
   )
 }
@@ -780,7 +780,7 @@ function PptxThumbnailSidebarList({
                   id={`${thumbnailListboxId}-slide-${thumbnail.slideNumber}`}
                   role="option"
                   aria-current={isActive ? "page" : undefined}
-                  aria-label={labels.pageLabel({ page: thumbnail.slideNumber })}
+                  aria-label={labels.slideLabel({ slide: thumbnail.slideNumber })}
                   aria-posinset={thumbnail.slideNumber}
                   aria-selected={isActive}
                   aria-setsize={slideCount}

@@ -533,7 +533,7 @@ export function FilePreviewPanel({
       />
     )
   } else if (mode === 'csv') {
-    body = <CsvPreview data={textContent} className="h-full w-full" />
+    body = <CsvPreview data={textContent} className="h-full w-full" showUpload={false} />
   } else if (mode === 'markdown') {
     body = <div className="h-full overflow-auto p-6"><Streamdown>{textContent}</Streamdown></div>
   } else if (mode === 'mermaid') {

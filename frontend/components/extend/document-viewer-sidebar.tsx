@@ -22,6 +22,7 @@ export function useElementWidth<TElement extends HTMLElement>() {
       setWidth(nextWidth)
     }
     updateWidth()
+    if (typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(updateWidth)
     observer.observe(element)
     return () => observer.disconnect()
@@ -63,6 +64,7 @@ export function DocumentViewerThumbnailSidebar({
   return (
     <aside
       data-document-thumbnail-sidebar=""
+      inert={!open}
       data-sidebar-mode={inline ? "inline" : "overlay"}
       data-sidebar-open={open ? "true" : "false"}
       className={cn(

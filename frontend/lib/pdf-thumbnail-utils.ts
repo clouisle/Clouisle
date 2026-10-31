@@ -13,9 +13,14 @@ const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()
 const thumbnailUrlCache = new Map<string, Promise<string | null>>()
 
 export function loadSharedPdfEngine() {
-  sharedEnginePromise ??= import("@embedpdf/engines/pdfium-worker-engine").then(
-    ({ createPdfiumEngine }) => createPdfiumEngine(resolvePdfiumWasmUrl(), {})
-  )
+  sharedEnginePromise ??= import("@embedpdf/engines/pdfium-worker-engine")
+    .then(({ createPdfiumEngine }) =>
+      createPdfiumEngine(resolvePdfiumWasmUrl(), {})
+    )
+    .catch((error: unknown) => {
+      sharedEnginePromise = null
+      throw error
+    })
 
   return sharedEnginePromise
 }

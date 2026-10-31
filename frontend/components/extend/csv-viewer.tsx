@@ -59,6 +59,7 @@ type CsvViewerProps = {
   className?: string
   data?: string
   search?: boolean
+  showUpload?: boolean
 }
 type CsvSearchResult = {
   col: number
@@ -245,11 +246,13 @@ function CsvFileActionsMenu({
   isPending,
   onDownload,
   onUploadClick,
+  showUpload,
 }: {
   downloadDisabled: boolean
   isPending: boolean
   onDownload: () => void
   onUploadClick: () => void
+  showUpload: boolean
 }) {
   const labels = useViewerLabels()
   return (
@@ -286,21 +289,23 @@ function CsvFileActionsMenu({
           />
           {labels.download}
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={isPending} onClick={onUploadClick}>
-          {isPending ? (
-            <InlineSpinner className="size-4" />
-          ) : (
-            <IconPlaceholder
-              lucide="Upload"
-              tabler="IconUpload"
-              hugeicons="Upload01Icon"
-              phosphor="UploadSimpleIcon"
-              remixicon="RiUpload2Line"
-              className="size-4"
-            />
-          )}
-          {labels.upload}
-        </DropdownMenuItem>
+        {showUpload ? (
+          <DropdownMenuItem disabled={isPending} onClick={onUploadClick}>
+            {isPending ? (
+              <InlineSpinner className="size-4" />
+            ) : (
+              <IconPlaceholder
+                lucide="Upload"
+                tabler="IconUpload"
+                hugeicons="Upload01Icon"
+                phosphor="UploadSimpleIcon"
+                remixicon="RiUpload2Line"
+                className="size-4"
+              />
+            )}
+            {labels.upload}
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -586,7 +591,7 @@ function useIsDarkTheme() {
     () => false
   )
 }
-export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
+export function CsvViewer({ className, data, search = false, showUpload = true }: CsvViewerProps) {
   const labels = useViewerLabels()
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const gridRef = React.useRef<DataEditorRef | null>(null)
@@ -856,6 +861,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
               isPending={isPending}
               onDownload={handleDownload}
               onUploadClick={() => inputRef.current?.click()}
+              showUpload={showUpload}
             />
           </div>
         </TooltipProvider>
@@ -872,24 +878,26 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
               <p className="mt-1 text-muted-foreground">
                 {labels.csvEmptyDescription}
               </p>
-              <InlineLoadingButton
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-4"
-                loading={isPending}
-                onClick={() => inputRef.current?.click()}
-              >
-                <IconPlaceholder
-                  lucide="Upload"
-                  tabler="IconUpload"
-                  hugeicons="Upload01Icon"
-                  phosphor="UploadSimpleIcon"
-                  remixicon="RiUpload2Line"
-                  className="size-4"
-                />
-                {labels.csvUpload}
-              </InlineLoadingButton>
+              {showUpload ? (
+                <InlineLoadingButton
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  loading={isPending}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <IconPlaceholder
+                    lucide="Upload"
+                    tabler="IconUpload"
+                    hugeicons="Upload01Icon"
+                    phosphor="UploadSimpleIcon"
+                    remixicon="RiUpload2Line"
+                    className="size-4"
+                  />
+                  {labels.csvUpload}
+                </InlineLoadingButton>
+              ) : null}
             </div>
           </div>
         ) : !glide ? (

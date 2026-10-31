@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-30T23:22:10.915Z
+// GENERATED — 2026-10-31T03:09:11.140Z
 // Source: i18n/en/common.json
 export type CommonMessages = {
   common: {
@@ -89,7 +89,7 @@ export type CommonMessages = {
       page: string
       pageNumber: string
       currentPage: string
-      of: string
+      pageTotal: string
       pageLabel: string
       pagesSidebar: string
       toggleThumbnails: string
@@ -102,6 +102,7 @@ export type CommonMessages = {
       pdfEmptyTitle: string
       pdfEmptyDescription: string
       docxLoadError: string
+      docxLoadErrorTitle: string
       docxEmptyTitle: string
       docxEmptyDescription: string
       docxEmptyLegacy: string
@@ -154,7 +155,8 @@ export type CommonMessages = {
       pptxUpload: string
       pptxNoSlides: string
       slide: string
-      slideOf: string
+      slideLabel: string
+      slideTotal: string
       slideNumber: string
       currentSlide: string
       previousSlide: string

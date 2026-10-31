@@ -722,7 +722,7 @@ function PDFViewerPageNumberControl({
           {displayPage}
         </Button>
       )}
-      <span>{labels.of} {numPages || "–"}</span>
+      <span>{labels.pageTotal({ total: numPages || "–" })}</span>
     </div>
   )
 }
@@ -1081,7 +1081,7 @@ function PDFViewerToolbar({
                       hugeicons="RotateClockwiseIcon"
                       phosphor="ArrowClockwiseIcon"
                       remixicon="RiClockwiseLine"
-                      className="size-4"
+                      className="size-4 -scale-x-100"
                     />
                   </Button>
                 </ToolbarTooltip>
@@ -1100,7 +1100,7 @@ function PDFViewerToolbar({
                       hugeicons="RotateClockwiseIcon"
                       phosphor="ArrowClockwiseIcon"
                       remixicon="RiClockwiseLine"
-                      className="size-4 -scale-x-100"
+                      className="size-4"
                     />
                   </Button>
                 </ToolbarTooltip>
@@ -1749,11 +1749,24 @@ function PDFViewerSelectionCopyShortcut({
       if (!event.metaKey && !event.ctrlKey) return
       copySelectedPdfText(event)
     }
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest('[data-slot="pdf-viewer"]')
+      ) {
+        return
+      }
+      if (!selection.getState(documentId).selection) return
+      selection.clear(documentId)
+    }
     document.addEventListener("copy", copySelectedPdfText)
     document.addEventListener("keydown", handleKeyDown)
+    document.addEventListener("pointerdown", handlePointerDown, true)
     return () => {
       document.removeEventListener("copy", copySelectedPdfText)
       document.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("pointerdown", handlePointerDown, true)
     }
   }, [documentId, selection])
   return null

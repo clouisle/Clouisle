@@ -495,7 +495,7 @@ function DocxPageNumberControl({
           {displayPage}
         </Button>
       )}
-      <span>{labels.of} {pageCount || "-"}</span>
+      <span>{labels.pageTotal({ total: pageCount || "-" })}</span>
     </div>
   )
 }
@@ -1098,6 +1098,10 @@ function DocxViewerContent({
   url?: string
 }) {
   const labels = useViewerLabels()
+  const labelsRef = React.useRef(labels)
+  React.useEffect(() => {
+    labelsRef.current = labels
+  })
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const [viewportElement, setViewportElement] =
@@ -1286,7 +1290,9 @@ function DocxViewerContent({
       } catch (error) {
         if (isCurrent) {
           setLoadError(
-            error instanceof Error ? error.message : labels.docxLoadError
+            error instanceof Error
+              ? error.message
+              : labelsRef.current.docxLoadError
           )
           setIsLoadingDocument(false)
         }
@@ -1300,7 +1306,6 @@ function DocxViewerContent({
     activeUploadedDocxFile,
     displayFileName,
     importDocxFile,
-    labels,
     setActivePage,
     url,
   ])
@@ -1497,7 +1502,7 @@ function DocxViewerContent({
           ) : loadError ? (
             <div className="grid h-full min-h-96 place-items-center p-6 text-center">
               <div className="max-w-md rounded-lg border bg-background p-4 text-sm text-destructive shadow-xs">
-                <div className="font-medium">Unable to display DOCX</div>
+                <div className="font-medium">{labels.docxLoadErrorTitle}</div>
                 <div className="mt-1 text-muted-foreground">{loadError}</div>
               </div>
             </div>

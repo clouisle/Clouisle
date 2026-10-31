@@ -11,6 +11,7 @@ describe('coverage source census', () => {
     expect(eligibleSource('lib/global.d.ts')).toBe(false)
     expect(eligibleSource('components/onboarding/steps/types.ts')).toBe(false)
     expect(eligibleSource('components/extend/pdf-viewer.tsx')).toBe(false)
+    expect(eligibleSource('components/extend/viewer-i18n.tsx')).toBe(true)
   })
 
   test('returns eligible tracked files absent from LCOV', () => {

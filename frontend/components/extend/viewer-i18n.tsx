@@ -33,7 +33,7 @@ export type ViewerLabels = {
   page: string
   pageNumber: string
   currentPage: (values: { page: number }) => string
-  of: string
+  pageTotal: (values: { total: number | string }) => string
   pageLabel: (values: { page: number }) => string
   pagesSidebar: string
   toggleThumbnails: string
@@ -46,6 +46,7 @@ export type ViewerLabels = {
   pdfEmptyTitle: string
   pdfEmptyDescription: string
   docxLoadError: string
+  docxLoadErrorTitle: string
   docxEmptyTitle: string
   docxEmptyDescription: string
   docxEmptyLegacy: string
@@ -81,7 +82,8 @@ export type ViewerLabels = {
   pptxUpload: string
   pptxNoSlides: string
   slide: string
-  slideOf: string
+  slideLabel: (values: { slide: number }) => string
+  slideTotal: (values: { total: number | string }) => string
   slideNumber: string
   currentSlide: (values: { slide: number }) => string
   previousSlide: string
@@ -123,7 +125,7 @@ export const DEFAULT_VIEWER_LABELS: ViewerLabels = {
   page: "Page",
   pageNumber: "Page number",
   currentPage: ({ page }) => `Current page ${page}. Edit page number`,
-  of: "of",
+  pageTotal: ({ total }) => `of ${total}`,
   pageLabel: ({ page }) => `Page ${page}`,
   pagesSidebar: "Pages sidebar",
   toggleThumbnails: "Toggle thumbnails",
@@ -137,6 +139,7 @@ export const DEFAULT_VIEWER_LABELS: ViewerLabels = {
   pdfEmptyDescription:
     "Pass a PDF URL with the src prop or use the upload control.",
   docxLoadError: "Unable to load the DOCX preview.",
+  docxLoadErrorTitle: "Unable to display DOCX",
   docxEmptyTitle: "Upload a Word document to preview",
   docxEmptyDescription: "Pass a DOCX URL with the src prop or upload a file.",
   docxEmptyLegacy:
@@ -193,7 +196,8 @@ export const DEFAULT_VIEWER_LABELS: ViewerLabels = {
   pptxUpload: "Upload PowerPoint",
   pptxNoSlides: "This presentation has no slides.",
   slide: "Slide",
-  slideOf: "of",
+  slideLabel: ({ slide }) => `Slide ${slide}`,
+  slideTotal: ({ total }) => `of ${total}`,
   slideNumber: "Slide number",
   currentSlide: ({ slide }) => `Current slide ${slide}. Edit slide number`,
   previousSlide: "Previous slide",
@@ -247,7 +251,7 @@ export function createViewerLabels(t: ViewerTranslate): ViewerLabels {
     page: t("page"),
     pageNumber: t("pageNumber"),
     currentPage: ({ page }) => t("currentPage", { page }),
-    of: t("of"),
+    pageTotal: ({ total }) => t("pageTotal", { total }),
     pageLabel: ({ page }) => t("pageLabel", { page }),
     pagesSidebar: t("pagesSidebar"),
     toggleThumbnails: t("toggleThumbnails"),
@@ -260,6 +264,7 @@ export function createViewerLabels(t: ViewerTranslate): ViewerLabels {
     pdfEmptyTitle: t("pdfEmptyTitle"),
     pdfEmptyDescription: t("pdfEmptyDescription"),
     docxLoadError: t("docxLoadError"),
+    docxLoadErrorTitle: t("docxLoadErrorTitle"),
     docxEmptyTitle: t("docxEmptyTitle"),
     docxEmptyDescription: t("docxEmptyDescription"),
     docxEmptyLegacy: t("docxEmptyLegacy"),
@@ -312,7 +317,8 @@ export function createViewerLabels(t: ViewerTranslate): ViewerLabels {
     pptxUpload: t("pptxUpload"),
     pptxNoSlides: t("pptxNoSlides"),
     slide: t("slide"),
-    slideOf: t("slideOf"),
+    slideLabel: ({ slide }) => t("slideLabel", { slide }),
+    slideTotal: ({ total }) => t("slideTotal", { total }),
     slideNumber: t("slideNumber"),
     currentSlide: ({ slide }) => t("currentSlide", { slide }),
     previousSlide: t("previousSlide"),
