@@ -6,6 +6,7 @@ export type FilePreviewMode =
   | 'docx'
   | 'pptx'
   | 'spreadsheet'
+  | 'csv'
   | 'html'
   | 'markdown'
   | 'mermaid'
@@ -29,12 +30,16 @@ const PPTX_MIME_TYPES = new Set([
 ])
 
 const SPREADSHEET_MIME_TYPES = new Set([
-  'text/csv',
-  'application/csv',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel.sheet.macroenabled.12',
   'application/vnd.oasis.opendocument.spreadsheet',
+])
+
+const CSV_MIME_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'text/tab-separated-values',
 ])
 
 /** Return the renderer used by the shared file preview panel. */
@@ -48,7 +53,8 @@ export function getFilePreviewMode(file: Pick<PreviewFile, 'filename' | 'mimeTyp
   if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) return 'pdf'
   if (DOCX_MIME_TYPES.has(mimeType) || filename.endsWith('.docx')) return 'docx'
   if (PPTX_MIME_TYPES.has(mimeType) || /\.(?:pptx|ppt)$/.test(filename)) return 'pptx'
-  if (SPREADSHEET_MIME_TYPES.has(mimeType) || /\.(?:csv|xlsx|xls|xlsm|ods|tsv)$/.test(filename)) return 'spreadsheet'
+  if (CSV_MIME_TYPES.has(mimeType) || /\.(?:csv|tsv)$/.test(filename)) return 'csv'
+  if (SPREADSHEET_MIME_TYPES.has(mimeType) || /\.(?:xlsx|xls|xlsm|ods)$/.test(filename)) return 'spreadsheet'
   if (mimeType === 'text/html' || /\.x?html?$/.test(filename)) return 'html'
   if (mimeType === 'text/markdown' || /\.(?:md|markdown)$/.test(filename)) return 'markdown'
   if (/\.(?:mmd|mermaid)$/.test(filename)) return 'mermaid'

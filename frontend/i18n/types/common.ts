@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-27T04:04:22.627Z
+// GENERATED — 2026-10-31T03:09:11.140Z
 // Source: i18n/en/common.json
 export type CommonMessages = {
   common: {
@@ -65,5 +65,113 @@ export type CommonMessages = {
     error: string
     operationFailed: string
     saveFailed: string
+    fileViewer: {
+      loading: string
+      download: string
+      upload: string
+      darkMode: string
+      zoomIn: string
+      zoomOut: string
+      zoomLevel: string
+      zoom: string
+      fitPage: string
+      fitWidth: string
+      automatic: string
+      searchText: string
+      searchWorkbook: string
+      searchCsv: string
+      searching: string
+      noSearch: string
+      noResults: string
+      previousResult: string
+      nextResult: string
+      clear: string
+      page: string
+      pageNumber: string
+      currentPage: string
+      pageTotal: string
+      pageLabel: string
+      pagesSidebar: string
+      toggleThumbnails: string
+      rotateCounterclockwise: string
+      rotateClockwise: string
+      pagesRegion: string
+      openPdfActions: string
+      pdfLoadError: string
+      pdfEngineLoadError: string
+      pdfEmptyTitle: string
+      pdfEmptyDescription: string
+      docxLoadError: string
+      docxLoadErrorTitle: string
+      docxEmptyTitle: string
+      docxEmptyDescription: string
+      docxEmptyLegacy: string
+      docxUpload: string
+      docxPages: string
+      docxDocumentRegion: string
+      comments: string
+      edits: string
+      inserted: string
+      removed: string
+      movedFrom: string
+      movedTo: string
+      resolved: string
+      reply: string
+      comment: string
+      unknownAuthor: string
+      openDocxActions: string
+      xlsxLoadError: string
+      xlsxEmptyTitle: string
+      xlsxEmptyDescription: string
+      xlsxUpload: string
+      xlsxTooLargeTitle: string
+      xlsxTooLargeDescription: string
+      openWorkbookActions: string
+      columnMenu: string
+      sortAscending: string
+      sortDescending: string
+      xlsxActions: {
+        cut: string
+        copy: string
+        paste: string
+        clearContents: string
+        editCell: string
+        undo: string
+        redo: string
+        mergeCells: string
+        mergeAndCenter: string
+        mergeAcross: string
+        unmergeCells: string
+        sortAscending: string
+        sortDescending: string
+        selectRow: string
+        selectColumn: string
+        selectAll: string
+      }
+      sheetPreview: string
+      pptxLoadError: string
+      pptxEmptyTitle: string
+      pptxEmptyDescription: string
+      pptxUpload: string
+      pptxNoSlides: string
+      slide: string
+      slideLabel: string
+      slideTotal: string
+      slideNumber: string
+      currentSlide: string
+      previousSlide: string
+      nextSlide: string
+      slidesRegion: string
+      presentationRegion: string
+      openPresentationActions: string
+      csvParseError: string
+      csvReadError: string
+      csvEmptyTitle: string
+      csvEmptyDescription: string
+      csvUpload: string
+      columnName: string
+      extraColumnName: string
+      openCsvActions: string
+    }
   }
 }

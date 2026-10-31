@@ -3,3 +3,14 @@ coverage = true
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
 coverageSkipTestFiles = true
+# Third-party Extend UI registry sources; project-authored viewer-i18n stays measured.
+coveragePathIgnorePatterns = [
+  "components/extend/csv-viewer.tsx",
+  "components/extend/docx-annotation-card.tsx",
+  "components/extend/docx-viewer.tsx",
+  "components/extend/document-viewer-sidebar.tsx",
+  "components/extend/file-thumbnail.tsx",
+  "components/extend/pdf-viewer.tsx",
+  "components/extend/pptx-viewer.tsx",
+  "components/extend/xlsx-viewer.tsx"
+]

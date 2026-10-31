@@ -49,6 +49,7 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages}>
           <Providers>
             {children}
+            <div id="portal" className="fixed top-0 left-0 z-40" />
             <Toaster richColors position="top-center" offset={{ top: 72 }} mobileOffset={{ top: 72 }} />
           </Providers>
         </NextIntlClientProvider>

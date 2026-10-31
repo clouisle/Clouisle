@@ -1,10 +1,23 @@
 const SOURCE_ROOTS = ['app/', 'components/', 'contexts/', 'hooks/', 'lib/']
 
+/** Third-party Extend UI registry sources; project-authored viewer-i18n stays eligible. */
+const VENDORED_VIEWER_SOURCES = new Set([
+  'components/extend/csv-viewer.tsx',
+  'components/extend/docx-annotation-card.tsx',
+  'components/extend/docx-viewer.tsx',
+  'components/extend/document-viewer-sidebar.tsx',
+  'components/extend/file-thumbnail.tsx',
+  'components/extend/pdf-viewer.tsx',
+  'components/extend/pptx-viewer.tsx',
+  'components/extend/xlsx-viewer.tsx',
+])
+
 export function eligibleSource(path: string): boolean {
   return SOURCE_ROOTS.some((root) => path.startsWith(root))
     && /\.tsx?$/.test(path)
     && !/\.(?:test|spec)\.tsx?$/.test(path)
     && !path.endsWith('.d.ts')
+    && !VENDORED_VIEWER_SOURCES.has(path)
     && path !== 'components/onboarding/steps/types.ts'
 }
 
