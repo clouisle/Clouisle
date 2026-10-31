@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
+import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu"
 import {
   useXlsxViewer,
   useXlsxViewerController,
@@ -20,10 +21,6 @@ import { createPortal } from "react-dom"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import {
-  ContextMenuSeparator,
-  ContextMenuShortcut,
-} from "@/components/ui/context-menu"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -76,6 +73,35 @@ export const xlsxContextMenuStyle = {
 } satisfies NonNullable<
   React.ComponentProps<typeof XlsxViewer>["contextMenuStyle"]
 >
+function ContextMenuSeparator({
+  className,
+  ...props
+}: ContextMenuPrimitive.Separator.Props) {
+  return (
+    <ContextMenuPrimitive.Separator
+      data-slot="context-menu-separator"
+      className={cn("-mx-1 my-1 h-px bg-border", className)}
+      {...props}
+    />
+  )
+}
+
+function ContextMenuShortcut({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="context-menu-shortcut"
+      className={cn(
+        "ml-auto text-xs tracking-widest text-muted-foreground group-focus/context-menu-item:text-accent-foreground",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
 export function XlsxContextMenu({
   actions,
   runAction,

@@ -2,7 +2,7 @@ import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
 
 const PDFIUM_WASM_PATH = "/pdfium/pdfium.wasm"
 
-function resolvePdfiumWasmUrl() {
+export function resolvePdfiumWasmUrl() {
   return typeof window === "undefined"
     ? PDFIUM_WASM_PATH
     : new URL(PDFIUM_WASM_PATH, window.location.origin).toString()

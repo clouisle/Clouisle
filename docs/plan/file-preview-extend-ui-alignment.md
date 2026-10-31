@@ -17,7 +17,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
   - `pdf-viewer.tsx`, `docx-viewer.tsx`, `xlsx-viewer.tsx`, `pptx-viewer.tsx`, `csv-viewer.tsx`
   - shared `document-viewer-sidebar.tsx`, `file-thumbnail.tsx`, `docx-annotation-card.tsx`
   - `lib/pdf-thumbnail-utils.ts`
-- Add `components/icon-placeholder.tsx` mapping the registry's Lucide icon names (Clouisle ships Lucide only) and the shadcn `context-menu` primitive used by the XLSX viewer.
+- Add `components/icon-placeholder.tsx` mapping the registry's Lucide icon names (Clouisle ships Lucide only); the XLSX viewer defines its two context-menu primitives inline.
 - Keep `FilePreviewPanel` as the owner of blob fetching, size limits, error/permission states, download, and close. Viewers receive an object URL via `src`.
 - Split CSV out of the spreadsheet mode so `CsvViewer` receives decoded text; CSV decoding keeps the UTF-8 then GB18030 fallback.
 - Synchronize the DOCX/XLSX dark rendering toggle with `next-themes`.
@@ -36,7 +36,7 @@ Goal: make these surfaces match the official Extend UI components while preservi
 
 ### Stage 1: Vendor official viewers
 
-- **Files added**: `frontend/components/extend/*`, `frontend/lib/pdf-thumbnail-utils.ts`, `frontend/components/ui/context-menu.tsx`, `frontend/components/icon-placeholder.tsx`
+- **Files added**: `frontend/components/extend/*`, `frontend/lib/pdf-thumbnail-utils.ts`, `frontend/components/icon-placeholder.tsx`
 - **Dependencies**: `@embedpdf/core|engines|models|pdfium|plugin-*@2.15.x`, `pdf-lib`, `@glideapps/glide-data-grid`, `papaparse`, upgraded `@extend-ai/react-docx/xlsx/pptx`; removed `@embedpdf/viewer`.
 - **Validation**: `bunx tsc --noEmit` and `bun run build`.
 
