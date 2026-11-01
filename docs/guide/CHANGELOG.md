@@ -9,6 +9,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
 ### Fixed
 
 - Citation sources with non-HTTP or invalid URLs are displayed as text rather than links.
