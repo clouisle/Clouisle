@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
 ### Changed
 
 - Agent runs progressively compact conversation history and completed tool results when context pressure grows, retaining original records and an authorized paginated readback; summary failures fall back without advancing the history watermark.
