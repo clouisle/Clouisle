@@ -138,6 +138,17 @@ mock.module('@/components/ui/dialog', () => ({
 }))
 
 import { PlatformHeader } from './platform-header'
+import { XieyuTransitionProvider, useXieyuTransition } from './xieyu-transition'
+
+function TestPage() {
+  const { registerPage } = useXieyuTransition()
+  React.useEffect(() => { registerPage(true); return () => registerPage(false) }, [registerPage])
+  return <main data-testid="xieyu-page" />
+}
+
+function TestShell() {
+  return <XieyuTransitionProvider>{pathname === '/xieyu' ? <TestPage /> : <PlatformHeader />}</XieyuTransitionProvider>
+}
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -146,7 +157,7 @@ const renderers: ReactTestRenderer[] = []
 async function renderHeader() {
   let renderer: ReactTestRenderer
   await act(async () => {
-    renderer = create(<PlatformHeader />)
+    renderer = create(<TestShell />)
     await Promise.resolve()
   })
   renderers.push(renderer!)
@@ -205,7 +216,7 @@ describe('PlatformHeader', () => {
 
     canAccessCapabilities = true
     canAccessDashboard = true
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
 
     expect(renderer.root.findByProps({ 'data-testid': 'nav-capabilities' }).props.href).toBe('/app/capabilities')
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-admin' })).toBeTruthy()
@@ -220,7 +231,7 @@ describe('PlatformHeader', () => {
     expect(push).not.toHaveBeenCalled()
 
     showBrand = false
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
     expect(renderer.root.findByProps({ 'data-testid': 'nav-home' }).props.href).toBe('/app')
   })
 
@@ -232,13 +243,13 @@ describe('PlatformHeader', () => {
     expect(push).not.toHaveBeenCalled()
     await act(async () => delay(520))
     expect(push).toHaveBeenCalledTimes(1)
-    expect(push).toHaveBeenCalledWith('/app/xieyu')
-    pathname = '/app/xieyu'
-    await act(async () => renderer.update(<PlatformHeader />))
+    expect(push).toHaveBeenCalledWith('/xieyu')
+    pathname = '/xieyu'
+    await act(async () => renderer.update(<TestShell />))
     expect(document.querySelector('[data-testid="nav-xieyu"]')).toBe(orb)
     expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
     pathname = '/app/apps'
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
     expect(orb?.parentElement?.className).toContain('xieyu-positioner-nav')
   })
 
@@ -246,24 +257,24 @@ describe('PlatformHeader', () => {
     reducedMotion = true
     const renderer = await renderHeader()
     await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
-    expect(push).toHaveBeenCalledWith('/app/xieyu')
+    expect(push).toHaveBeenCalledWith('/xieyu')
     expect(renderer.root.findAllByProps({ 'data-testid': 'xieyu-ripple' })).toHaveLength(0)
-    pathname = '/app/xieyu'
-    await act(async () => renderer.update(<PlatformHeader />))
+    pathname = '/xieyu'
+    await act(async () => renderer.update(<TestShell />))
     expect(document.querySelector('[data-testid="nav-xieyu"]')?.parentElement?.className).toContain('xieyu-positioner-corner')
   })
 
   test('opens directly in the corner and cancels a pending transition on route change', async () => {
-    pathname = '/app/xieyu'
+    pathname = '/xieyu'
     const renderer = await renderHeader()
     const orb = document.querySelector('[data-testid="nav-xieyu"]')
     expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
     expect(orb?.parentElement?.className).not.toContain('xieyu-positioner-flying')
     pathname = '/app/apps'
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
     await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
     pathname = '/app/models'
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
     await act(async () => delay(520))
     expect(push).not.toHaveBeenCalled()
   })
@@ -311,7 +322,7 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findAllByProps({ 'data-testid': 'user-menu-api-keys' })).toHaveLength(0)
 
     canAccessApiKeys = true
-    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.update(<TestShell />))
 
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-api-keys' })).toBeTruthy()
   })
@@ -350,7 +361,7 @@ describe('PlatformHeader', () => {
     expect(mobileNav).toBeTruthy()
     expect(mobileNav.findAllByType('a')[0].props.href).toBe('/app')
     await act(async () => renderer.root.findByProps({ 'data-testid': 'mobile-nav-xieyu' }).props.onClick())
-    expect(push).toHaveBeenCalledWith('/app/xieyu')
+    expect(push).toHaveBeenCalledWith('/xieyu')
     expect(renderer.root.findAllByType('nav')).toHaveLength(1)
     await act(async () => toggle.props.onClick())
     const reopenedNav = renderer.root.findAllByType('nav')[1]
