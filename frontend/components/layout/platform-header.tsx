@@ -324,7 +324,6 @@ export function PlatformHeader() {
             </div>
             <button type="button" data-testid="nav-xieyu" onClick={() => toast.info(t('xieyuComingSoon'))} className="xieyu-entrance" aria-label={t('nav.xieyu')}>
               <span className="xieyu-orb" aria-hidden="true"><span className="xieyu-orb-flow" /></span>
-              <span className="xieyu-label">{t('nav.xieyu')}</span>
             </button>
             <div className="flex items-center justify-start gap-1">
               {visibleNavItems.filter(item => item.key === 'capabilities' || item.key === 'models').map(renderDesktopNavItem)}

@@ -472,15 +472,6 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
   animation: xieyu-ring 12s ease-in-out infinite alternate;
 }
 
-.xieyu-label {
-  position: absolute;
-  top: 62px;
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
 .xieyu-entrance:hover .xieyu-orb,
 .xieyu-entrance:focus-visible .xieyu-orb {
   transform: scale(1.04);
