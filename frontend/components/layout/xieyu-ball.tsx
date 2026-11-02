@@ -74,14 +74,15 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
     <svg ref={orbRef} className="xieyu-orb" data-expression={expression} viewBox="0 0 100 100" aria-hidden="true">
       <defs>
         <radialGradient id={gradientId} cx="30%" cy="24%" r="80%">
-          <stop offset="0%" stopColor="color-mix(in oklch, var(--primary) 18%, white)" />
-          <stop offset="48%" stopColor="color-mix(in oklch, var(--primary) 52%, white)" />
-          <stop offset="100%" stopColor="color-mix(in oklch, var(--primary) 72%, #31545a)" />
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="38%" stopColor="#eefaff" />
+          <stop offset="72%" stopColor="#c6e5f0" />
+          <stop offset="100%" stopColor="#98b5d0" />
         </radialGradient>
       </defs>
       <g key={expression === 'responding' ? responseKey : 'body'} className="xieyu-body">
-        <circle cx="50" cy="50" r="44" fill={`url(#${gradientId})`} />
-        <ellipse cx="35" cy="25" rx="19" ry="9" fill="#fff" opacity=".23" transform="rotate(-27 35 25)" />
+        <circle cx="50" cy="50" r="44" fill={`url(#${gradientId})`} stroke="#b8dce9" strokeWidth="1" />
+        <ellipse cx="35" cy="25" rx="19" ry="9" fill="#fff" opacity=".42" transform="rotate(-27 35 25)" />
         <g className="xieyu-eyes">
           <g className="xieyu-eye xieyu-eye-left"><ellipse cx="39" cy="47" rx="5.5" ry="9" /></g>
           <g className="xieyu-eye xieyu-eye-right"><ellipse cx="61" cy="47" rx="5.5" ry="9" /></g>
