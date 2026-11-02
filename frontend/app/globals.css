@@ -453,17 +453,11 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .xieyu-orb { overflow: visible; }
 .xieyu-body { transform-origin: 50px 50px; animation: xieyu-breathe 5s ease-in-out infinite; }
 .xieyu-eyes { transform: translate(var(--gaze-x, 0px), var(--gaze-y, 0px)); transition: transform 220ms ease-out; }
-.xieyu-eye { transform-box: fill-box; transform-origin: center; }
 .xieyu-eye-open { fill: #263f56; transform-box: fill-box; transform-origin: center; animation: xieyu-blink 7s ease-in-out infinite; }
-.xieyu-eye-happy { fill: none; stroke: #263f56; stroke-width: 3.8; stroke-linecap: round; opacity: 0; }
 .xieyu-orbit { fill: none; stroke: #80cce0; stroke-width: 2.5; stroke-dasharray: 105 215; opacity: 0; transform-origin: 50px 50px; }
 
 .xieyu-orb[data-expression="focused"] .xieyu-eye-open { animation: none; transform: scale(1.08, 1.12); }
 .xieyu-orb[data-expression="responding"] .xieyu-body { animation: xieyu-response 700ms ease-out; }
-.xieyu-orb[data-expression="responding"] .xieyu-eye-open,
-.xieyu-orb[data-expression="success"] .xieyu-eye-open { opacity: 0; animation: none; }
-.xieyu-orb[data-expression="responding"] .xieyu-eye-happy,
-.xieyu-orb[data-expression="success"] .xieyu-eye-happy { opacity: 1; }
 .xieyu-orb[data-expression="listening"] .xieyu-body { animation: xieyu-listen 4.5s ease-in-out infinite; }
 .xieyu-orb[data-expression="listening"] .xieyu-eye-open { animation: none; transform: scale(1.06, 1.15); }
 .xieyu-orb[data-expression="thinking"] .xieyu-eyes { transform: translate(3px, -6px); }
@@ -473,8 +467,6 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .xieyu-orb[data-expression="working"] .xieyu-orbit { animation-duration: 2s; stroke: #9ebcf0; }
 .xieyu-orb[data-expression="waiting"] .xieyu-eyes { animation: xieyu-wait 4s ease-in-out infinite; }
 .xieyu-orb[data-expression="success"] .xieyu-body { animation: xieyu-celebrate 1s ease-out; }
-.xieyu-orb[data-expression="error"] .xieyu-eye-left { transform: rotate(-14deg) translateY(2px); }
-.xieyu-orb[data-expression="error"] .xieyu-eye-right { transform: rotate(12deg) translateY(-1px); }
 .xieyu-orb[data-expression="error"] .xieyu-eye-open { animation: none; }
 
 @keyframes xieyu-breathe { 50% { transform: scale(1.018, .985); } }
