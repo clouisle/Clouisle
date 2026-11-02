@@ -1,9 +1,10 @@
 # Implementation Plan
 
 ## Active
-- **xieyu-entrance** — Completed; interaction tests, translation lint and typecheck passed. Browser visual verification not performed. See `docs/plan/xieyu-entrance.md`.
+- **xieyu-entrance** — Completed; state/navigation tests, server rendering, typecheck and lint passed. Browser visual verification not performed. See `docs/plan/xieyu-entrance.md`.
   - [x] 1. Add responsive entrance, animation and localized feedback
   - [x] 2. Align onboarding and verify navigation behavior
+  - [x] 3. Implement original expression ball and interaction/business states
 
 
 - **global-watermark** — Completed; verification via backend/frontend suites and typecheck/lint (no server or browser run). See `docs/plan/global-watermark.md`.

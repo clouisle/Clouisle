@@ -83,6 +83,7 @@ mock.module('@/lib/theme-config', () => ({
 mock.module('@/components/default-site-icon', () => ({
   DefaultSiteIcon: () => <span>site-icon</span>,
 }))
+mock.module('@/components/layout/xieyu-ball', () => ({ XieyuBall: () => <span /> }))
 mock.module('@/components/team-switcher', () => ({
   TeamSwitcher: () => <span>team-switcher</span>,
 }))

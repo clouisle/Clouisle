@@ -59,6 +59,7 @@ import { useSettings } from '@/hooks/use-settings'
 import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, WEBSITE_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
+import { XieyuBall } from '@/components/layout/xieyu-ball'
 import { getBrandingVisibility } from '@/lib/theme-config'
 
 interface PlatformNavItem {
@@ -112,6 +113,8 @@ export function PlatformHeader() {
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [aboutOpen, setAboutOpen] = React.useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
+  const [xieyuFocused, setXieyuFocused] = React.useState(false)
+  const [xieyuResponse, setXieyuResponse] = React.useState(0)
   const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
@@ -322,8 +325,10 @@ export function PlatformHeader() {
             <div className="flex items-center justify-end gap-1">
               {visibleNavItems.filter(item => item.key === 'apps' || item.key === 'kb' || (item.key === 'home' && !showBrandIcon && !showBrandName)).map(renderDesktopNavItem)}
             </div>
-            <button type="button" data-testid="nav-xieyu" onClick={() => toast.info(t('xieyuComingSoon'))} className="xieyu-entrance" aria-label={t('nav.xieyu')}>
-              <span className="xieyu-orb" aria-hidden="true"><span className="xieyu-orb-flow" /></span>
+            <button type="button" data-testid="nav-xieyu" onClick={() => { setXieyuResponse(value => value + 1); toast.info(t('xieyuComingSoon')) }} className="xieyu-entrance" aria-label={t('nav.xieyu')}
+              onPointerEnter={() => setXieyuFocused(true)} onPointerLeave={() => setXieyuFocused(false)}
+              onFocus={() => setXieyuFocused(true)} onBlur={() => setXieyuFocused(false)}>
+              <XieyuBall focused={xieyuFocused} responseKey={xieyuResponse} />
             </button>
             <div className="flex items-center justify-start gap-1">
               {visibleNavItems.filter(item => item.key === 'capabilities' || item.key === 'models').map(renderDesktopNavItem)}
