@@ -74,10 +74,9 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
     <svg ref={orbRef} className="xieyu-orb" data-expression={expression} viewBox="0 0 100 100" aria-hidden="true">
       <defs>
         <radialGradient id={gradientId} cx="30%" cy="24%" r="80%">
-          <stop offset="0%" stopColor="#c5fbf7" />
-          <stop offset="40%" stopColor="#76cbe9" />
-          <stop offset="75%" stopColor="#7a83e6" />
-          <stop offset="100%" stopColor="#9354b3" />
+          <stop offset="0%" stopColor="color-mix(in oklch, var(--primary) 18%, white)" />
+          <stop offset="48%" stopColor="color-mix(in oklch, var(--primary) 52%, white)" />
+          <stop offset="100%" stopColor="color-mix(in oklch, var(--primary) 72%, #31545a)" />
         </radialGradient>
       </defs>
       <g key={expression === 'responding' ? responseKey : 'body'} className="xieyu-body">

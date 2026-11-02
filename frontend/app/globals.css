@@ -446,16 +446,16 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
   top: 7px;
   width: 52px;
   height: 52px;
-  filter: drop-shadow(0 3px 8px #627ddc66);
+  filter: drop-shadow(0 3px 7px color-mix(in oklch, var(--primary) 22%, transparent));
   transition: transform 250ms ease, filter 250ms ease;
 }
 
 .xieyu-orb { overflow: visible; }
 .xieyu-body { transform-origin: 50px 50px; animation: xieyu-breathe 5s ease-in-out infinite; }
 .xieyu-eyes { transform: translate(var(--gaze-x, 0px), var(--gaze-y, 0px)); transition: transform 220ms ease-out; }
-.xieyu-eye { fill: #172950; transform-box: fill-box; transform-origin: center; animation: xieyu-blink 6s infinite; }
-.xieyu-smile { fill: none; stroke: #172950; stroke-width: 3; stroke-linecap: round; opacity: 0; }
-.xieyu-orbit { fill: none; stroke: #baf9ef; stroke-width: 2.5; stroke-dasharray: 105 215; opacity: 0; transform-origin: 50px 50px; }
+.xieyu-eye { fill: #183b40; transform-box: fill-box; transform-origin: center; animation: xieyu-blink 6s infinite; }
+.xieyu-smile { fill: none; stroke: #183b40; stroke-width: 3; stroke-linecap: round; opacity: 0; }
+.xieyu-orbit { fill: none; stroke: color-mix(in oklch, var(--primary) 55%, white); stroke-width: 2.5; stroke-dasharray: 105 215; opacity: 0; transform-origin: 50px 50px; }
 
 .xieyu-orb[data-expression="focused"] .xieyu-eye { transform: scale(1.12); animation: none; }
 .xieyu-orb[data-expression="responding"] .xieyu-body { animation: xieyu-response 700ms ease-out; }
@@ -468,7 +468,7 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .xieyu-orb[data-expression="thinking"] .xieyu-orbit,
 .xieyu-orb[data-expression="working"] .xieyu-orbit { opacity: .9; animation: xieyu-orbit 4s linear infinite; }
 .xieyu-orb[data-expression="working"] .xieyu-body { animation: xieyu-breathe 1.8s ease-in-out infinite; }
-.xieyu-orb[data-expression="working"] .xieyu-orbit { animation-duration: 2s; stroke: #e9bafa; }
+.xieyu-orb[data-expression="working"] .xieyu-orbit { animation-duration: 2s; stroke: color-mix(in oklch, var(--primary) 75%, white); }
 .xieyu-orb[data-expression="waiting"] .xieyu-eyes { animation: xieyu-wait 4s ease-in-out infinite; }
 .xieyu-orb[data-expression="success"] .xieyu-eye { transform: scaleY(.35); animation: none; }
 .xieyu-orb[data-expression="success"] .xieyu-body { animation: xieyu-celebrate 1s ease-out; }
@@ -487,7 +487,7 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .xieyu-entrance:hover .xieyu-orb,
 .xieyu-entrance:focus-visible .xieyu-orb {
   transform: scale(1.04);
-  filter: drop-shadow(0 4px 12px #627ddc99);
+  filter: drop-shadow(0 4px 10px color-mix(in oklch, var(--primary) 35%, transparent));
 }
 
 .xieyu-entrance:active .xieyu-orb { transform: scale(.97); }
@@ -497,7 +497,7 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
   height: 16px;
   flex: none;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 25%, #d5ffff, #64d9ed 35%, #6945b7);
+  background: radial-gradient(circle at 30% 25%, color-mix(in oklch, var(--primary) 18%, white), color-mix(in oklch, var(--primary) 52%, white) 48%, color-mix(in oklch, var(--primary) 72%, #31545a));
 }
 
 
