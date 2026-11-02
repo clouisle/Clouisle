@@ -31,7 +31,40 @@ const WATERMARK_SETTINGS = {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+const tokenStore = new Map<string, string>()
+const storageListeners = new Set<(event: { key: string | null }) => void>()
+
+const installGlobals = () => {
+  globalThis.localStorage = {
+    getItem: (key: string) => tokenStore.get(key) ?? null,
+    setItem: (key: string, value: string) => tokenStore.set(key, value),
+  } as unknown as Storage
+  globalThis.window = {
+    innerWidth: 1280,
+    addEventListener: (type: string, handler: (event: { key: string | null }) => void) => {
+      if (type === 'storage') storageListeners.add(handler)
+    },
+    removeEventListener: (type: string, handler: (event: { key: string | null }) => void) => {
+      if (type === 'storage') storageListeners.delete(handler)
+    },
+  } as unknown as Window & typeof globalThis
+}
+
+const setToken = (token: string | null, notify = false) => {
+  if (token === null) tokenStore.delete('access_token')
+  else tokenStore.set('access_token', token)
+  if (notify) {
+    for (const listener of storageListeners) listener({ key: 'access_token' })
+  }
+}
+
 const renderers: ReactTestRenderer[] = []
+
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
 
 const render = async () => {
   let renderer: ReactTestRenderer
@@ -40,15 +73,6 @@ const render = async () => {
   })
   renderers.push(renderer!)
   return renderer!
-}
-
-const setToken = (token: string | null) => {
-  const storage = new Map<string, string>()
-  if (token) storage.set('access_token', token)
-  globalThis.localStorage = {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => storage.set(key, value),
-  } as unknown as Storage
 }
 
 const overlayText = (renderer: ReactTestRenderer) => {
@@ -60,12 +84,19 @@ const overlayText = (renderer: ReactTestRenderer) => {
 beforeEach(() => {
   siteSettingsState = { settings: { ...WATERMARK_SETTINGS }, loading: false }
   getCurrentUser.mockClear()
+  getCurrentUser.mockImplementation(() =>
+    Promise.resolve({ username: 'alice', email: 'alice@example.com' })
+  )
+  tokenStore.clear()
+  storageListeners.clear()
+  installGlobals()
   setToken('token')
 })
 
 afterEach(() => {
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
+  storageListeners.clear()
 })
 
 describe('GlobalWatermark', () => {
@@ -99,13 +130,34 @@ describe('GlobalWatermark', () => {
     expect(getCurrentUser).not.toHaveBeenCalled()
   })
 
-  test('falls back to the site name when the user lookup fails', async () => {
-    siteSettingsState = {
-      settings: { ...WATERMARK_SETTINGS, watermark_content: '{username}' },
-      loading: false,
-    }
+  test('renders nothing when the identity cannot be resolved', async () => {
     getCurrentUser.mockImplementationOnce(() => Promise.reject(new Error('offline')))
     const renderer = await render()
-    expect(overlayText(renderer)).toBe('Acme')
+    expect(renderer.root.findAllByProps({ 'data-testid': 'watermark-overlay' })).toHaveLength(0)
+  })
+
+  test('re-resolves the identity when another tab replaces the access token', async () => {
+    const renderer = await render()
+    expect(overlayText(renderer)).toContain('alice')
+
+    getCurrentUser.mockImplementationOnce(() =>
+      Promise.resolve({ username: 'bob', email: 'bob@example.com' })
+    )
+    act(() => setToken('token-2', true))
+    await flush()
+
+    expect(getCurrentUser).toHaveBeenCalledTimes(2)
+    expect(overlayText(renderer)).toContain('bob')
+    expect(overlayText(renderer)).not.toContain('alice')
+  })
+
+  test('hides the overlay when the token is cleared in another tab', async () => {
+    const renderer = await render()
+    expect(overlayText(renderer)).toContain('alice')
+
+    act(() => setToken(null, true))
+    await flush()
+
+    expect(renderer.root.findAllByProps({ 'data-testid': 'watermark-overlay' })).toHaveLength(0)
   })
 })

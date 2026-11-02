@@ -1,4 +1,4 @@
-// GENERATED — 2026-11-02T05:50:25.010Z
+// GENERATED — 2026-11-02T06:40:40.653Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -544,6 +544,7 @@ export type SiteSettingsMessages = {
     watermarkGap: string
     watermarkColor: string
     watermarkColorAuto: string
+    watermarkColorPick: string
     watermarkPreview: string
     watermarkPreviewDescription: string
     watermarkContentRequired: string

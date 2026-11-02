@@ -183,8 +183,11 @@ async def _validate_setting_value(
     if key == "watermark_content":
         if not isinstance(value, str):
             raise_validation_error()
-        content = value.strip()
-        if not content or len(content) > WATERMARK_CONTENT_MAX_LENGTH:
+        # Reject padding instead of trimming: the value stored and audited is the value
+        # validated, so a padded string cannot slip past the length limit.
+        if not value or value != value.strip():
+            raise_validation_error()
+        if len(value) > WATERMARK_CONTENT_MAX_LENGTH:
             raise_validation_error()
         return
 

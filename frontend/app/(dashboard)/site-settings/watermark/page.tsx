@@ -27,6 +27,24 @@ import { clearValidationError } from '@/lib/validation'
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const MAX_CONTENT_LENGTH = 200
 
+/**
+ * `<input type="color">` only accepts `#rrggbb`; it silently renders `#abc` or an
+ * `#rrggbbaa` value as black, so expand and trim before binding.
+ */
+function toColorInputValue(color: string): string {
+  const value = color.trim()
+  if (!HEX_COLOR_PATTERN.test(value)) return '#000000'
+  const hex = value.slice(1)
+  const expanded =
+    hex.length === 3 || hex.length === 4
+      ? hex
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : hex
+  return `#${expanded.slice(0, 6)}`
+}
+
 type NumericKey =
   | 'watermark_opacity'
   | 'watermark_font_size'
@@ -59,6 +77,7 @@ export default function SiteSettingsWatermarkPage() {
   const canUpdate = canPerform('admin:settings:update')
 
   const [loading, setLoading] = React.useState(true)
+  const [settingsReady, setSettingsReady] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [form, setForm] = React.useState<WatermarkForm>(INITIAL_FORM)
@@ -67,8 +86,12 @@ export default function SiteSettingsWatermarkPage() {
   const loadSettings = React.useCallback(async () => {
     try {
       setLoading(true)
+      setSettingsReady(false)
       setForm(await siteSettingsApi.getWatermark())
+      setSettingsReady(true)
     } catch (error) {
+      // Never fall back to the form defaults for saving: that would overwrite the stored
+      // settings with values the administrator never saw.
       console.error('Failed to load watermark settings:', error)
     } finally {
       setLoading(false)
@@ -92,7 +115,7 @@ export default function SiteSettingsWatermarkPage() {
   })
 
   const handleSave = async () => {
-    if (!canUpdate) return
+    if (!canUpdate || !settingsReady) return
 
     const nextErrors: Record<string, string> = {}
     const content = form.watermark_content.trim()
@@ -173,6 +196,15 @@ export default function SiteSettingsWatermarkPage() {
     )
   }
 
+  if (!settingsReady) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-destructive">{t('loadError')}</p>
+        <Button onClick={() => void loadSettings()}>{t('retry')}</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -233,24 +265,42 @@ export default function SiteSettingsWatermarkPage() {
           <div className="space-y-2">
             <Label htmlFor="watermarkColor">{t('watermarkColor')}</Label>
             <div className="flex items-center gap-2">
-              <Input
-                id="watermarkColor"
-                type="color"
-                className="h-9 w-16 p-1"
-                value={form.watermark_color || '#000000'}
-                onChange={(event) => updateField('watermark_color', event.target.value)}
-                disabled={!canUpdate || saving}
-                aria-invalid={!!fieldErrors.watermark_color}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => updateField('watermark_color', '')}
-                disabled={!canUpdate || saving}
-              >
-                {t('watermarkColorAuto')}
-              </Button>
+              {form.watermark_color ? (
+                <>
+                  <Input
+                    id="watermarkColor"
+                    type="color"
+                    className="h-9 w-16 p-1"
+                    value={toColorInputValue(form.watermark_color)}
+                    onChange={(event) => updateField('watermark_color', event.target.value)}
+                    disabled={!canUpdate || saving}
+                    aria-invalid={!!fieldErrors.watermark_color}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => updateField('watermark_color', '')}
+                    disabled={!canUpdate || saving}
+                  >
+                    {t('watermarkColorAuto')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span aria-hidden className="h-9 w-16 rounded-md border bg-foreground/70" />
+                  <span className="text-sm text-muted-foreground">{t('watermarkColorAuto')}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => updateField('watermark_color', '#000000')}
+                    disabled={!canUpdate || saving}
+                  >
+                    {t('watermarkColorPick')}
+                  </Button>
+                </>
+              )}
             </div>
             <FieldError>{fieldErrors.watermark_color}</FieldError>
           </div>

@@ -54,6 +54,36 @@ describe('WatermarkOverlay', () => {
     expect(pattern.props.id).not.toContain(':')
   })
 
+  test('derives the tile pitch from the configured gap', () => {
+    const narrow = render({ ...BASE, gap: 60 }).root.findByType('pattern')
+    const wide = render({ ...BASE, gap: 120 }).root.findByType('pattern')
+
+    // Width spans two columns, height one row, so the pitch grows by the gap difference.
+    expect(wide.props.width - narrow.props.width).toBeCloseTo(2 * (120 - 60), 6)
+    expect(wide.props.height - narrow.props.height).toBeCloseTo(120 - 60, 6)
+  })
+
+  test('shrinks the mark so a long template still fits a narrow viewport', () => {
+    const longText = 'alice@example.com 2026-11-02 09:07 '.repeat(5).trim()
+    globalThis.window = {
+      innerWidth: 390,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Window & typeof globalThis
+
+    try {
+      const { root } = render({ ...BASE, text: longText, gap: 120 })
+      const pattern = root.findByType('pattern')
+      const mark = pattern.findAllByType('text')[0]
+      const markWidth = pattern.props.width / 2 - 120
+
+      expect(mark.props.fontSize).toBeLessThan(BASE.fontSize)
+      expect(markWidth).toBeLessThanOrEqual(390 - 120)
+    } finally {
+      delete (globalThis as { window?: unknown }).window
+    }
+  })
+
   test('uses the fixed layer globally and an absolute layer for previews', () => {
     expect(render(BASE).layer.props.className).toContain('fixed inset-0 z-[9999]')
     expect(render({ ...BASE, fixed: false }).layer.props.className).toContain('absolute inset-0')

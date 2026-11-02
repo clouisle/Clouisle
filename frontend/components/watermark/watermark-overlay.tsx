@@ -66,8 +66,29 @@ export function WatermarkOverlay({
   }, [measureKey])
 
   const measuredWidth = measurement?.key === measureKey ? measurement.width : null
-  const textWidth = measuredWidth ?? Math.ceil(text.length * fontSize * ESTIMATED_ADVANCE)
-  const textHeight = Math.ceil(fontSize * LINE_HEIGHT_RATIO)
+  const requestedWidth = measuredWidth ?? Math.ceil(text.length * fontSize * ESTIMATED_ADVANCE)
+
+  // A 200-character template at the maximum font size is far wider than a phone screen, which
+  // would hide whatever the template puts last. Shrink the mark (and the whole tile with it)
+  // so one full mark always fits the viewport.
+  const [viewportWidth, setViewportWidth] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    const read = () => setViewportWidth(window.innerWidth)
+    read()
+    window.addEventListener('resize', read)
+    return () => window.removeEventListener('resize', read)
+  }, [])
+
+  const availableWidth = viewportWidth === null ? null : viewportWidth - gap
+  const renderFontSize =
+    availableWidth !== null && availableWidth > 0 && requestedWidth > availableWidth
+      ? Math.max(1, Math.floor((fontSize * availableWidth) / requestedWidth))
+      : fontSize
+  // Text advance scales linearly with the font size.
+  const textWidth = Math.max(1, Math.ceil((requestedWidth * renderFontSize) / fontSize))
+  const textHeight = Math.ceil(renderFontSize * LINE_HEIGHT_RATIO)
 
   // Rotated bounding box (antd computes the same rectangle from the four rotated corners).
   const radians = (rotation * Math.PI) / 180
@@ -131,7 +152,7 @@ export function WatermarkOverlay({
                 y={y}
                 textAnchor="middle"
                 dominantBaseline="central"
-                fontSize={fontSize}
+                fontSize={renderFontSize}
                 fill="currentColor"
                 transform={`rotate(${rotation} ${x} ${y})`}
               >

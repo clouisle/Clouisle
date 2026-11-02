@@ -109,9 +109,14 @@ const saveButton = (renderer: ReactTestRenderer) =>
     .findAllByType('button')
     .find((button) => button.children.includes('saveChanges'))!
 
-const input = (renderer: ReactTestRenderer, id: string) =>
+const findInput = (renderer: ReactTestRenderer, id: string) =>
   // match host <input> nodes: composite nodes expose the page's own handler props
-  renderer.root.findAllByType('input').find((element) => element.props.id === id)!
+  renderer.root.findAllByType('input').find((element) => element.props.id === id)
+
+const input = (renderer: ReactTestRenderer, id: string) => findInput(renderer, id)!
+
+const button = (renderer: ReactTestRenderer, label: string) =>
+  renderer.root.findAllByType('button').find((node) => node.children.includes(label))
 
 beforeEach(() => {
   getWatermark.mockImplementation(() => Promise.resolve(loadedSettings))
@@ -179,5 +184,47 @@ describe('SiteSettingsWatermarkPage', () => {
     expect(renderer.root.findAllByProps({ role: 'alert' })[0].children).toEqual([
       'watermarkRangeError',
     ])
+  })
+
+  test('keeps the form unsavable when the initial load fails, then retries', async () => {
+    const consoleError = mock(() => {})
+    const originalConsoleError = console.error
+    console.error = consoleError
+    getWatermark.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+
+    try {
+      const renderer = await render()
+      expect(renderer.root.findAllByType('p').some((node) => node.children.includes('loadError'))).toBe(true)
+      expect(button(renderer, 'saveChanges')).toBeUndefined()
+      expect(updateWatermark).not.toHaveBeenCalled()
+
+      await act(async () => button(renderer, 'retry')!.props.onClick())
+      expect(input(renderer, 'watermarkContent').props.value).toBe('{username} {date}')
+    } finally {
+      console.error = originalConsoleError
+    }
+  })
+
+  test('expands a short hex color for the native picker while keeping the stored value', async () => {
+    getWatermark.mockImplementationOnce(() => Promise.resolve({ ...loadedSettings, watermark_color: '#abc' }))
+    const renderer = await render()
+
+    expect(input(renderer, 'watermarkColor').props.value).toBe('#aabbcc')
+    const layer = renderer.root
+      .findAllByType('div')
+      .find((node) => node.props['data-testid'] === 'watermark-overlay')!
+    expect(layer.props.style.color).toBe('#abc')
+  })
+
+  test('shows the automatic color state instead of a black swatch', async () => {
+    getWatermark.mockImplementationOnce(() => Promise.resolve({ ...loadedSettings, watermark_color: '' }))
+    const renderer = await render()
+
+    expect(findInput(renderer, 'watermarkColor')).toBeUndefined()
+    expect(button(renderer, 'watermarkColorAuto')).toBeUndefined()
+    expect(button(renderer, 'watermarkColorPick')).toBeDefined()
+
+    await act(async () => button(renderer, 'watermarkColorPick')!.props.onClick())
+    expect(input(renderer, 'watermarkColor').props.value).toBe('#000000')
   })
 })

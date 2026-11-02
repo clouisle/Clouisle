@@ -45,7 +45,9 @@ async def test_validate_watermark_content_accepts_non_empty_strings(value):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["", "   ", "x" * 201, None, 12])
+@pytest.mark.parametrize(
+    "value", ["", "   ", " {username}", "{username} ", "x" * 201, None, 12]
+)
 async def test_validate_watermark_content_rejects_invalid_values(value):
     with pytest.raises(BusinessError) as error:
         await _validate_setting_value("watermark_content", value)

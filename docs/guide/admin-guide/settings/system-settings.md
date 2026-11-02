@@ -321,7 +321,7 @@ If the configured vision model endpoint is unreachable or its credentials are in
 
 ## Global Watermark Settings
 
-The **Watermark** category (`/site-settings/watermark`) overlays a repeating, per-user watermark on every signed-in page so a screenshot can be traced back to an account. It is **off by default** and never appears on the sign-in pages or embedded (iframe) chat surfaces.
+The **Watermark** category (`/site-settings/watermark`) overlays a repeating, per-user watermark so a screenshot can be traced back to an account. It is **off by default**. Coverage is the signed-in app surfaces — dashboard, platform and chat pages — and never the sign-in, password/verification or embedded (iframe) pages.
 
 ```yaml
 watermark_enabled: false
@@ -333,9 +333,11 @@ watermark_gap: 120           # 60-600 pixels between tiles
 watermark_color: ""          # empty = theme foreground color, otherwise hex
 ```
 
-`watermark_content` is a template rendered in the browser for each signed-in user. Supported placeholders are `{username}`, `{email}`, `{site_name}`, `{date}` and `{time}`; unknown placeholders are shown verbatim. Date and time use the viewer's local timezone, formatted as `YYYY-MM-DD` and `HH:mm`. If the rendered result is empty (for example `{username}` for an account without one), the watermark falls back to the site name.
+`watermark_content` is a template rendered in the browser for each signed-in user. Supported placeholders are `{username}`, `{email}`, `{site_name}`, `{date}` and `{time}`; unknown placeholders are shown verbatim. Date and time use the viewer's local timezone, formatted as `YYYY-MM-DD` and `HH:mm`, and refresh about once a minute while the page stays open. If the rendered result is empty (for example `{username}` for an account without one), the watermark falls back to the site name.
 
-All seven values are public site settings: the browser receives them from `GET /api/v1/site-settings/public` and renders the overlay client-side, so enabling the feature takes effect on the next settings refresh without a redeploy. The page preview uses a sample user name and the current time. Updating these values requires `admin:settings:update`; changing the content template does not require a restart.
+The overlay only appears once a user identity has been resolved for the current session, so it never shows a timestamp without the account it belongs to. On narrow viewports the font size is reduced as needed so one complete mark fits the screen; a long template therefore stays readable instead of being cut off.
+
+All seven values are public site settings: the browser receives them from `GET /api/v1/site-settings/public` and renders the overlay client-side, so enabling the feature takes effect on the next settings refresh without a redeploy. The page preview uses a sample user name and the current time. Updating these values requires `admin:settings:update`; changing the content template does not require a restart. Text color offers **auto** (theme foreground) or an explicit hex value.
 
 Because the value is public configuration, never put secrets in `watermark_content`.
 
