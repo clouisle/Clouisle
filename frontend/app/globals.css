@@ -423,3 +423,84 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .mermaid-stream-edge-enter {
   animation: mermaid-stream-edge-enter 150ms ease-out;
 }
+
+/* Xieyu's liquid-light navigation entrance. */
+.xieyu-entrance {
+  position: relative;
+  display: flex;
+  width: 86px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
+.xieyu-entrance:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.xieyu-orb {
+  position: absolute;
+  top: 7px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 22%, #d5ffff 0%, #64d9ed 25%, #658ae8 58%, #6945b7 100%);
+  box-shadow: inset -5px -7px 12px #35266d66, 0 3px 12px #627ddc66;
+  transition: transform 250ms ease, box-shadow 250ms ease;
+}
+
+.xieyu-orb::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 35% 20%, #ffffffaa, transparent 40%), conic-gradient(from 90deg, transparent, #e586e777, #84f4f799, transparent 70%);
+  animation: xieyu-flow 14s linear infinite;
+}
+
+.xieyu-orb-flow {
+  position: absolute;
+  inset: 12px -6px;
+  border: 2px solid transparent;
+  border-top-color: #d3ffff;
+  border-bottom-color: #d2a8ff;
+  border-radius: 50%;
+  transform: rotate(-28deg);
+  animation: xieyu-ring 12s ease-in-out infinite alternate;
+}
+
+.xieyu-label {
+  position: absolute;
+  top: 62px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.xieyu-entrance:hover .xieyu-orb,
+.xieyu-entrance:focus-visible .xieyu-orb {
+  transform: scale(1.04);
+  box-shadow: inset -5px -7px 12px #35266d66, 0 4px 16px #627ddc99;
+}
+
+.xieyu-entrance:active .xieyu-orb { transform: scale(.97); }
+
+.xieyu-mobile-orb {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, #d5ffff, #64d9ed 35%, #6945b7);
+}
+
+@keyframes xieyu-flow { to { transform: rotate(360deg); } }
+@keyframes xieyu-ring { to { transform: rotate(28deg) scaleY(.8); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .xieyu-orb::before, .xieyu-orb-flow { animation: none; }
+  .xieyu-orb { transition: none; }
+}

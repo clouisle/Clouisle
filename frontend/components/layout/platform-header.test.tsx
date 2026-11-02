@@ -12,6 +12,7 @@ const getCurrentUser = mock(async () => ({
 const unreadCount = mock(async () => ({ total: 105 }))
 const removeItem = mock(() => {})
 const toastSuccess = mock(() => {})
+const toastInfo = mock(() => {})
 const requestPermission = mock(async () => 'granted')
 const startTour = mock(() => {})
 const resetAllTours = mock(() => {})
@@ -21,6 +22,7 @@ let canAccessCapabilities = false
 let canAccessApiKeys = false
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
+let showBrand = true
 let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void; resetAllTours: () => void } | null = null
 const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boolean; prerequisites?: string[] }> = []
 
@@ -44,7 +46,7 @@ mock.module('next/image', () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ''} />,
 }))
 
-mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, info: toastInfo } }))
 mock.module('@/lib/api', () => ({
   authApi: { getCurrentUser, logout },
   notificationsApi: { unreadCount },
@@ -76,7 +78,7 @@ mock.module('@/components/onboarding/onboarding-provider', () => ({
 }))
 mock.module('@/components/onboarding/steps/platform-steps', () => ({ allTourConfigs: tourConfigs }))
 mock.module('@/lib/theme-config', () => ({
-  getBrandingVisibility: () => ({ showIcon: true, showName: true }),
+  getBrandingVisibility: () => ({ showIcon: showBrand, showName: showBrand }),
 }))
 mock.module('@/components/default-site-icon', () => ({
   DefaultSiteIcon: () => <span>site-icon</span>,
@@ -152,12 +154,14 @@ beforeEach(() => {
   canAccessApiKeys = false
   currentTeam = { id: 'team-1' }
   headerVariant = 'centered'
+  showBrand = true
   push.mockClear()
   logout.mockClear()
   getCurrentUser.mockClear()
   unreadCount.mockClear()
   removeItem.mockClear()
   toastSuccess.mockClear()
+  toastInfo.mockClear()
   requestPermission.mockClear()
   onboarding = null
   tourConfigs.splice(0)
@@ -199,6 +203,19 @@ describe('PlatformHeader', () => {
 
     expect(renderer.root.findByProps({ 'data-testid': 'nav-capabilities' }).props.href).toBe('/app/capabilities')
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-admin' })).toBeTruthy()
+  })
+
+  test('keeps home reachable and provides feedback for the Xieyu entrance', async () => {
+    const renderer = await renderHeader()
+    expect(renderer.root.findByProps({ 'data-testid': 'platform-logo' }).props.href).toBe('/app')
+    expect(renderer.root.findAllByProps({ 'data-testid': 'nav-home' })).toHaveLength(0)
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    expect(toastInfo).toHaveBeenCalledWith('xieyuComingSoon')
+    expect(push).not.toHaveBeenCalled()
+
+    showBrand = false
+    await act(async () => renderer.update(<PlatformHeader />))
+    expect(renderer.root.findByProps({ 'data-testid': 'nav-home' }).props.href).toBe('/app')
   })
 
   test('shows unread notifications and requests permission before navigating', async () => {
@@ -281,8 +298,14 @@ describe('PlatformHeader', () => {
     await act(async () => toggle.props.onClick())
     const mobileNav = renderer.root.findAllByType('nav')[1]
     expect(mobileNav).toBeTruthy()
+    expect(mobileNav.findAllByType('a')[0].props.href).toBe('/app')
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'mobile-nav-xieyu' }).props.onClick())
+    expect(toastInfo).toHaveBeenCalledWith('xieyuComingSoon')
+    expect(renderer.root.findAllByType('nav')).toHaveLength(1)
+    await act(async () => toggle.props.onClick())
+    const reopenedNav = renderer.root.findAllByType('nav')[1]
 
-    await act(async () => mobileNav.findAllByType('a')[0].props.onClick())
+    await act(async () => reopenedNav.findAllByType('a')[0].props.onClick())
     expect(renderer.root.findAllByType('nav')).toHaveLength(1)
   })
 

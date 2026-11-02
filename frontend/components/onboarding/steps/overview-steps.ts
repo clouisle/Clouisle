@@ -24,13 +24,6 @@ const overviewSteps: OnboardingStep[] = [
     route: '/app',
   },
   {
-    target: '[data-testid="nav-home"]',
-    content: 'onboarding.step1a.description',
-    title: 'onboarding.step1a.title',
-    placement: 'auto',
-    route: '/app',
-  },
-  {
     target: '[data-testid="nav-apps"]',
     content: 'onboarding.step1c.description',
     title: 'onboarding.step1c.title',

@@ -248,6 +248,25 @@ export function PlatformHeader() {
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
+  const renderDesktopNavItem = (item: PlatformNavItem) => {
+    const Icon = item.icon
+    return (
+      <Link key={item.key} href={item.href} data-testid={`nav-${item.key}`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'gap-2 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground',
+            isActive(item.href, item.exact) && 'bg-navbar-hover text-navbar-hover-foreground'
+          )}
+        >
+          <Icon className="size-4" />
+          {effectiveHeaderVariant !== 'minimal' && <span>{t(`nav.${item.key}`)}</span>}
+        </Button>
+      </Link>
+    )
+  }
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-navbar text-navbar-foreground backdrop-blur supports-[backdrop-filter]:bg-navbar/80">
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -296,32 +315,20 @@ export function PlatformHeader() {
         {/* Desktop Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
         {!hideNav && (
           <nav data-testid="platform-header-nav" className={cn(
-            'hidden lg:flex items-center gap-1',
+            'hidden lg:grid grid-cols-[1fr_auto_1fr] items-center',
             effectiveHeaderVariant === 'centered' && 'xl:absolute xl:left-1/2 xl:-translate-x-1/2 ml-4 xl:ml-0',
             effectiveHeaderVariant === 'default' && 'ml-6'
           )}>
-            {visibleNavItems.map((item) => {
-              const Icon = item.icon
-              return (
-                <Link key={item.key} href={item.href} data-testid={`nav-${item.key}`}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      "gap-2 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground",
-                      isActive(item.href, 'exact' in item ? item.exact : false) &&
-                        "bg-navbar-hover text-navbar-hover-foreground"
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {/* 极简模式只显示图标 */}
-                    {effectiveHeaderVariant !== 'minimal' && (
-                      <span>{t(`nav.${item.key}`)}</span>
-                    )}
-                  </Button>
-                </Link>
-              )
-            })}
+            <div className="flex items-center justify-end gap-1">
+              {visibleNavItems.filter(item => item.key === 'apps' || item.key === 'kb' || (item.key === 'home' && !showBrandIcon && !showBrandName)).map(renderDesktopNavItem)}
+            </div>
+            <button type="button" data-testid="nav-xieyu" onClick={() => toast.info(t('xieyuComingSoon'))} className="xieyu-entrance" aria-label={t('nav.xieyu')}>
+              <span className="xieyu-orb" aria-hidden="true"><span className="xieyu-orb-flow" /></span>
+              <span className="xieyu-label">{t('nav.xieyu')}</span>
+            </button>
+            <div className="flex items-center justify-start gap-1">
+              {visibleNavItems.filter(item => item.key === 'capabilities' || item.key === 'models').map(renderDesktopNavItem)}
+            </div>
           </nav>
         )}
 
@@ -568,6 +575,17 @@ export function PlatformHeader() {
                 </Link>
               )
             })}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="mobile-nav-xieyu"
+              className="w-full justify-start gap-2.5 text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
+              onClick={() => { setMobileMenuOpen(false); toast.info(t('xieyuComingSoon')) }}
+            >
+              <span className="xieyu-mobile-orb" aria-hidden="true" />
+              {t('nav.xieyu')}
+            </Button>
           </nav>
         </div>
       )}

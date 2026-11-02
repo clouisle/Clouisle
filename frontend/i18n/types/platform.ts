@@ -8,9 +8,11 @@ export type PlatformMessages = {
       kb: string
       capabilities: string
       models: string
+      xieyu: string
       notifications: string
       memories: string
     }
+    xieyuComingSoon: string
     profile: {
       title: string
       teamsDescription: string

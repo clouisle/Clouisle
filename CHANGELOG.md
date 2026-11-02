@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a liquid-light Xieyu entry to the workspace navigation with a localized coming-soon message; desktop Home moves to the logo when branding is visible, while mobile and branding-hidden layouts retain Home.
+
 - Added an administrator-configurable global watermark for signed-in pages (`/site-settings/watermark`, off by default). The overlay renders a per-user template (`{username}`, `{email}`, `{site_name}`, `{date}`, `{time}`) with configurable opacity, font size, rotation, tile spacing and color, delivered through the public site-settings endpoint and mounted only in the dashboard, platform and chat route groups — never on sign-in or embedded surfaces.
 
 ## [0.3.0] - 2026-11-01

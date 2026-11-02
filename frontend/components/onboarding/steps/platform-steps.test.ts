@@ -42,7 +42,6 @@ describe('onboarding tour configurations', () => {
       '[data-testid="platform-logo"]',
       '[data-testid="platform-team-switcher"]',
       '[data-testid="platform-header-nav"]',
-      '[data-testid="nav-home"]',
       '[data-testid="nav-apps"]',
       '[data-testid="nav-kb"]',
       '[data-testid="nav-capabilities"]',

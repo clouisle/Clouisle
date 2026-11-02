@@ -6,9 +6,11 @@
       "kb": "知识库",
       "capabilities": "能力",
       "models": "模型",
+      "xieyu": "协屿",
       "notifications": "通知",
       "memories": "我的记忆"
     },
+    "xieyuComingSoon": "协屿即将开放，敬请期待",
     "profile": {
       "title": "个人资料",
       "teamsDescription": "您已加入 {count} 个团队"
