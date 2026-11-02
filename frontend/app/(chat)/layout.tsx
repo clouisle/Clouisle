@@ -1,6 +1,7 @@
 'use client'
 
 import { SiteSettingsProvider } from '@/contexts/site-settings-context'
+import { GlobalWatermark } from '@/components/watermark/global-watermark'
 
 export default function ChatLayout({
   children,
@@ -12,6 +13,7 @@ export default function ChatLayout({
       <div className="fixed inset-0 bg-background">
         {children}
       </div>
+      <GlobalWatermark />
     </SiteSettingsProvider>
   )
 }

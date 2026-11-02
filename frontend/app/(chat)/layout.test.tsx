@@ -14,16 +14,20 @@ mock.module('react/jsx-dev-runtime', () => ({
   Fragment: Symbol.for('react.fragment'),
 }))
 mock.module('@/contexts/site-settings-context', () => ({ SiteSettingsProvider }))
+mock.module('@/components/watermark/global-watermark', () => ({ GlobalWatermark: () => null }))
 
 const { default: ChatLayout } = await import('./layout')
 
 test('wraps chat pages in a fixed viewport without changing document metadata', () => {
-  const tree = ChatLayout({ children: 'chat content' }) as { props: Record<string, unknown> }
-  const viewport = tree.props.children as { props: Record<string, unknown> }
+  // jsx-runtime is mocked above, so the returned tree is plain {type, props} objects.
+  const tree = ChatLayout({ children: 'chat content' })
+  const [viewport, watermark] = tree.props.children
+  const providerName = typeof tree.type === 'function' ? tree.type.name : null
 
-  expect((tree.type as { name?: string }).name).toBe('SiteSettingsProvider')
+  expect(providerName).toBe('SiteSettingsProvider')
   expect(tree.props.skipTitleUpdate).toBe(true)
   expect(tree.props.skipFaviconUpdate).toBe(true)
   expect(viewport.props.className).toBe('fixed inset-0 bg-background')
   expect(viewport.props.children).toBe('chat content')
+  expect(watermark.type.name).toBe('GlobalWatermark')
 })

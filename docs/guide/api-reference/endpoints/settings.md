@@ -353,7 +353,14 @@ curl -X GET "https://your-domain.com/api/v1/site-settings/public"
     "theme_accent_color": "",
     "theme_accent_foreground_color": "",
     "theme_muted_color": "",
-    "theme_muted_foreground_color": ""
+    "theme_muted_foreground_color": "",
+    "watermark_enabled": false,
+    "watermark_content": "{username} {date} {time}",
+    "watermark_opacity": 10,
+    "watermark_font_size": 16,
+    "watermark_rotation": -22,
+    "watermark_gap": 120,
+    "watermark_color": ""
   },
   "msg": "success"
 }

@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-27T04:04:22.661Z
+// GENERATED — 2026-11-02T05:50:25.010Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -530,6 +530,25 @@ export type SiteSettingsMessages = {
     memoryDescription: string
     parsing: string
     parsingDescription: string
+    watermark: string
+    watermarkDescription: string
+    watermarkTitle: string
+    watermarkCardDescription: string
+    watermarkEnabled: string
+    watermarkEnabledDescription: string
+    watermarkContent: string
+    watermarkContentDescription: string
+    watermarkOpacity: string
+    watermarkFontSize: string
+    watermarkRotation: string
+    watermarkGap: string
+    watermarkColor: string
+    watermarkColorAuto: string
+    watermarkPreview: string
+    watermarkPreviewDescription: string
+    watermarkContentRequired: string
+    watermarkContentTooLong: string
+    watermarkRangeError: string
     memorySettings: {
       title: string
       description: string

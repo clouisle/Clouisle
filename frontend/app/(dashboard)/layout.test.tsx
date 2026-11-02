@@ -29,6 +29,9 @@ mock.module('@/components/ui/sidebar', () => ({
 mock.module('@/components/layout/app-sidebar', () => ({
   AppSidebar: (props: Record<string, unknown>) => <aside data-sidebar={JSON.stringify(props)} />,
 }))
+mock.module('@/components/watermark/global-watermark', () => ({
+  GlobalWatermark: () => <span data-watermark="global" />,
+}))
 
 const { default: DashboardLayout } = await import('./layout')
 
@@ -69,5 +72,6 @@ test('mounts the dashboard-only admin model setup tour', () => {
   })
 
   expect(renderer!.root.findByProps({ 'data-tour': 'adminModelSetup' })).toBeTruthy()
+  expect(renderer!.root.findByProps({ 'data-watermark': 'global' })).toBeTruthy()
   act(() => renderer!.unmount())
 })

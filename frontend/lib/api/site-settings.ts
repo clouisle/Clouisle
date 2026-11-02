@@ -73,6 +73,13 @@ export interface PublicSiteSettings {
   sso_enabled: boolean
   sso_allow_password_login: boolean
   kb_document_max_upload_size_mb: number
+  watermark_enabled: boolean
+  watermark_content: string
+  watermark_opacity: number
+  watermark_font_size: number
+  watermark_rotation: number
+  watermark_gap: number
+  watermark_color: string
 }
 
 export interface GeneralSettings {
@@ -213,6 +220,16 @@ export interface KnowledgeBaseImageSettings {
   kb_image_understanding_max_image_bytes: number
   kb_image_understanding_max_image_pixels: number
   kb_image_understanding_concurrency: number
+}
+
+export interface WatermarkSettings {
+  watermark_enabled: boolean
+  watermark_content: string
+  watermark_opacity: number
+  watermark_font_size: number
+  watermark_rotation: number
+  watermark_gap: number
+  watermark_color: string
 }
 
 export const siteSettingsApi = {

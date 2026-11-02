@@ -49,6 +49,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
       { path: '/site-settings/integrations/feishu', permission: 'admin:integrations:settings:read' },
       { path: '/site-settings/memory', permission: 'admin:settings:read' },
       { path: '/site-settings/parsing', permission: 'admin:settings:read' },
+      { path: '/site-settings/watermark', permission: 'admin:settings:read' },
     ],
   },
 ]
@@ -88,6 +89,11 @@ export const SITE_SETTINGS_NAV_ITEMS: SiteSettingsNavItem[] = [
     path: '/site-settings/parsing',
     translationKey: 'parsing',
     descriptionKey: 'parsingDescription',
+  },
+  {
+    path: '/site-settings/watermark',
+    translationKey: 'watermark',
+    descriptionKey: 'watermarkDescription',
   },
 ]
 

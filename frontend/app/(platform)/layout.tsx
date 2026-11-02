@@ -9,6 +9,7 @@ import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
 import { OnboardingTour, allTourIds } from '@/components/onboarding/onboarding-tour'
 import { ProminentNotificationDialog } from '@/components/layout/prominent-notification-dialog'
 import { OAuthResultToast } from '@/components/tools/oauth-result-toast'
+import { GlobalWatermark } from '@/components/watermark/global-watermark'
 
 export default function PlatformLayout({
   children,
@@ -42,6 +43,7 @@ export default function PlatformLayout({
               </main>
               <OAuthResultToast />
               <ProminentNotificationDialog />
+              <GlobalWatermark />
               {renderTours()}
             </div>
           </OnboardingProvider>
@@ -62,6 +64,7 @@ export default function PlatformLayout({
             </main>
             <OAuthResultToast />
             <ProminentNotificationDialog />
+            <GlobalWatermark />
             {renderTours()}
           </div>
         </OnboardingProvider>

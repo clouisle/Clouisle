@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes'
 import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB } from '@/lib/constants'
+import { DEFAULT_WATERMARK_CONTENT, WATERMARK_DEFAULTS } from '@/lib/watermark'
 import { BRAND_CSS_VARIABLES, getBrandCssVariables, shouldApplySiteThemeMode } from '@/lib/theme-config'
 
 interface SiteSettingsContextType {
@@ -67,6 +68,13 @@ const defaultSettings: PublicSiteSettings = {
   sso_allow_password_login: true,
   kb_document_max_upload_size_mb: KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
   auth_page_layout: 'centered',
+  watermark_enabled: WATERMARK_DEFAULTS.enabled,
+  watermark_content: DEFAULT_WATERMARK_CONTENT,
+  watermark_opacity: WATERMARK_DEFAULTS.opacity,
+  watermark_font_size: WATERMARK_DEFAULTS.fontSize,
+  watermark_rotation: WATERMARK_DEFAULTS.rotation,
+  watermark_gap: WATERMARK_DEFAULTS.gap,
+  watermark_color: WATERMARK_DEFAULTS.color,
 }
 
 const SiteSettingsContext = React.createContext<SiteSettingsContextType>({

@@ -2,6 +2,12 @@
 
 ## Active
 
+- **global-watermark** — Completed; verification via backend/frontend suites and typecheck/lint (no server or browser run). See `docs/plan/global-watermark.md`.
+  - [x] 1. Backend settings definition, public contract, validation
+  - [x] 2. Frontend contract and rendering primitives
+  - [x] 3. Watermark settings subpage
+  - [x] 4. Documentation and verification
+
 - **file-preview-extend-ui-alignment** — Completed. Replaced the custom PDF/DOCX/XLSX/PPTX/CSV preview wrappers with the official Extend UI registry viewers and reconnected the shared panel through blob URLs, theme sync, and lazy loading. See `docs/plan/file-preview-extend-ui-alignment.md`.
   - [x] 1. Vendor official viewers, shared helpers, and dependencies
   - [x] 2. Reconnect panel with src, theme, CSV mode, and lazy imports

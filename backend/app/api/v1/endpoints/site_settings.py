@@ -5,6 +5,11 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
 from app.schemas.site_setting import PublicSiteSettingsResponse
+from app.models.site_setting import (
+    WATERMARK_CONTENT_MAX_LENGTH,
+    WATERMARK_INTEGER_BOUNDS,
+    WATERMARK_SETTING_DEFAULTS,
+)
 from app.schemas.response import Response, success
 from fastapi import APIRouter
 
@@ -78,6 +83,21 @@ def _normalize_kb_document_max_upload_size_mb(value: object) -> int:
     return value
 
 
+def _normalize_bounded_int(value: object, bounds: tuple[int, int], default: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return default
+    return min(max(value, bounds[0]), bounds[1])
+
+
+def _normalize_watermark_content(value: object) -> str:
+    if not isinstance(value, str):
+        return WATERMARK_SETTING_DEFAULTS["watermark_content"]
+    stripped = value.strip()
+    if not stripped or len(stripped) > WATERMARK_CONTENT_MAX_LENGTH:
+        return WATERMARK_SETTING_DEFAULTS["watermark_content"]
+    return stripped
+
+
 @router.get("/public", response_model=Response[PublicSiteSettingsResponse])
 async def get_public_settings():
     """Get public site settings (no authentication required)"""
@@ -123,5 +143,30 @@ async def get_public_settings():
                     KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
                 )
             ),
+            watermark_enabled=bool(settings.get("watermark_enabled")),
+            watermark_content=_normalize_watermark_content(
+                settings.get("watermark_content")
+            ),
+            watermark_opacity=_normalize_bounded_int(
+                settings.get("watermark_opacity"),
+                WATERMARK_INTEGER_BOUNDS["watermark_opacity"],
+                WATERMARK_SETTING_DEFAULTS["watermark_opacity"],
+            ),
+            watermark_font_size=_normalize_bounded_int(
+                settings.get("watermark_font_size"),
+                WATERMARK_INTEGER_BOUNDS["watermark_font_size"],
+                WATERMARK_SETTING_DEFAULTS["watermark_font_size"],
+            ),
+            watermark_rotation=_normalize_bounded_int(
+                settings.get("watermark_rotation"),
+                WATERMARK_INTEGER_BOUNDS["watermark_rotation"],
+                WATERMARK_SETTING_DEFAULTS["watermark_rotation"],
+            ),
+            watermark_gap=_normalize_bounded_int(
+                settings.get("watermark_gap"),
+                WATERMARK_INTEGER_BOUNDS["watermark_gap"],
+                WATERMARK_SETTING_DEFAULTS["watermark_gap"],
+            ),
+            watermark_color=_normalize_hex_color(settings.get("watermark_color")),
         )
     )

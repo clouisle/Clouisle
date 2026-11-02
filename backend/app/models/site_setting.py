@@ -175,6 +175,15 @@ KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB = 50
 KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB = 1
 KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB = 1024
 
+WATERMARK_DEFAULT_CONTENT = "{username} {date} {time}"
+WATERMARK_CONTENT_MAX_LENGTH = 200
+WATERMARK_INTEGER_BOUNDS = {
+    "watermark_opacity": (1, 50),
+    "watermark_font_size": (10, 48),
+    "watermark_rotation": (-90, 90),
+    "watermark_gap": (60, 600),
+}
+
 
 # Default settings definitions
 DEFAULT_SETTINGS: dict[str, SettingConfig] = {
@@ -989,6 +998,63 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Maximum concurrent image understanding requests per document (1-8)",
     },
+    # Watermark
+    "watermark_enabled": {
+        "value": False,
+        "type": "bool",
+        "category": "watermark",
+        "public": True,
+        "desc": "Show a global watermark overlay on signed-in pages",
+    },
+    "watermark_content": {
+        "value": WATERMARK_DEFAULT_CONTENT,
+        "type": "string",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark text template: {username}, {email}, {site_name}, {date}, {time}",
+    },
+    "watermark_opacity": {
+        "value": 10,
+        "type": "int",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark opacity percentage (1-50)",
+    },
+    "watermark_font_size": {
+        "value": 16,
+        "type": "int",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark font size in pixels (10-48)",
+    },
+    "watermark_rotation": {
+        "value": -22,
+        "type": "int",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark rotation in degrees (-90-90)",
+    },
+    "watermark_gap": {
+        "value": 120,
+        "type": "int",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark tile spacing in pixels (60-600)",
+    },
+    "watermark_color": {
+        "value": "",
+        "type": "string",
+        "category": "watermark",
+        "public": True,
+        "desc": "Watermark text color (empty = theme foreground)",
+    },
+}
+
+
+WATERMARK_SETTING_DEFAULTS = {
+    key: config["value"]
+    for key, config in DEFAULT_SETTINGS.items()
+    if config["category"] == "watermark"
 }
 
 

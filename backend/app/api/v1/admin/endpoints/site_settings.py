@@ -16,7 +16,11 @@ from app.models import (
 )
 from app.models.model import Model
 from app.models.notification import AutoNotificationType
-from app.models.site_setting import RESTRICTION_SWITCH_KEYS
+from app.models.site_setting import (
+    RESTRICTION_SWITCH_KEYS,
+    WATERMARK_CONTENT_MAX_LENGTH,
+    WATERMARK_INTEGER_BOUNDS,
+)
 from app.schemas.site_setting import (
     SiteSettingResponse,
     SiteSettingUpdate,
@@ -171,7 +175,30 @@ async def _validate_setting_value(
             raise_validation_error()
         return
 
-    if key in THEME_COLOR_SETTING_KEYS:
+    if key == "watermark_enabled":
+        if not isinstance(value, bool):
+            raise_validation_error()
+        return
+
+    if key == "watermark_content":
+        if not isinstance(value, str):
+            raise_validation_error()
+        content = value.strip()
+        if not content or len(content) > WATERMARK_CONTENT_MAX_LENGTH:
+            raise_validation_error()
+        return
+
+    watermark_bounds = WATERMARK_INTEGER_BOUNDS.get(key)
+    if watermark_bounds:
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not watermark_bounds[0] <= value <= watermark_bounds[1]
+        ):
+            raise_validation_error()
+        return
+
+    if key in THEME_COLOR_SETTING_KEYS or key == "watermark_color":
         if value == "":
             return
         if not isinstance(value, str):
