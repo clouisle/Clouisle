@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { XIEYU_EYE_CONTOURS } from './xieyu-eye-contours'
+import { initializeGrokBall, type GrokBallApi, type GrokBallEngine } from '@/vendor/grok-ball/grok-ball.js'
 
 export type XieyuOrbState = 'idle' | 'listening' | 'thinking' | 'working' | 'waiting' | 'success' | 'error'
 
@@ -11,47 +11,60 @@ interface XieyuBallProps {
   focused?: boolean
 }
 
+const EMOTIONS: Record<XieyuOrbState, string> = {
+  idle: '02', listening: '35', thinking: '30', working: '32', waiting: '35', success: '33', error: '34',
+}
+
+
+let grokBall: GrokBallApi | undefined
+
 export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: XieyuBallProps) {
-  const orbRef = React.useRef<SVGSVGElement>(null)
-  const [responding, setResponding] = React.useState(false)
-  const [looking, setLooking] = React.useState(false)
-  const gradientId = React.useId().replace(/:/g, '')
+  const orbRef = React.useRef<HTMLSpanElement>(null)
+  const engineRef = React.useRef<GrokBallEngine | null>(null)
+  const stateRef = React.useRef(state)
+  const focusedRef = React.useRef(focused)
+  const motionRef = React.useRef(false)
 
   React.useEffect(() => {
-    if (!responseKey || state !== 'idle') {
-      setResponding(false)
-      return
+    stateRef.current = state
+    focusedRef.current = focused
+    const engine = engineRef.current
+    if (!engine) return
+    const emotion = state === 'idle' && focused ? '03' : EMOTIONS[state]
+    if (engine.emotionId !== emotion) {
+      engine.setEmotion(emotion)
     }
-    setResponding(true)
-    const timeout = window.setTimeout(() => setResponding(false), 700)
-    return () => window.clearTimeout(timeout)
-  }, [responseKey, state])
+  }, [state, focused])
 
   React.useEffect(() => {
-    if (state !== 'idle') return
+    if (responseKey && stateRef.current === 'idle' && motionRef.current) engineRef.current?.spin()
+  }, [responseKey])
+
+  React.useEffect(() => {
     const orb = orbRef.current
     if (!orb) return
     const desktop = window.matchMedia('(min-width: 1024px)')
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const reset = () => {
-      orb.style.removeProperty('--gaze-x')
-      orb.style.removeProperty('--gaze-y')
-      setLooking(false)
-    }
     const move = (event: PointerEvent) => {
+      if (stateRef.current !== 'idle') return
       const rect = orb.getBoundingClientRect()
-      const x = Math.max(-1, Math.min(1, (event.clientX - rect.left - rect.width / 2) / (window.innerWidth / 2)))
-      const y = Math.max(-1, Math.min(1, (event.clientY - rect.top - rect.height / 2) / (window.innerHeight / 2)))
-      orb.style.setProperty('--gaze-x', `${x * 5}px`)
-      orb.style.setProperty('--gaze-y', `${y * 3}px`)
-      setLooking(true)
+      engineRef.current?.setGaze(
+        (event.clientX - rect.left - rect.width / 2) / (window.innerWidth / 2),
+        (event.clientY - rect.top - rect.height / 2) / (window.innerHeight / 2),
+      )
     }
-    const leave = (event: PointerEvent) => { if (!event.relatedTarget) reset() }
+    const leave = (event: PointerEvent) => { if (!event.relatedTarget) engineRef.current?.clearGaze() }
     const update = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerout', leave)
-      reset()
-      if (desktop.matches && !reduced.matches) {
+      engineRef.current?.destroy()
+      engineRef.current = null
+      motionRef.current = desktop.matches && !reduced.matches
+      if (!desktop.matches) return
+      grokBall ??= initializeGrokBall()
+      const emotion = stateRef.current === 'idle' && focusedRef.current ? '03' : EMOTIONS[stateRef.current]
+      engineRef.current = grokBall.create(orb, { emotion, color: '#b9dcea', eyeColor: '#263f56', autostart: motionRef.current })
+      if (motionRef.current) {
         window.addEventListener('pointermove', move, { passive: true })
         window.addEventListener('pointerout', leave)
       }
@@ -61,38 +74,13 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
     update()
     return () => {
       desktop.removeEventListener('change', update)
-      orb.style.removeProperty('--gaze-x')
-      orb.style.removeProperty('--gaze-y')
       reduced.removeEventListener('change', update)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerout', leave)
+      engineRef.current?.destroy()
+      engineRef.current = null
     }
-  }, [state])
+  }, [])
 
-  const expression = state !== 'idle' ? state : responding ? 'responding' : focused ? 'focused' : looking ? 'looking' : 'idle'
-  const eyes = XIEYU_EYE_CONTOURS[expression === 'responding' ? 'success' : expression === 'focused' || expression === 'looking' ? 'idle' : expression]
-
-  return (
-    <svg ref={orbRef} className="xieyu-orb" data-expression={expression} viewBox="0 0 100 100" aria-hidden="true">
-      <defs>
-        <radialGradient id={gradientId} cx="30%" cy="24%" r="80%">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="38%" stopColor="#eefaff" />
-          <stop offset="72%" stopColor="#c6e5f0" />
-          <stop offset="100%" stopColor="#98b5d0" />
-        </radialGradient>
-      </defs>
-      <g key={expression === 'responding' ? responseKey : 'body'} className="xieyu-body">
-        <circle cx="50" cy="50" r="44" fill={`url(#${gradientId})`} stroke="#b8dce9" strokeWidth="1" />
-        <ellipse cx="35" cy="25" rx="19" ry="9" fill="#fff" opacity=".42" transform="rotate(-27 35 25)" />
-        <g className="xieyu-eyes">
-          <g transform="translate(6 6) scale(0.385)">
-            <path className="xieyu-eye-open" d={eyes[0]} />
-            <path className="xieyu-eye-open" d={eyes[1]} />
-          </g>
-        </g>
-      </g>
-      <ellipse className="xieyu-orbit" cx="50" cy="50" rx="48" ry="15" />
-    </svg>
-  )
+  return <span ref={orbRef} className="xieyu-orb" aria-hidden="true" />
 }

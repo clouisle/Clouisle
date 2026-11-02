@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added an animated Xieyu expression ball with eye contours adapted from the MIT-licensed Grok Ball project, interactive idle and explicit listening, thinking, working, waiting, success and error states. The workspace entry displays a localized coming-soon message; desktop Home moves to the logo when branding is visible, while mobile and branding-hidden layouts retain Home.
+- Added a Xieyu workspace entry using the MIT-licensed Grok Ball expression engine, with interactive idle and explicit listening, thinking, working, waiting, success and error states. The entry displays a localized coming-soon message; desktop Home moves to the logo when branding is visible, while mobile and branding-hidden layouts retain Home.
 
 - Added an administrator-configurable global watermark for signed-in pages (`/site-settings/watermark`, off by default). The overlay renders a per-user template (`{username}`, `{email}`, `{site_name}`, `{date}`, `{time}`) with configurable opacity, font size, rotation, tile spacing and color, delivered through the public site-settings endpoint and mounted only in the dashboard, platform and chat route groups — never on sign-in or embedded surfaces.
 
