@@ -84,10 +84,15 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
         <circle cx="50" cy="50" r="44" fill={`url(#${gradientId})`} stroke="#b8dce9" strokeWidth="1" />
         <ellipse cx="35" cy="25" rx="19" ry="9" fill="#fff" opacity=".42" transform="rotate(-27 35 25)" />
         <g className="xieyu-eyes">
-          <g className="xieyu-eye xieyu-eye-left"><ellipse cx="39" cy="47" rx="5.5" ry="9" /></g>
-          <g className="xieyu-eye xieyu-eye-right"><ellipse cx="61" cy="47" rx="5.5" ry="9" /></g>
+          <g className="xieyu-eye xieyu-eye-left">
+            <path className="xieyu-eye-open" d="M37 39 C40 38 42 41 43 45 L44 51 C44.5 55 42 57 39.5 56 C37 55 36 52 35.5 48 L35 44 C34.5 41 35 39.5 37 39 Z" />
+            <path className="xieyu-eye-happy" d="M33.5 49 Q38 42 43 48" />
+          </g>
+          <g className="xieyu-eye xieyu-eye-right">
+            <path className="xieyu-eye-open" d="M59 38 C61.5 37.5 63.5 40 64 43 L65 49 C65.5 52.5 64 55 61.5 55 C59 55 57.5 52.5 57 49 L56 44 C55.5 41 56.5 38.5 59 38 Z" />
+            <path className="xieyu-eye-happy" d="M56 48 Q61 42 65.5 47" />
+          </g>
         </g>
-        <path className="xieyu-smile" d="M41 61 Q50 69 59 61" />
       </g>
       <ellipse className="xieyu-orbit" cx="50" cy="50" rx="48" ry="15" />
     </svg>
