@@ -12,7 +12,6 @@ export type PlatformMessages = {
       notifications: string
       memories: string
     }
-    xieyuComingSoon: string
     profile: {
       title: string
       teamsDescription: string

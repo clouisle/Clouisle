@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const push = mock(() => {})
 const logout = mock(async () => {})
@@ -23,6 +24,8 @@ let canAccessApiKeys = false
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
 let showBrand = true
+let pathname = '/app/apps'
+let reducedMotion = false
 let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void; resetAllTours: () => void } | null = null
 const tourConfigs: Array<{ id: string; title: string; showInPlatformMenu?: boolean; prerequisites?: string[] }> = []
 
@@ -32,7 +35,7 @@ mock.module('next-intl', () => ({
 }))
 
 mock.module('next/navigation', () => ({
-  usePathname: () => '/app/apps',
+  usePathname: () => pathname,
   useRouter: () => ({ push }),
 }))
 
@@ -156,6 +159,8 @@ beforeEach(() => {
   currentTeam = { id: 'team-1' }
   headerVariant = 'centered'
   showBrand = true
+  pathname = '/app/apps'
+  reducedMotion = false
   push.mockClear()
   logout.mockClear()
   getCurrentUser.mockClear()
@@ -175,7 +180,7 @@ beforeEach(() => {
   const notification = { permission: 'default', requestPermission }
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
-    value: { location: { origin: 'https://example.com' }, focus: mock(() => {}), Notification: notification },
+    value: { location: { origin: 'https://example.com' }, focus: mock(() => {}), Notification: notification, matchMedia: () => ({ matches: reducedMotion }), addEventListener: () => {}, removeEventListener: () => {} },
   })
   Object.defineProperty(globalThis, 'Notification', {
     configurable: true,
@@ -206,17 +211,61 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-admin' })).toBeTruthy()
   })
 
-  test('keeps home reachable and provides feedback for the Xieyu entrance', async () => {
+  test('keeps home reachable and starts the Xieyu transition', async () => {
     const renderer = await renderHeader()
     expect(renderer.root.findByProps({ 'data-testid': 'platform-logo' }).props.href).toBe('/app')
     expect(renderer.root.findAllByProps({ 'data-testid': 'nav-home' })).toHaveLength(0)
     await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
-    expect(toastInfo).toHaveBeenCalledWith('xieyuComingSoon')
+    expect(renderer.root.findByProps({ 'data-testid': 'xieyu-ripple' })).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
 
     showBrand = false
     await act(async () => renderer.update(<PlatformHeader />))
     expect(renderer.root.findByProps({ 'data-testid': 'nav-home' }).props.href).toBe('/app')
+  })
+
+  test('navigates after the ripple and keeps the orb across route changes', async () => {
+    const renderer = await renderHeader()
+    const orb = document.querySelector('[data-testid="nav-xieyu"]')
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    expect(push).not.toHaveBeenCalled()
+    await act(async () => delay(520))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith('/app/xieyu')
+    pathname = '/app/xieyu'
+    await act(async () => renderer.update(<PlatformHeader />))
+    expect(document.querySelector('[data-testid="nav-xieyu"]')).toBe(orb)
+    expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
+    pathname = '/app/apps'
+    await act(async () => renderer.update(<PlatformHeader />))
+    expect(orb?.parentElement?.className).toContain('xieyu-positioner-nav')
+  })
+
+  test('skips ripple for reduced motion and direct page visits', async () => {
+    reducedMotion = true
+    const renderer = await renderHeader()
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    expect(push).toHaveBeenCalledWith('/app/xieyu')
+    expect(renderer.root.findAllByProps({ 'data-testid': 'xieyu-ripple' })).toHaveLength(0)
+    pathname = '/app/xieyu'
+    await act(async () => renderer.update(<PlatformHeader />))
+    expect(document.querySelector('[data-testid="nav-xieyu"]')?.parentElement?.className).toContain('xieyu-positioner-corner')
+  })
+
+  test('opens directly in the corner and cancels a pending transition on route change', async () => {
+    pathname = '/app/xieyu'
+    const renderer = await renderHeader()
+    const orb = document.querySelector('[data-testid="nav-xieyu"]')
+    expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
+    expect(orb?.parentElement?.className).not.toContain('xieyu-positioner-flying')
+    pathname = '/app/apps'
+    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    pathname = '/app/models'
+    await act(async () => renderer.update(<PlatformHeader />))
+    await act(async () => delay(520))
+    expect(push).not.toHaveBeenCalled()
   })
 
   test('shows unread notifications and requests permission before navigating', async () => {
@@ -301,7 +350,7 @@ describe('PlatformHeader', () => {
     expect(mobileNav).toBeTruthy()
     expect(mobileNav.findAllByType('a')[0].props.href).toBe('/app')
     await act(async () => renderer.root.findByProps({ 'data-testid': 'mobile-nav-xieyu' }).props.onClick())
-    expect(toastInfo).toHaveBeenCalledWith('xieyuComingSoon')
+    expect(push).toHaveBeenCalledWith('/app/xieyu')
     expect(renderer.root.findAllByType('nav')).toHaveLength(1)
     await act(async () => toggle.props.onClick())
     const reopenedNav = renderer.root.findAllByType('nav')[1]

@@ -436,19 +436,32 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
   border-radius: 12px;
 }
 
-.xieyu-entrance:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
-.xieyu-orb {
-  position: absolute;
-  top: 7px;
+.xieyu-positioner {
+  position: fixed;
+  z-index: 51;
   width: 52px;
   height: 52px;
-  filter: drop-shadow(0 3px 7px rgb(86 143 171 / 24%));
-  transition: transform 250ms ease, filter 250ms ease;
+  left: var(--xieyu-x);
+  top: var(--xieyu-y);
 }
+
+.xieyu-positioner button { position: relative; width: 100%; height: 100%; cursor: pointer; border-radius: 50%; }
+.xieyu-positioner button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.xieyu-positioner-corner { left: calc(100vw - 76px); top: calc(100dvh - 76px); }
+.xieyu-positioner-flying { transition: left 850ms cubic-bezier(.22, 1, .36, 1), top 850ms cubic-bezier(.22, 1, .36, 1); }
+.xieyu-orb { position: absolute; inset: 0; width: 52px; height: 52px; filter: drop-shadow(0 3px 7px rgb(86 143 171 / 24%)); transition: transform 250ms ease, filter 250ms ease; }
+
+.xieyu-ripple, .xieyu-ripple::before, .xieyu-ripple::after {
+  position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid rgb(134 207 226 / 80%);
+  pointer-events: none; animation: xieyu-ripple 600ms ease-out forwards;
+}
+.xieyu-ripple::before, .xieyu-ripple::after { content: ''; inset: -1.5px; }
+.xieyu-ripple::before { animation-delay: 90ms; }
+.xieyu-ripple::after { animation-delay: 180ms; }
+@keyframes xieyu-ripple { from { transform: scale(.95); opacity: .8; } to { transform: scale(2.6); opacity: 0; } }
+
+@media (max-width: 1023px) { .xieyu-positioner-nav { display: none; } }
 
 .xieyu-orb svg { overflow: visible; }
 .xieyu-orb svg stop:first-child { stop-color: #fff; }
@@ -456,13 +469,13 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 .xieyu-orb svg stop:last-child { stop-color: #98b5d0; }
 
 
-.xieyu-entrance:hover .xieyu-orb,
-.xieyu-entrance:focus-visible .xieyu-orb {
+.xieyu-positioner button:hover .xieyu-orb,
+.xieyu-positioner button:focus-visible .xieyu-orb {
   transform: scale(1.04);
   filter: drop-shadow(0 4px 10px rgb(91 161 193 / 38%));
 }
 
-.xieyu-entrance:active .xieyu-orb { transform: scale(.97); }
+.xieyu-positioner button:active .xieyu-orb { transform: scale(.97); }
 
 .xieyu-mobile-orb {
   width: 16px;
@@ -474,5 +487,5 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 
 
 @media (prefers-reduced-motion: reduce) {
-  .xieyu-orb, .xieyu-orb * { animation: none !important; transition: none !important; }
+  .xieyu-positioner, .xieyu-orb, .xieyu-orb *, .xieyu-ripple, .xieyu-ripple::before, .xieyu-ripple::after { animation: none !important; transition: none !important; }
 }

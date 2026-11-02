@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
@@ -115,6 +116,13 @@ export function PlatformHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
   const [xieyuFocused, setXieyuFocused] = React.useState(false)
   const [xieyuResponse, setXieyuResponse] = React.useState(0)
+  const [xieyuRippling, setXieyuRippling] = React.useState(false)
+  const [xieyuFlying, setXieyuFlying] = React.useState(false)
+  const [xieyuAnchor, setXieyuAnchor] = React.useState({ x: 0, y: 0 })
+  const xieyuSlotRef = React.useRef<HTMLSpanElement>(null)
+  const xieyuTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const xieyuFlightRef = React.useRef(false)
+  const xieyuPage = pathname === '/app/xieyu'
   const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
@@ -135,6 +143,53 @@ export function PlatformHeader() {
   const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(
     siteSettings.theme_branding_display
   )
+
+  React.useLayoutEffect(() => {
+    const updateAnchor = () => {
+      const rect = xieyuSlotRef.current?.getBoundingClientRect()
+      if (rect && rect.width) setXieyuAnchor({ x: rect.left + rect.width / 2 - 26, y: rect.top + 7 })
+    }
+    updateAnchor()
+    window.addEventListener('resize', updateAnchor)
+    window.addEventListener('scroll', updateAnchor, true)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateAnchor)
+    if (xieyuSlotRef.current) observer?.observe(xieyuSlotRef.current)
+    return () => {
+      window.removeEventListener('resize', updateAnchor)
+      window.removeEventListener('scroll', updateAnchor, true)
+      observer?.disconnect()
+    }
+  }, [hideNav, effectiveHeaderVariant])
+
+  React.useEffect(() => {
+    setXieyuRippling(false)
+    clearTimeout(xieyuTimerRef.current ?? undefined)
+    xieyuTimerRef.current = null
+    setXieyuFlying(xieyuPage && xieyuFlightRef.current)
+    xieyuFlightRef.current = false
+  }, [pathname, xieyuPage])
+
+  React.useEffect(() => () => {
+    clearTimeout(xieyuTimerRef.current ?? undefined)
+  }, [])
+
+  const enterXieyu = (animate: boolean) => {
+    if (xieyuPage || xieyuTimerRef.current) return
+    setMobileMenuOpen(false)
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!animate || reduced) {
+      router.push('/app/xieyu')
+      return
+    }
+    setXieyuResponse(value => value + 1)
+    setXieyuRippling(true)
+    xieyuTimerRef.current = setTimeout(() => {
+      xieyuTimerRef.current = null
+      setXieyuFlying(true)
+      xieyuFlightRef.current = true
+      router.push('/app/xieyu')
+    }, 480)
+  }
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -325,11 +380,7 @@ export function PlatformHeader() {
             <div className="flex items-center justify-end gap-1">
               {visibleNavItems.filter(item => item.key === 'apps' || item.key === 'kb' || (item.key === 'home' && !showBrandIcon && !showBrandName)).map(renderDesktopNavItem)}
             </div>
-            <button type="button" data-testid="nav-xieyu" onClick={() => { setXieyuResponse(value => value + 1); toast.info(t('xieyuComingSoon')) }} className="xieyu-entrance" aria-label={t('nav.xieyu')}
-              onPointerEnter={() => setXieyuFocused(true)} onPointerLeave={() => setXieyuFocused(false)}
-              onFocus={() => setXieyuFocused(true)} onBlur={() => setXieyuFocused(false)}>
-              <XieyuBall focused={xieyuFocused} responseKey={xieyuResponse} />
-            </button>
+            <span ref={xieyuSlotRef} className="xieyu-entrance" aria-hidden="true" />
             <div className="flex items-center justify-start gap-1">
               {visibleNavItems.filter(item => item.key === 'capabilities' || item.key === 'models').map(renderDesktopNavItem)}
             </div>
@@ -585,7 +636,7 @@ export function PlatformHeader() {
               size="sm"
               data-testid="mobile-nav-xieyu"
               className="w-full justify-start gap-2.5 text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
-              onClick={() => { setMobileMenuOpen(false); toast.info(t('xieyuComingSoon')) }}
+              onClick={() => enterXieyu(false)}
             >
               <span className="xieyu-mobile-orb" aria-hidden="true" />
               {t('nav.xieyu')}
@@ -593,6 +644,18 @@ export function PlatformHeader() {
           </nav>
         </div>
       )}
+
+      {!hideNav && mounted && createPortal(
+        <div className={cn('xieyu-positioner', xieyuPage ? 'xieyu-positioner-corner' : 'xieyu-positioner-nav', xieyuFlying && 'xieyu-positioner-flying')}
+          style={{ '--xieyu-x': `${xieyuAnchor.x}px`, '--xieyu-y': `${xieyuAnchor.y}px` } as React.CSSProperties}>
+          <button type="button" data-testid="nav-xieyu" aria-label={t('nav.xieyu')} aria-current={xieyuPage ? 'page' : undefined}
+            onClick={() => enterXieyu(true)} onPointerEnter={() => setXieyuFocused(true)} onPointerLeave={() => setXieyuFocused(false)}
+            onFocus={() => setXieyuFocused(true)} onBlur={() => setXieyuFocused(false)}>
+            {xieyuRippling && <span className="xieyu-ripple" data-testid="xieyu-ripple" aria-hidden="true" />}
+            <XieyuBall focused={xieyuFocused && !xieyuPage} responseKey={xieyuResponse} />
+          </button>
+        </div>
+      , document.body)}
 
       {/* Settings Drawer */}
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} showSidebarStyle={false} showPlatformHeader={true} />

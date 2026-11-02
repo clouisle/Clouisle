@@ -31,12 +31,8 @@ describe('XieyuBall', () => {
       }
       await act(async () => renderer!.update(<XieyuBall focused />))
       expect(paths()).not.toEqual(idle)
-      Object.defineProperty(desktop, 'matches', { value: false, writable: true })
-      await act(async () => desktop.dispatchEvent(new Event('change')))
-      expect(orb.querySelector('svg')).toBeNull()
       Object.defineProperty(reduced, 'matches', { value: false, writable: true })
-      Object.defineProperty(desktop, 'matches', { value: true, writable: true })
-      await act(async () => desktop.dispatchEvent(new Event('change')))
+      await act(async () => reduced.dispatchEvent(new Event('change')))
       expect(orb.querySelector('svg')).not.toBeNull()
       await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { clientX: 200, clientY: 100 })))
       await act(async () => renderer!.update(<XieyuBall responseKey={2} />))

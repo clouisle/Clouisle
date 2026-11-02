@@ -43,7 +43,6 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
   React.useEffect(() => {
     const orb = orbRef.current
     if (!orb) return
-    const desktop = window.matchMedia('(min-width: 1024px)')
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
     const move = (event: PointerEvent) => {
       if (stateRef.current !== 'idle') return
@@ -59,8 +58,7 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
       window.removeEventListener('pointerout', leave)
       engineRef.current?.destroy()
       engineRef.current = null
-      motionRef.current = desktop.matches && !reduced.matches
-      if (!desktop.matches) return
+      motionRef.current = !reduced.matches
       grokBall ??= initializeGrokBall()
       const emotion = stateRef.current === 'idle' && focusedRef.current ? '03' : EMOTIONS[stateRef.current]
       engineRef.current = grokBall.create(orb, { emotion, color: '#b9dcea', eyeColor: '#263f56', autostart: motionRef.current })
@@ -69,11 +67,9 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
         window.addEventListener('pointerout', leave)
       }
     }
-    desktop.addEventListener('change', update)
     reduced.addEventListener('change', update)
     update()
     return () => {
-      desktop.removeEventListener('change', update)
       reduced.removeEventListener('change', update)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerout', leave)
