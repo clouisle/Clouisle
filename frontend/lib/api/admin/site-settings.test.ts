@@ -205,15 +205,66 @@ describe('siteSettingsApi requests', () => {
     const put = spyOn(api, 'put').mockResolvedValue(response({ saved: true }))
     const updates = [
       () => siteSettingsApi.updateGeneral({ site_name: 'New' }),
+      () => siteSettingsApi.updateWatermark({ watermark_enabled: true }),
     ]
 
     try {
       for (const update of updates) expect(await update()).toEqual({ saved: true })
       expect(put.mock.calls).toEqual([
         ['/admin/site-settings', { settings: { site_name: 'New' } }],
+        ['/admin/site-settings', { settings: { watermark_enabled: true } }],
       ])
     } finally {
       put.mockRestore()
+    }
+  })
+
+  it('normalizes and clamps watermark settings', async () => {
+    const get = spyOn(api, 'get')
+      .mockResolvedValueOnce(response({
+        watermark_enabled: true,
+        watermark_content: '   ',
+        watermark_opacity: 999,
+        watermark_font_size: 4.5,
+        watermark_rotation: -120,
+        watermark_gap: 12,
+        watermark_color: 'blue',
+      }))
+      .mockResolvedValueOnce(response({
+        watermark_enabled: 'yes',
+        watermark_content: '{email}',
+        watermark_opacity: 20,
+        watermark_font_size: 16,
+        watermark_rotation: -30,
+        watermark_gap: 180,
+        watermark_color: '#abc',
+      }))
+
+    try {
+      expect(await siteSettingsApi.getWatermark()).toEqual({
+        watermark_enabled: true,
+        watermark_content: '{username} {date} {time}',
+        watermark_opacity: 50,
+        watermark_font_size: 16,
+        watermark_rotation: -90,
+        watermark_gap: 60,
+        watermark_color: '',
+      })
+      expect(await siteSettingsApi.getWatermark()).toEqual({
+        watermark_enabled: false,
+        watermark_content: '{email}',
+        watermark_opacity: 20,
+        watermark_font_size: 16,
+        watermark_rotation: -30,
+        watermark_gap: 180,
+        watermark_color: '#abc',
+      })
+      expect(get.mock.calls).toEqual([
+        ['/admin/site-settings?category=watermark'],
+        ['/admin/site-settings?category=watermark'],
+      ])
+    } finally {
+      get.mockRestore()
     }
   })
 

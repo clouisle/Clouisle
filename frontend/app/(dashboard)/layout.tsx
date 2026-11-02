@@ -8,6 +8,7 @@ import { AuthGuard } from '@/components/auth-guard'
 import { TeamProvider } from '@/contexts/team-context'
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
 import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
+import { GlobalWatermark } from '@/components/watermark/global-watermark'
 
 export default function DashboardLayout({
   children,
@@ -54,6 +55,7 @@ export default function DashboardLayout({
             </SidebarInset>
           </SidebarProvider>
           <OnboardingTour tourId="adminModelSetup" />
+          <GlobalWatermark />
         </OnboardingProvider>
       </TeamProvider>
     </AuthGuard>

@@ -82,6 +82,13 @@ class PublicSiteSettingsResponse(BaseModel):
     sso_enabled: bool = False
     sso_allow_password_login: bool = True
     kb_document_max_upload_size_mb: int = 50
+    watermark_enabled: bool = False
+    watermark_content: str = "{username} {date} {time}"
+    watermark_opacity: int = 10
+    watermark_font_size: int = 16
+    watermark_rotation: int = -22
+    watermark_gap: int = 120
+    watermark_color: str = ""
 
 
 class AutoNotificationConfigResponse(BaseModel):

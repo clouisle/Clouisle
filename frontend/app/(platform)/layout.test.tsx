@@ -25,6 +25,9 @@ mock.module("@/components/onboarding/onboarding-tour", () => ({
 mock.module("@/components/layout/prominent-notification-dialog", () => ({
   ProminentNotificationDialog: () => <div data-testid="notifications" />,
 }));
+mock.module("@/components/watermark/global-watermark", () => ({
+  GlobalWatermark: () => <div data-testid="watermark" />,
+}));
 
 const { default: PlatformLayout } = await import("./layout");
 

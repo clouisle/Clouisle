@@ -8,9 +8,11 @@ import type {
   AutoNotificationConfig,
   MemorySiteSettings,
   KnowledgeBaseImageSettings,
+  WatermarkSettings,
   ThemeBrandingDisplay,
   ThemeMode,
 } from '../site-settings'
+import { DEFAULT_WATERMARK_CONTENT, WATERMARK_DEFAULTS, WATERMARK_LIMITS } from '@/lib/watermark'
 
 export type {
   SiteSetting,
@@ -21,6 +23,7 @@ export type {
   AutoNotificationConfig,
   MemorySiteSettings,
   KnowledgeBaseImageSettings,
+  WatermarkSettings,
   ThemeBrandingDisplay,
   ThemeMode,
 }
@@ -71,6 +74,15 @@ function normalizeBrandingDisplay(value: unknown): ThemeBrandingDisplay {
 
 function normalizeThemeColor(value: unknown): string {
   return typeof value === 'string' && HEX_COLOR_PATTERN.test(value.trim()) ? value.trim() : ''
+}
+
+function normalizeWatermarkInt(
+  value: unknown,
+  bounds: { min: number; max: number },
+  fallback: number
+): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return fallback
+  return Math.min(Math.max(value, bounds.min), bounds.max)
 }
 
 export const siteSettingsApi = {
@@ -235,6 +247,43 @@ export const siteSettingsApi = {
   },
 
   async updateKnowledgeBaseImages(data: Partial<KnowledgeBaseImageSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async getWatermark(): Promise<WatermarkSettings> {
+    const settings = await this.getAll('watermark')
+    const content = settings.watermark_content
+    return {
+      watermark_enabled: settings.watermark_enabled === true,
+      watermark_content:
+        typeof content === 'string' && content.trim()
+          ? content
+          : DEFAULT_WATERMARK_CONTENT,
+      watermark_opacity: normalizeWatermarkInt(
+        settings.watermark_opacity,
+        WATERMARK_LIMITS.opacity,
+        WATERMARK_DEFAULTS.opacity
+      ),
+      watermark_font_size: normalizeWatermarkInt(
+        settings.watermark_font_size,
+        WATERMARK_LIMITS.fontSize,
+        WATERMARK_DEFAULTS.fontSize
+      ),
+      watermark_rotation: normalizeWatermarkInt(
+        settings.watermark_rotation,
+        WATERMARK_LIMITS.rotation,
+        WATERMARK_DEFAULTS.rotation
+      ),
+      watermark_gap: normalizeWatermarkInt(
+        settings.watermark_gap,
+        WATERMARK_LIMITS.gap,
+        WATERMARK_DEFAULTS.gap
+      ),
+      watermark_color: normalizeThemeColor(settings.watermark_color),
+    }
+  },
+
+  async updateWatermark(data: Partial<WatermarkSettings>): Promise<Record<string, unknown>> {
     return this.bulkUpdate(data)
   },
 }

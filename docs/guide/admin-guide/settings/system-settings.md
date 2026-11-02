@@ -28,6 +28,7 @@ As an administrator, you can configure:
 - **Storage** (`/site-settings/storage`)
 - **Memory** (`/site-settings/memory`)
 - **Parsing** (`/site-settings/parsing`)
+- **Watermark** (`/site-settings/watermark`)
 
 > General settings remain key-value SiteSettings, exposed through `/api/v1/admin/site-settings` with `admin:settings:read/update`. External services now use Integration records and `/api/v1/admin/integrations`. Login management requires `admin:integrations:login:read/update`; builtin configuration requires `admin:integrations:settings:read/update`. Feishu is one singleton integration declaring both `directory_sync` and `user_login`: its app ID, app secret, department scope, and directory sync are settings-domain, while the sign-in opt-in, button text, and sign-in enable/disable are login-domain. Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is decided per field, so a single card can require both domains. The global SSO policy (enable SSO, password login, auto-create users, approval, email matching) lives on **Security** but is authorized by the login domain. See [Integrations and SSO](SSO.md) for setup, domain permissions, credential handling, and migration/rollback cautions.
 
@@ -317,6 +318,28 @@ Processing extracts readable text and a separate factual description from suppor
 For PDFs with both a text layer and visual content, a whole page may be sent to the vision model, so extracted text can overlap with the existing text layer. Complete deduplication is not guaranteed.
 
 If the configured vision model endpoint is unreachable or its credentials are invalid, preview and document processing fail with an image-understanding error that asks you to check the model endpoint and credentials. The system does not silently index a document without its image content.
+
+## Global Watermark Settings
+
+The **Watermark** category (`/site-settings/watermark`) overlays a repeating, per-user watermark so a screenshot can be traced back to an account. It is **off by default**. Coverage is the signed-in app surfaces — dashboard, platform and chat pages — and never the sign-in, password/verification or embedded (iframe) pages.
+
+```yaml
+watermark_enabled: false
+watermark_content: "{username} {date} {time}"   # max 200 characters
+watermark_opacity: 10        # 1-50 percent
+watermark_font_size: 16      # 10-48 pixels
+watermark_rotation: -22      # -90 to 90 degrees
+watermark_gap: 120           # 60-600 pixels between tiles
+watermark_color: ""          # empty = theme foreground color, otherwise hex
+```
+
+`watermark_content` is a template rendered in the browser for each signed-in user. Supported placeholders are `{username}`, `{email}`, `{site_name}`, `{date}` and `{time}`; unknown placeholders are shown verbatim. Date and time use the viewer's local timezone, formatted as `YYYY-MM-DD` and `HH:mm`, and refresh about once a minute while the page stays open. If the rendered result is empty (for example `{username}` for an account without one), the watermark falls back to the site name.
+
+The overlay only appears once a user identity has been resolved for the current session, so it never shows a timestamp without the account it belongs to. On narrow viewports the font size is reduced as needed so one complete mark fits the screen; a long template therefore stays readable instead of being cut off.
+
+All seven values are public site settings: the browser receives them from `GET /api/v1/site-settings/public` and renders the overlay client-side, so enabling the feature takes effect on the next settings refresh without a redeploy. The page preview uses a sample user name and the current time. Updating these values requires `admin:settings:update`; changing the content template does not require a restart. Text color offers **auto** (theme foreground) or an explicit hex value.
+
+Because the value is public configuration, never put secrets in `watermark_content`.
 
 ## Storage Settings
 
