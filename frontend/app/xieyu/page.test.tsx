@@ -25,7 +25,7 @@ describe('standalone Xieyu page', () => {
   test('redirects unauthenticated visitors without displaying the page or robot', async () => {
     globalThis.localStorage = { getItem: () => null } as Storage
     await act(async () => {
-      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Xieyu' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
+      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
     })
     expect(router.replace).toHaveBeenCalledWith('/login?redirect=%2Fxieyu')
     expect(document.querySelector('main')).toBeNull()
@@ -36,11 +36,12 @@ describe('standalone Xieyu page', () => {
     globalThis.localStorage = { getItem: () => 'token' } as Storage
     spyOn(authApi, 'getCurrentUser').mockResolvedValue({} as Awaited<ReturnType<typeof authApi.getCurrentUser>>)
     await act(async () => {
-      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Xieyu' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
+      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
       await Promise.resolve()
     })
     expect(document.querySelector('main')?.textContent).toBe('')
     expect(document.querySelector('[data-testid="platform-header-nav"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-xieyu"]')?.getAttribute('aria-label')).toBe('Colsland')
     expect(document.querySelector('[data-testid="nav-xieyu"]')?.parentElement?.className).toContain('xieyu-positioner-corner')
   })
 })
