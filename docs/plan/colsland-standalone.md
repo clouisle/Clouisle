@@ -2,7 +2,7 @@
 
 ## 背景与目标
 
-将协屿从 `/app/xieyu` 移至独立的 `/xieyu`，不复用工作台导航或工作台布局；保留入口波纹与同一机器人跨页面飞行。页面本身为空白，仍要求登录。
+将协屿从旧工作台页面移至独立页面 `/colsland`，不复用工作台导航或工作台布局；保留入口波纹与同一机器人跨页面飞行。页面本身为空白，仍要求登录。
 
 ## 总体设计
 
@@ -11,14 +11,14 @@
 ## 实施计划
 
 ### 阶段一：共享机器人与入口
-- **文件**：`frontend/components/providers/index.tsx`、`frontend/components/layout/platform-header.tsx`、`frontend/components/layout/xieyu-transition.tsx`。
+- **文件**：`frontend/components/providers/index.tsx`、`frontend/components/layout/platform-header.tsx`、`frontend/components/layout/colsland-transition.tsx`。
 - **逻辑**：把机器人、波纹、计时、路径与锚点管理移到根级控制器；工作台通过上下文注册位置和入口事件。入口卸载不影响进行中的飞行；离开协屿范围后隐藏。
 - **验证**：真实 React 树内触发桌面及移动入口、连续点击、取消和卸载；检查相同机器人 DOM 跨路由保留。
 
 ### 阶段二：独立路由与认证
-- **文件**：`frontend/app/xieyu/page.tsx`、`frontend/app/(platform)/app/xieyu/page.tsx`。
+- **文件**：`frontend/app/colsland/page.tsx`，以及已移除的旧工作台页面。
 - **逻辑**：删除旧路径并新增独立页面，使用 `AuthGuard`；不渲染 `PlatformHeader`、TeamProvider 或工作台导航。认证后注册页面右下角机器人；直接访问无入场动画。
-- **验证**：静态渲染与认证测试确认无导航和未认证不可见；客户端 DOM 测试确认入口跳转 `/xieyu`。
+- **验证**：静态渲染与认证测试确认无导航和未认证不可见；客户端 DOM 测试确认入口跳转 `/colsland`。
 
 ### 阶段三：交付与回归
 - **文件**：导航和转场测试、计划索引、`CHANGELOG.md`。
@@ -27,7 +27,7 @@
 
 ## 测试策略
 
-- 正常：波纹后跳转独立 `/xieyu`；同一机器人移动至角落；无工作台导航。
+- 正常：波纹后跳转独立 `/colsland`；同一机器人移动至角落；无工作台导航。
 - 边界：未登录、直接访问、返回、快速重复点击、动画前切换页面、移动屏幕及减少动态效果。
 - 回归：用户工作台原有导航、认证、上游机器人状态和资源清理。
 

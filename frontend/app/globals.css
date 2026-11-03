@@ -424,8 +424,8 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
   animation: mermaid-stream-edge-enter 150ms ease-out;
 }
 
-/* Xieyu's liquid-light navigation entrance. */
-.xieyu-entrance {
+/* Colsland's liquid-light navigation entrance. */
+.colsland-entrance {
   position: relative;
   display: flex;
   width: 86px;
@@ -437,47 +437,47 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 }
 
 
-.xieyu-positioner {
+.colsland-positioner {
   position: fixed;
   z-index: 51;
   width: 52px;
   height: 52px;
-  left: var(--xieyu-x);
-  top: var(--xieyu-y);
+  left: var(--colsland-x);
+  top: var(--colsland-y);
 }
 
-.xieyu-positioner button { position: relative; width: 100%; height: 100%; cursor: pointer; border-radius: 50%; }
-.xieyu-positioner button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
-.xieyu-positioner-corner { left: calc(100vw - 76px); top: calc(100dvh - 76px); }
-.xieyu-positioner-flying { transition: left 850ms cubic-bezier(.22, 1, .36, 1), top 850ms cubic-bezier(.22, 1, .36, 1); }
-.xieyu-orb { position: absolute; inset: 0; width: 52px; height: 52px; filter: drop-shadow(0 3px 7px rgb(86 143 171 / 24%)); transition: transform 250ms ease, filter 250ms ease; }
+.colsland-positioner button { position: relative; width: 100%; height: 100%; cursor: pointer; border-radius: 50%; }
+.colsland-positioner button:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.colsland-positioner-corner { left: calc(100vw - 76px); top: calc(100dvh - 76px); }
+.colsland-positioner-flying { transition: left 850ms cubic-bezier(.22, 1, .36, 1), top 850ms cubic-bezier(.22, 1, .36, 1); }
+.colsland-orb { position: absolute; inset: 0; width: 52px; height: 52px; filter: drop-shadow(0 3px 7px rgb(86 143 171 / 24%)); transition: transform 250ms ease, filter 250ms ease; }
 
-.xieyu-ripple, .xieyu-ripple::before, .xieyu-ripple::after {
+.colsland-ripple, .colsland-ripple::before, .colsland-ripple::after {
   position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid rgb(134 207 226 / 80%);
-  pointer-events: none; animation: xieyu-ripple 600ms ease-out forwards;
+  pointer-events: none; animation: colsland-ripple 600ms ease-out forwards;
 }
-.xieyu-ripple::before, .xieyu-ripple::after { content: ''; inset: -1.5px; }
-.xieyu-ripple::before { animation-delay: 90ms; }
-.xieyu-ripple::after { animation-delay: 180ms; }
-@keyframes xieyu-ripple { from { transform: scale(.95); opacity: .8; } to { transform: scale(2.6); opacity: 0; } }
+.colsland-ripple::before, .colsland-ripple::after { content: ''; inset: -1.5px; }
+.colsland-ripple::before { animation-delay: 90ms; }
+.colsland-ripple::after { animation-delay: 180ms; }
+@keyframes colsland-ripple { from { transform: scale(.95); opacity: .8; } to { transform: scale(2.6); opacity: 0; } }
 
-@media (max-width: 1023px) { .xieyu-positioner-nav { display: none; } }
+@media (max-width: 1023px) { .colsland-positioner-nav { display: none; } }
 
-.xieyu-orb svg { overflow: visible; }
-.xieyu-orb svg stop:first-child { stop-color: #fff; }
-.xieyu-orb svg stop:nth-child(2) { stop-color: #d6eef7; }
-.xieyu-orb svg stop:last-child { stop-color: #98b5d0; }
+.colsland-orb svg { overflow: visible; }
+.colsland-orb svg stop:first-child { stop-color: #fff; }
+.colsland-orb svg stop:nth-child(2) { stop-color: #d6eef7; }
+.colsland-orb svg stop:last-child { stop-color: #98b5d0; }
 
 
-.xieyu-positioner button:hover .xieyu-orb,
-.xieyu-positioner button:focus-visible .xieyu-orb {
+.colsland-positioner button:hover .colsland-orb,
+.colsland-positioner button:focus-visible .colsland-orb {
   transform: scale(1.04);
   filter: drop-shadow(0 4px 10px rgb(91 161 193 / 38%));
 }
 
-.xieyu-positioner button:active .xieyu-orb { transform: scale(.97); }
+.colsland-positioner button:active .colsland-orb { transform: scale(.97); }
 
-.xieyu-mobile-orb {
+.colsland-mobile-orb {
   width: 16px;
   height: 16px;
   flex: none;
@@ -487,5 +487,5 @@ html[lang^="zh"] [data-streamdown="table-wrapper"]::before {
 
 
 @media (prefers-reduced-motion: reduce) {
-  .xieyu-positioner, .xieyu-orb, .xieyu-orb *, .xieyu-ripple, .xieyu-ripple::before, .xieyu-ripple::after { animation: none !important; transition: none !important; }
+  .colsland-positioner, .colsland-orb, .colsland-orb *, .colsland-ripple, .colsland-ripple::before, .colsland-ripple::after { animation: none !important; transition: none !important; }
 }

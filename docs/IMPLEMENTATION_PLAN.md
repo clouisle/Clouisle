@@ -1,13 +1,13 @@
 # Implementation Plan
 
 ## Active
-- **xieyu-entrance** — Completed; independent route, authentication and transition tests passed. Browser visual verification not performed. See `docs/plan/xieyu-entrance.md`.
+- **colsland-entrance** — Completed; independent route, authentication and transition tests passed. Browser visual verification not performed. See `docs/plan/colsland-entrance.md`.
   - [x] 1. Add responsive entrance, animation and localized feedback
   - [x] 2. Align onboarding and verify navigation behavior
   - [x] 3. Implement original expression ball and interaction/business states
   - [x] 4. Replace custom orb rendering with the upstream animation engine
-  - [x] 5. Add blank Xieyu page and ripple-to-corner transition — See `docs/plan/xieyu-page-transition.md`.
-  - [x] 6. Move Xieyu to independent authenticated route with persistent cross-layout transition — See `docs/plan/xieyu-standalone.md`.
+  - [x] 5. Add blank Colsland page and ripple-to-corner transition — See `docs/plan/colsland-page-transition.md`.
+  - [x] 6. Move Colsland to independent authenticated route with persistent cross-layout transition — See `docs/plan/colsland-standalone.md`.
 
 
 - **global-watermark** — Completed; verification via backend/frontend suites and typecheck/lint (no server or browser run). See `docs/plan/global-watermark.md`.

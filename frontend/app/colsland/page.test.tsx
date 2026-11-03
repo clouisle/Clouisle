@@ -5,8 +5,8 @@ import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared
 import { PathnameContext, SearchParamsContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { authApi } from '@/lib/api'
-import { XieyuTransitionProvider } from '@/components/layout/xieyu-transition'
-import XieyuPage from './page'
+import { ColslandTransitionProvider } from '@/components/layout/colsland-transition'
+import ColslandPage from './page'
 
 const router = { back: mock(() => {}), forward: mock(() => {}), refresh: mock(() => {}), push: mock(() => {}), replace: mock(() => {}), prefetch: mock(() => Promise.resolve()) }
 let renderer: ReactTestRenderer | undefined
@@ -21,27 +21,27 @@ afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage
 })
 
-describe('standalone Xieyu page', () => {
+describe('standalone Colsland page', () => {
   test('redirects unauthenticated visitors without displaying the page or robot', async () => {
     globalThis.localStorage = { getItem: () => null } as Storage
     await act(async () => {
-      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
+      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { colsland: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/colsland"><SearchParamsContext.Provider value={new URLSearchParams()}><ColslandTransitionProvider><ColslandPage /></ColslandTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
     })
-    expect(router.replace).toHaveBeenCalledWith('/login?redirect=%2Fxieyu')
+    expect(router.replace).toHaveBeenCalledWith('/login?redirect=%2Fcolsland')
     expect(document.querySelector('main')).toBeNull()
-    expect(document.querySelector('[data-testid="nav-xieyu"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-colsland"]')).toBeNull()
   })
 
   test('renders only a blank page and corner robot after authentication', async () => {
     globalThis.localStorage = { getItem: () => 'token' } as Storage
     spyOn(authApi, 'getCurrentUser').mockResolvedValue({} as Awaited<ReturnType<typeof authApi.getCurrentUser>>)
     await act(async () => {
-      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { xieyu: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/xieyu"><SearchParamsContext.Provider value={new URLSearchParams()}><XieyuTransitionProvider><XieyuPage /></XieyuTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
+      renderer = create(<NextIntlClientProvider locale="en" messages={{ platform: { nav: { colsland: 'Colsland' } } }}><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/colsland"><SearchParamsContext.Provider value={new URLSearchParams()}><ColslandTransitionProvider><ColslandPage /></ColslandTransitionProvider></SearchParamsContext.Provider></PathnameContext.Provider></AppRouterContext.Provider></NextIntlClientProvider>)
       await Promise.resolve()
     })
     expect(document.querySelector('main')?.textContent).toBe('')
     expect(document.querySelector('[data-testid="platform-header-nav"]')).toBeNull()
-    expect(document.querySelector('[data-testid="nav-xieyu"]')?.getAttribute('aria-label')).toBe('Colsland')
-    expect(document.querySelector('[data-testid="nav-xieyu"]')?.parentElement?.className).toContain('xieyu-positioner-corner')
+    expect(document.querySelector('[data-testid="nav-colsland"]')?.getAttribute('aria-label')).toBe('Colsland')
+    expect(document.querySelector('[data-testid="nav-colsland"]')?.parentElement?.className).toContain('colsland-positioner-corner')
   })
 })

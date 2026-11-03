@@ -3,24 +3,24 @@
 import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { XieyuBall } from './xieyu-ball'
+import { ColslandBall } from './colsland-ball'
 import { cn } from '@/lib/utils'
 
-interface XieyuTransitionContextValue {
+interface ColslandTransitionContextValue {
   registerAnchor: (node: HTMLElement | null) => void
   registerPage: (visible: boolean) => void
   enter: (animate: boolean) => void
 }
 
-const XieyuTransitionContext = React.createContext<XieyuTransitionContextValue | null>(null)
+const ColslandTransitionContext = React.createContext<ColslandTransitionContextValue | null>(null)
 
-export function useXieyuTransition() {
-  const context = React.useContext(XieyuTransitionContext)
-  if (!context) throw new Error('XieyuTransitionProvider is required')
+export function useColslandTransition() {
+  const context = React.useContext(ColslandTransitionContext)
+  if (!context) throw new Error('ColslandTransitionProvider is required')
   return context
 }
 
-export function XieyuTransitionProvider({ children }: { children: React.ReactNode }) {
+export function ColslandTransitionProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const t = useTranslations('platform')
@@ -34,7 +34,7 @@ export function XieyuTransitionProvider({ children }: { children: React.ReactNod
   const [departing, setDeparting] = React.useState(false)
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const departurePath = React.useRef<string | null>(null)
-  const isPage = pathname === '/xieyu'
+  const isPage = pathname === '/colsland'
 
   React.useLayoutEffect(() => {
     if (!anchor) return
@@ -58,7 +58,7 @@ export function XieyuTransitionProvider({ children }: { children: React.ReactNod
     clearTimeout(timer.current ?? undefined)
     timer.current = null
     setRippling(false)
-    if (pathname !== '/xieyu' && pathname !== departurePath.current) {
+    if (pathname !== '/colsland' && pathname !== departurePath.current) {
       setDeparting(false)
       setFlying(false)
       departurePath.current = null
@@ -73,7 +73,7 @@ export function XieyuTransitionProvider({ children }: { children: React.ReactNod
     departurePath.current = pathname
     if (!animate || reduced) {
       setFlying(false)
-      router.push('/xieyu')
+      router.push('/colsland')
       return
     }
     setResponse(value => value + 1)
@@ -82,7 +82,7 @@ export function XieyuTransitionProvider({ children }: { children: React.ReactNod
       timer.current = null
       setFlying(true)
       setDeparting(true)
-      router.push('/xieyu')
+      router.push('/colsland')
     }, 480)
   }, [departing, isPage, pathname, router])
 
@@ -91,19 +91,19 @@ export function XieyuTransitionProvider({ children }: { children: React.ReactNod
   const corner = isPage && pageVisible
 
   return (
-    <XieyuTransitionContext.Provider value={context}>
+    <ColslandTransitionContext.Provider value={context}>
       {children}
       {visible && (
-        <div className={cn('xieyu-positioner', corner ? 'xieyu-positioner-corner' : 'xieyu-positioner-nav', flying && 'xieyu-positioner-flying')}
-          style={{ '--xieyu-x': `${point.x}px`, '--xieyu-y': `${point.y}px` } as React.CSSProperties}>
-          <button type="button" data-testid="nav-xieyu" aria-label={t('nav.xieyu')} aria-current={corner ? 'page' : undefined}
+        <div className={cn('colsland-positioner', corner ? 'colsland-positioner-corner' : 'colsland-positioner-nav', flying && 'colsland-positioner-flying')}
+          style={{ '--colsland-x': `${point.x}px`, '--colsland-y': `${point.y}px` } as React.CSSProperties}>
+          <button type="button" data-testid="nav-colsland" aria-label={t('nav.colsland')} aria-current={corner ? 'page' : undefined}
             onClick={() => enter(true)} onPointerEnter={() => setFocused(true)} onPointerLeave={() => setFocused(false)}
             onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
-            {rippling && <span className="xieyu-ripple" data-testid="xieyu-ripple" aria-hidden="true" />}
-            <XieyuBall focused={focused && !corner} responseKey={response} />
+            {rippling && <span className="colsland-ripple" data-testid="colsland-ripple" aria-hidden="true" />}
+            <ColslandBall focused={focused && !corner} responseKey={response} />
           </button>
         </div>
       )}
-    </XieyuTransitionContext.Provider>
+    </ColslandTransitionContext.Provider>
   )
 }

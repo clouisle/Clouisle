@@ -8,7 +8,7 @@ export type PlatformMessages = {
       kb: string
       capabilities: string
       models: string
-      xieyu: string
+      colsland: string
       notifications: string
       memories: string
     }

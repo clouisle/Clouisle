@@ -2,10 +2,10 @@
 
 import * as React from 'react'
 import { AuthGuard } from '@/components/auth-guard'
-import { useXieyuTransition } from '@/components/layout/xieyu-transition'
+import { useColslandTransition } from '@/components/layout/colsland-transition'
 
-function XieyuContent() {
-  const { registerPage } = useXieyuTransition()
+function ColslandContent() {
+  const { registerPage } = useColslandTransition()
   React.useEffect(() => {
     registerPage(true)
     return () => registerPage(false)
@@ -13,6 +13,6 @@ function XieyuContent() {
   return <main className="min-h-screen bg-background" />
 }
 
-export default function XieyuPage() {
-  return <AuthGuard><XieyuContent /></AuthGuard>
+export default function ColslandPage() {
+  return <AuthGuard><ColslandContent /></AuthGuard>
 }

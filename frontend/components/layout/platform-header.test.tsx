@@ -86,7 +86,7 @@ mock.module('@/lib/theme-config', () => ({
 mock.module('@/components/default-site-icon', () => ({
   DefaultSiteIcon: () => <span>site-icon</span>,
 }))
-mock.module('@/components/layout/xieyu-ball', () => ({ XieyuBall: () => <span /> }))
+mock.module('@/components/layout/colsland-ball', () => ({ ColslandBall: () => <span /> }))
 mock.module('@/components/team-switcher', () => ({
   TeamSwitcher: () => <span>team-switcher</span>,
 }))
@@ -138,16 +138,16 @@ mock.module('@/components/ui/dialog', () => ({
 }))
 
 import { PlatformHeader } from './platform-header'
-import { XieyuTransitionProvider, useXieyuTransition } from './xieyu-transition'
+import { ColslandTransitionProvider, useColslandTransition } from './colsland-transition'
 
 function TestPage() {
-  const { registerPage } = useXieyuTransition()
+  const { registerPage } = useColslandTransition()
   React.useEffect(() => { registerPage(true); return () => registerPage(false) }, [registerPage])
-  return <main data-testid="xieyu-page" />
+  return <main data-testid="colsland-page" />
 }
 
 function TestShell() {
-  return <XieyuTransitionProvider>{pathname === '/xieyu' ? <TestPage /> : <PlatformHeader />}</XieyuTransitionProvider>
+  return <ColslandTransitionProvider>{pathname === '/colsland' ? <TestPage /> : <PlatformHeader />}</ColslandTransitionProvider>
 }
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -222,12 +222,12 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-admin' })).toBeTruthy()
   })
 
-  test('keeps home reachable and starts the Xieyu transition', async () => {
+  test('keeps home reachable and starts the Colsland transition', async () => {
     const renderer = await renderHeader()
     expect(renderer.root.findByProps({ 'data-testid': 'platform-logo' }).props.href).toBe('/app')
     expect(renderer.root.findAllByProps({ 'data-testid': 'nav-home' })).toHaveLength(0)
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
-    expect(renderer.root.findByProps({ 'data-testid': 'xieyu-ripple' })).toBeTruthy()
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-colsland' }).props.onClick())
+    expect(renderer.root.findByProps({ 'data-testid': 'colsland-ripple' })).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
 
     showBrand = false
@@ -237,42 +237,42 @@ describe('PlatformHeader', () => {
 
   test('navigates after the ripple and keeps the orb across route changes', async () => {
     const renderer = await renderHeader()
-    const orb = document.querySelector('[data-testid="nav-xieyu"]')
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    const orb = document.querySelector('[data-testid="nav-colsland"]')
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-colsland' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-colsland' }).props.onClick())
     expect(push).not.toHaveBeenCalled()
     await act(async () => delay(520))
     expect(push).toHaveBeenCalledTimes(1)
-    expect(push).toHaveBeenCalledWith('/xieyu')
-    pathname = '/xieyu'
+    expect(push).toHaveBeenCalledWith('/colsland')
+    pathname = '/colsland'
     await act(async () => renderer.update(<TestShell />))
-    expect(document.querySelector('[data-testid="nav-xieyu"]')).toBe(orb)
-    expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
+    expect(document.querySelector('[data-testid="nav-colsland"]')).toBe(orb)
+    expect(orb?.parentElement?.className).toContain('colsland-positioner-corner')
     pathname = '/app/apps'
     await act(async () => renderer.update(<TestShell />))
-    expect(orb?.parentElement?.className).toContain('xieyu-positioner-nav')
+    expect(orb?.parentElement?.className).toContain('colsland-positioner-nav')
   })
 
   test('skips ripple for reduced motion and direct page visits', async () => {
     reducedMotion = true
     const renderer = await renderHeader()
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
-    expect(push).toHaveBeenCalledWith('/xieyu')
-    expect(renderer.root.findAllByProps({ 'data-testid': 'xieyu-ripple' })).toHaveLength(0)
-    pathname = '/xieyu'
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-colsland' }).props.onClick())
+    expect(push).toHaveBeenCalledWith('/colsland')
+    expect(renderer.root.findAllByProps({ 'data-testid': 'colsland-ripple' })).toHaveLength(0)
+    pathname = '/colsland'
     await act(async () => renderer.update(<TestShell />))
-    expect(document.querySelector('[data-testid="nav-xieyu"]')?.parentElement?.className).toContain('xieyu-positioner-corner')
+    expect(document.querySelector('[data-testid="nav-colsland"]')?.parentElement?.className).toContain('colsland-positioner-corner')
   })
 
   test('opens directly in the corner and cancels a pending transition on route change', async () => {
-    pathname = '/xieyu'
+    pathname = '/colsland'
     const renderer = await renderHeader()
-    const orb = document.querySelector('[data-testid="nav-xieyu"]')
-    expect(orb?.parentElement?.className).toContain('xieyu-positioner-corner')
-    expect(orb?.parentElement?.className).not.toContain('xieyu-positioner-flying')
+    const orb = document.querySelector('[data-testid="nav-colsland"]')
+    expect(orb?.parentElement?.className).toContain('colsland-positioner-corner')
+    expect(orb?.parentElement?.className).not.toContain('colsland-positioner-flying')
     pathname = '/app/apps'
     await act(async () => renderer.update(<TestShell />))
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-xieyu' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'nav-colsland' }).props.onClick())
     pathname = '/app/models'
     await act(async () => renderer.update(<TestShell />))
     await act(async () => delay(520))
@@ -360,8 +360,8 @@ describe('PlatformHeader', () => {
     const mobileNav = renderer.root.findAllByType('nav')[1]
     expect(mobileNav).toBeTruthy()
     expect(mobileNav.findAllByType('a')[0].props.href).toBe('/app')
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'mobile-nav-xieyu' }).props.onClick())
-    expect(push).toHaveBeenCalledWith('/xieyu')
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'mobile-nav-colsland' }).props.onClick())
+    expect(push).toHaveBeenCalledWith('/colsland')
     expect(renderer.root.findAllByType('nav')).toHaveLength(1)
     await act(async () => toggle.props.onClick())
     const reopenedNav = renderer.root.findAllByType('nav')[1]

@@ -3,26 +3,26 @@
 ## 背景与目标
 
 从工作台的协屿入口进入空白页面：先播放从机器人周围扩散的水波，再切换页面，同一个机器人从导航位置移动到右下角。不实现协屿业务功能。
-> 此方案已由独立路由方案替代：当前页面为 `/xieyu`，参见 `docs/plan/xieyu-standalone.md`。
+> 此方案已由独立路由方案替代：当前页面为 `/colsland`，参见 `docs/plan/colsland-standalone.md`。
 
 ## 总体设计
 
-`/app/xieyu` 复用工作台布局。机器人始终由持久化的 `PlatformHeader` 挂载；通过固定定位与入口坐标计算，路由变化时过渡到视口右下角，导航位置保留占位。点击进入先播放波纹，延迟后执行 Next.js 客户端导航。直接访问与浏览器前进不伪造入场动画；返回工作台时机器人恢复导航位置。移动端从菜单进入，机器人在目标页右下角显示。系统减少动态效果时立即导航和定位，不播放动画。
+旧版工作台路径复用工作台布局。机器人始终由持久化的 `PlatformHeader` 挂载；通过固定定位与入口坐标计算，路由变化时过渡到视口右下角，导航位置保留占位。点击进入先播放波纹，延迟后执行 Next.js 客户端导航。直接访问与浏览器前进不伪造入场动画；返回工作台时机器人恢复导航位置。移动端从菜单进入，机器人在目标页右下角显示。系统减少动态效果时立即导航和定位，不播放动画。
 
 ## 实施计划
 
 ### 阶段一：路由与入口
-- **文件**：`frontend/app/(platform)/app/xieyu/page.tsx`、`frontend/components/layout/platform-header.tsx`、中英文平台翻译及类型。
+- **文件**：旧工作台页面、`frontend/components/layout/platform-header.tsx`、中英文平台翻译及类型。
 - **逻辑**：新增真正空白的受既有认证保护页面；桌面入口触发转场，移动入口直接进入；删除“即将开放”反馈。阻止连续点击重复导航；切换其他路由或卸载取消延迟。
 - **验证**：入口导航、无团队隐藏、移动菜单和直接访问；快速重复点击仅触发一次导航。
 
 ### 阶段二：跨页面动效
-- **文件**：`frontend/components/layout/platform-header.tsx`、`frontend/components/layout/xieyu-ball.tsx`、`frontend/app/globals.css`。
+- **文件**：`frontend/components/layout/platform-header.tsx`、`frontend/components/layout/colsland-ball.tsx`、`frontend/app/globals.css`。
 - **逻辑**：保留同一上游机器人实例，用入口位置与视口坐标固定定位；波纹结束后导航，机器人从顶部平滑前往右下角。滚动／缩放时更新导航锚点；进入页后右下角不响应导航点击。机器人页面右下角提供可访问的非功能性呈现。移动端不播放不可见入口的波纹。减少动态效果时禁用波纹及位移动画。
 - **验证**：模拟尺寸、路由与计时；确认同一 DOM 机器人、波纹时序、返回定位和资源释放。减弱动效时立即跳转。
 
 ### 阶段三：回归与交付
-- **文件**：`frontend/components/layout/platform-header.test.tsx`、`frontend/components/layout/xieyu-ball.test.tsx`、`CHANGELOG.md`、本计划与索引。
+- **文件**：`frontend/components/layout/platform-header.test.tsx`、`frontend/components/layout/colsland-ball.test.tsx`、`CHANGELOG.md`、本计划与索引。
 - **逻辑**：更新入口契约测试，移除旧提示及废弃翻译；完成变更记录。
 - **验证**：运行相关测试、TypeScript、ESLint 和翻译一致性检查；无服务或浏览器授权时不进行浏览器验证。
 

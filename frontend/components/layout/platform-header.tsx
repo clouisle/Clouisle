@@ -59,7 +59,7 @@ import { useSettings } from '@/hooks/use-settings'
 import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, WEBSITE_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
-import { useXieyuTransition } from '@/components/layout/xieyu-transition'
+import { useColslandTransition } from '@/components/layout/colsland-transition'
 import { getBrandingVisibility } from '@/lib/theme-config'
 
 interface PlatformNavItem {
@@ -119,7 +119,7 @@ export function PlatformHeader() {
   const { canAccessDashboard, hasAnyPermission, hasPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const onboarding = useOptionalOnboarding()
-  const { registerAnchor, enter: enterXieyu } = useXieyuTransition()
+  const { registerAnchor, enter: enterColsland } = useColslandTransition()
 
   // 没有团队时隐藏导航
   const hideNav = !isTeamLoading && !currentTeam
@@ -325,7 +325,7 @@ export function PlatformHeader() {
             <div className="flex items-center justify-end gap-1">
               {visibleNavItems.filter(item => item.key === 'apps' || item.key === 'kb' || (item.key === 'home' && !showBrandIcon && !showBrandName)).map(renderDesktopNavItem)}
             </div>
-            <span ref={registerAnchor} className="xieyu-entrance" aria-hidden="true" />
+            <span ref={registerAnchor} className="colsland-entrance" aria-hidden="true" />
             <div className="flex items-center justify-start gap-1">
               {visibleNavItems.filter(item => item.key === 'capabilities' || item.key === 'models').map(renderDesktopNavItem)}
             </div>
@@ -579,12 +579,12 @@ export function PlatformHeader() {
               type="button"
               variant="ghost"
               size="sm"
-              data-testid="mobile-nav-xieyu"
+              data-testid="mobile-nav-colsland"
               className="w-full justify-start gap-2.5 text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
-              onClick={() => { setMobileMenuOpen(false); enterXieyu(false) }}
+              onClick={() => { setMobileMenuOpen(false); enterColsland(false) }}
             >
-              <span className="xieyu-mobile-orb" aria-hidden="true" />
-              {t('nav.xieyu')}
+              <span className="colsland-mobile-orb" aria-hidden="true" />
+              {t('nav.colsland')}
             </Button>
           </nav>
         </div>

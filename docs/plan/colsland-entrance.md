@@ -21,7 +21,7 @@
 - **验证**：运行相关组件测试、翻译检查及类型检查。
 
 ### 阶段三：自主设计表情球及状态
-- **修改文件**：`frontend/components/layout/xieyu-ball.tsx`、`frontend/components/layout/platform-header.tsx`、`frontend/app/globals.css`、组件与导航测试。
+- **修改文件**：`frontend/components/layout/colsland-ball.tsx`、`frontend/components/layout/platform-header.tsx`、`frontend/app/globals.css`、组件与导航测试。
 - **状态契约**：业务状态为 `idle`、`listening`、`thinking`、`working`、`waiting`、`success`、`error`。入口在 idle 时支持注视、悬停／聚焦和点击回应；其他业务状态优先于入口互动，点击反馈不改变业务状态。每次激活可重新触发回应。
 - **动效设计**：待机呼吸眨眼、指针注视；倾听倾斜、思考环绕、执行脉动、等待目光、完成笑眼、异常疑惑。减少动态效果时保持各状态静态造型并禁止指针跟随。隐藏桌面导航时不处理指针；卸载时移除事件和定时器。
 - **验证**：DOM 交互检查状态切换、入口回应、无障碍、减少动态效果与事件清理；执行导航测试、类型检查及 lint。不开启浏览器，视觉效果待授权检查。
@@ -29,7 +29,7 @@
 - **验证结果**：导航及状态测试 15 项通过，七种业务状态均完成服务端 SVG 渲染冒烟；TypeScript 和 ESLint 通过。未进行浏览器视觉验证。
 
 ### 阶段四：切换到上游引擎
-- **文件**：`frontend/vendor/grok-ball/`、`frontend/components/layout/xieyu-ball.tsx`、`frontend/app/globals.css`、相关测试和变更记录。
+- **文件**：`frontend/vendor/grok-ball/`、`frontend/components/layout/colsland-ball.tsx`、`frontend/app/globals.css`、相关测试和变更记录。
 - **设计**：固定上游 MIT 版本，隔离其全局命名空间并只做模块封装；保留协屿入口和状态契约，映射到上游待机、聆听、思考、忙碌、等待、完成和错误表情。保留冰蓝渐变，通过 SVG 渐变色样式定制。
 - **交互与生命周期**：idle 时鼠标注视、聚焦使用好奇表情、点击触发上游自旋彩带并保留提示；业务状态优先。减少动态效果时静态渲染，屏幕变窄或卸载销毁实例，屏幕恢复重建并还原状态。
 - **验证**：真实引擎 DOM 挂载、状态切换及静态模式、指针跟随和卸载；导航测试、类型和 lint。禁止启动浏览器或服务，视觉效果待授权验证。

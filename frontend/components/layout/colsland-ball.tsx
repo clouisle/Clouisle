@@ -3,22 +3,22 @@
 import * as React from 'react'
 import { initializeGrokBall, type GrokBallApi, type GrokBallEngine } from '@/vendor/grok-ball/grok-ball.js'
 
-export type XieyuOrbState = 'idle' | 'listening' | 'thinking' | 'working' | 'waiting' | 'success' | 'error'
+export type ColslandOrbState = 'idle' | 'listening' | 'thinking' | 'working' | 'waiting' | 'success' | 'error'
 
-interface XieyuBallProps {
-  state?: XieyuOrbState
+interface ColslandBallProps {
+  state?: ColslandOrbState
   responseKey?: number
   focused?: boolean
 }
 
-const EMOTIONS: Record<XieyuOrbState, string> = {
+const EMOTIONS: Record<ColslandOrbState, string> = {
   idle: '02', listening: '35', thinking: '30', working: '32', waiting: '35', success: '33', error: '34',
 }
 
 
 let grokBall: GrokBallApi | undefined
 
-export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: XieyuBallProps) {
+export function ColslandBall({ state = 'idle', responseKey = 0, focused = false }: ColslandBallProps) {
   const orbRef = React.useRef<HTMLSpanElement>(null)
   const engineRef = React.useRef<GrokBallEngine | null>(null)
   const stateRef = React.useRef(state)
@@ -78,5 +78,5 @@ export function XieyuBall({ state = 'idle', responseKey = 0, focused = false }: 
     }
   }, [])
 
-  return <span ref={orbRef} className="xieyu-orb" aria-hidden="true" />
+  return <span ref={orbRef} className="colsland-orb" aria-hidden="true" />
 }
