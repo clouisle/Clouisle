@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { within } from '@testing-library/react'
@@ -19,8 +19,14 @@ describe('Colsland block editor', () => {
     const title = renderer!.root.findByProps({ 'aria-label': 'Document title' })
     await act(async () => { title.props.onChange({ target: { value: 'Project notes' } }) })
     await act(async () => { renderer!.root.findByProps({ 'aria-label': 'Text' }).props.onChange({ target: { value: 'First block' } }) })
-    await act(async () => { renderer!.root.findByProps({ 'aria-label': 'Text' }).props.onKeyDown({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, currentTarget: { selectionStart: 11, selectionEnd: 11 }, preventDefault: () => {} }) })
+    const enterPreventDefault = mock(() => {})
+    await act(async () => { renderer!.root.findByProps({ 'aria-label': 'Text' }).props.onKeyDown({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, preventDefault: enterPreventDefault }) })
+    expect(enterPreventDefault).not.toHaveBeenCalled()
+    await act(async () => { renderer!.root.findByProps({ 'aria-label': 'Text' }).props.onKeyDown({ key: 'Enter', shiftKey: true, nativeEvent: { isComposing: false }, currentTarget: { selectionStart: 11, selectionEnd: 11 }, preventDefault: () => {} }) })
     expect(screen.getAllByLabelText('Text')).toHaveLength(2)
+    expect(renderer!.root.findAllByType('div').some(node => String(node.props.className).includes('focus-within:border-border'))).toBe(true)
+    expect(renderer!.root.findAllByType('button').some(node => String(node.props.className).includes('bg-muted/60'))).toBe(true)
+    expect(renderer!.root.findAllByType('button').find(node => node.props['aria-label'] === 'Block actions')?.props.className).toContain('opacity-0')
     await act(async () => { renderer!.root.findAllByType('button').filter(node => node.props['aria-label'] === 'Block actions')[1].props.onClick() })
     await act(async () => { renderer!.root.findAllByProps({ role: 'menuitem' })[4].props.onClick() })
     await act(async () => { renderer!.root.findByProps({ 'aria-label': 'Toggle to-do' }).props.onChange({ target: { checked: true } }) })

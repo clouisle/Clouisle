@@ -75,9 +75,9 @@ export function BlockEditor() {
         className="mb-8 w-full border-0 bg-transparent text-4xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/45 sm:text-5xl" />
       <div className="space-y-1">
         {blocks.map(block => (
-          <div key={block.id} className="group relative flex items-start gap-2 rounded-lg py-1">
+          <div key={block.id} className="group relative flex items-start gap-2 rounded-lg border border-transparent py-1 transition-colors focus-within:border-border">
             <div className="relative mt-0.5 shrink-0">
-              <Button type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label={t('blockActions')} aria-expanded={menu === block.id}
+              <Button type="button" variant="ghost" size="icon" className={`size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 ${menu === block.id ? 'opacity-100' : ''}`} aria-label={t('blockActions')} aria-expanded={menu === block.id}
                 onClick={() => setMenu(menu === block.id ? null : block.id)}><Plus className="size-4" /></Button>
               {menu === block.id && (
                 <div className="absolute left-0 top-full z-20 w-52 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg" role="menu">
@@ -100,7 +100,7 @@ export function BlockEditor() {
               onChange={event => update(block.id, { text: event.target.value })}
               onKeyDown={event => {
                 if (event.nativeEvent.isComposing) return
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && event.shiftKey) {
                   event.preventDefault()
                   const start = event.currentTarget.selectionStart
                   const end = event.currentTarget.selectionEnd
@@ -118,7 +118,7 @@ export function BlockEditor() {
           </div>
         ))}
       </div>
-      <Button type="button" variant="ghost" size="sm" className="mt-4 gap-2 text-muted-foreground" onClick={() => add(blocks[blocks.length - 1].id)}>
+      <Button type="button" variant="ghost" size="sm" className="mt-4 gap-2 bg-muted/60 text-muted-foreground hover:bg-muted" onClick={() => add(blocks[blocks.length - 1].id)}>
         <Plus className="size-4" />{t('addBlock')}
       </Button>
     </section>
