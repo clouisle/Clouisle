@@ -72,11 +72,11 @@ export function BlockEditor() {
         <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-700 dark:text-amber-300">{t('unsaved')}</span>
       </div>
       <input aria-label={t('title')} placeholder={t('untitled')} value={title} onChange={event => setTitle(event.target.value)}
-        className="mb-8 w-full border-0 bg-transparent text-4xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/45 sm:text-5xl" />
+        className="mb-8 w-full border-0 bg-transparent px-2 text-4xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/45 sm:text-5xl" />
       <div className="space-y-1">
         {blocks.map(block => (
-          <div key={block.id} className="group relative flex items-start gap-2 rounded-lg border border-transparent py-1 transition-colors focus-within:border-border">
-            <div className="relative mt-0.5 shrink-0">
+          <div key={block.id} className="group relative py-1">
+            <div className="absolute right-full top-1 z-10 mr-1">
               <Button type="button" variant="ghost" size="icon" className={`size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 ${menu === block.id ? 'opacity-100' : ''}`} aria-label={t('blockActions')} aria-expanded={menu === block.id}
                 onClick={() => setMenu(menu === block.id ? null : block.id)}><Plus className="size-4" /></Button>
               {menu === block.id && (
@@ -93,8 +93,9 @@ export function BlockEditor() {
                 </div>
               )}
             </div>
-            {block.type === 'bullet' && <span className="mt-2.5 shrink-0 text-muted-foreground" aria-hidden="true">•</span>}
-            {block.type === 'todo' && <input type="checkbox" aria-label={t('toggleTodo')} checked={block.checked} onChange={event => update(block.id, { checked: event.target.checked })} className="mt-2.5 size-4 shrink-0 accent-primary" />}
+            <div className="mx-2 flex min-w-0 items-start gap-2 rounded-lg border border-transparent px-2 transition-colors focus-within:border-border">
+              {block.type === 'bullet' && <span className="mt-2.5 shrink-0 text-muted-foreground" aria-hidden="true">•</span>}
+              {block.type === 'todo' && <input type="checkbox" aria-label={t('toggleTodo')} checked={block.checked} onChange={event => update(block.id, { checked: event.target.checked })} className="mt-2.5 size-4 shrink-0 accent-primary" />}
             <textarea ref={element => { if (element) fields.current.set(block.id, element); else fields.current.delete(block.id) }}
               rows={1} aria-label={t(block.type)} placeholder={block.type === 'paragraph' ? t('placeholder') : t(block.type)} value={block.text}
               onChange={event => update(block.id, { text: event.target.value })}
@@ -115,6 +116,7 @@ export function BlockEditor() {
               }}
               className={`colsland-block-input min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent py-1.5 leading-6 outline-none placeholder:text-muted-foreground/50 ${block.type === 'heading1' ? 'text-3xl font-semibold leading-10' : block.type === 'heading2' ? 'text-2xl font-semibold leading-8' : 'text-base'} ${block.checked && block.type === 'todo' ? 'text-muted-foreground line-through' : ''}`}
               style={{ fieldSizing: 'content' }} />
+            </div>
           </div>
         ))}
       </div>
