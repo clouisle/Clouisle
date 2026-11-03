@@ -21,8 +21,7 @@ test('marks only the active block and clears the mark on blur', async () => {
     const first = host.querySelector('[data-colsland-focused-block]')
     expect(first?.querySelector(':scope > .bn-block-content')).not.toBeNull()
     const id = first?.getAttribute('data-id')
-    const add = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Add a block'))!
-    await act(async () => add.click())
+    await act(async () => editable.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
     expect(host.querySelectorAll('[data-colsland-focused-block]')).toHaveLength(1)
     expect(host.querySelector('[data-colsland-focused-block]')?.getAttribute('data-id')).not.toBe(id)
     await act(async () => editable.blur())

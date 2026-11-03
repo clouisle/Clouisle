@@ -14,8 +14,7 @@
       "document": "Document",
       "title": "Document title",
       "untitled": "Untitled",
-      "unsaved": "Not saved · refresh or leaving this page will discard changes",
-      "addBlock": "Add a block"
+      "unsaved": "Not saved · refresh or leaving this page will discard changes"
     },
     "profile": {
       "title": "Profile",

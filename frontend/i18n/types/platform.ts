@@ -17,7 +17,6 @@ export type PlatformMessages = {
       title: string
       untitled: string
       unsaved: string
-      addBlock: string
     }
     profile: {
       title: string

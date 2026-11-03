@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced the Colsland plain-text blocks with a BlockNote rich document editor supporting formatting, links, tables, media and block operations. Documents and selected media remain in page memory only; refresh or navigation discards them. BlockNote license and source notices are distributed with frontend public assets.
 - Restored the focused content-block border in the Colsland rich editor; it follows the active block and clears when the editor loses focus.
 - Display Colsland editor text and background colors in two columns with viewport-bounded scrolling.
+- Removed the standalone add-block button from the bottom of the Colsland editor; block controls remain available.
 
 - Added a Colsland workspace entry using the MIT-licensed Grok Ball expression engine, with interactive idle and explicit listening, thinking, working, waiting, success and error states. The entry opens an independent authenticated blank page at `/colsland` with a ripple and moves the same orb to the lower-right corner; desktop Home moves to the logo when branding is visible, while mobile and branding-hidden layouts retain Home.
 
