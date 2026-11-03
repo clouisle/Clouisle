@@ -1,0 +1,19 @@
+.colsland-rich-editor.bn-container {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: var(--foreground);
+}
+
+.colsland-rich-editor .bn-editor {
+  padding-inline: 0;
+  min-height: 12rem;
+}
+
+.colsland-rich-editor .bn-block-content {
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding-inline: 0.5rem;
+}
+
+.colsland-rich-editor .bn-block-content:focus-within {
+  border-color: var(--border);
+}

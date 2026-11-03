@@ -17,15 +17,6 @@ export type PlatformMessages = {
       title: string
       untitled: string
       unsaved: string
-      placeholder: string
-      blockActions: string
-      paragraph: string
-      heading1: string
-      heading2: string
-      bullet: string
-      todo: string
-      toggleTodo: string
-      deleteBlock: string
       addBlock: string
     }
     profile: {

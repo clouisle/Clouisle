@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **colsland-rich-editor** — Completed; real-editor DOM smoke, targeted tests and production build passed; browser visual verification not performed. See `docs/plan/colsland-rich-editor.md`.
+  - [x] 1. Integrate rich block editor and ephemeral media
+  - [x] 2. Preserve keyboard/layout behavior and expose future integration interfaces
+  - [x] 3. Verify document interactions, localization and cleanup
+
 - **colsland-block-editor** — Completed; component tests and DOM smoke passed, browser visual verification not performed. See `docs/plan/colsland-block-editor.md`.
   - [x] 1. Implement the central unsaved block editing interface
   - [x] 2. Add bilingual copy and interaction verification

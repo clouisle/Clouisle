@@ -1,0 +1,6 @@
+BlockNote 0.57.0: @blocknote/core, @blocknote/react, @blocknote/mantine
+License: Mozilla Public License 2.0. See LICENSE.txt.
+Corresponding upstream source: https://github.com/TypeCellOS/BlockNote/tree/75595c3702959a80e1d8e421411b96132ca29957
+Release tag: https://github.com/TypeCellOS/BlockNote/releases/tag/v0.57.0
+Third-party data notices: NOTICE.txt.
+Clouisle uses the packages unmodified. The editor integration is separate project code.

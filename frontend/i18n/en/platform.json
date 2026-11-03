@@ -15,15 +15,6 @@
       "title": "Document title",
       "untitled": "Untitled",
       "unsaved": "Not saved · refresh or leaving this page will discard changes",
-      "placeholder": "Start writing, or use + to choose a block",
-      "blockActions": "Block actions",
-      "paragraph": "Text",
-      "heading1": "Heading 1",
-      "heading2": "Heading 2",
-      "bullet": "Bulleted list",
-      "todo": "To-do",
-      "toggleTodo": "Toggle to-do",
-      "deleteBlock": "Delete block",
       "addBlock": "Add a block"
     },
     "profile": {
