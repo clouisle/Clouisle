@@ -17,3 +17,20 @@
 .colsland-rich-editor .bn-block[data-colsland-focused-block] > .bn-block-content {
   border-color: var(--border);
 }
+
+/* BlockNote portals menus outside the editor element. Each color section has
+   one heading and ten options; flow into a second column after the first. */
+.bn-color-picker-dropdown {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(11, auto);
+  grid-auto-columns: minmax(0, 1fr);
+  width: min(20rem, calc(100vw - 1rem));
+  max-height: min(34rem, calc(100dvh - 1rem));
+  overflow-y: auto;
+}
+
+.bn-color-picker-dropdown > :first-child:not([class]):not([data-test]) {
+  grid-column: 1 / -1;
+  position: absolute;
+}
