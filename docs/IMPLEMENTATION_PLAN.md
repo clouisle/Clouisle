@@ -1,6 +1,10 @@
 # Implementation Plan
 
 ## Active
+- **colsland-block-editor** — Completed; component tests and DOM smoke passed, browser visual verification not performed. See `docs/plan/colsland-block-editor.md`.
+  - [x] 1. Implement the central unsaved block editing interface
+  - [x] 2. Add bilingual copy and interaction verification
+
 - **colsland-entrance** — Completed; independent route, authentication and transition tests passed. Browser visual verification not performed. See `docs/plan/colsland-entrance.md`.
   - [x] 1. Add responsive entrance, animation and localized feedback
   - [x] 2. Align onboarding and verify navigation behavior

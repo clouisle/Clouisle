@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { AuthGuard } from '@/components/auth-guard'
 import { useColslandTransition } from '@/components/layout/colsland-transition'
+import { BlockEditor } from './_components/block-editor'
 
 function ColslandContent() {
   const { registerPage } = useColslandTransition()
@@ -10,7 +11,7 @@ function ColslandContent() {
     registerPage(true)
     return () => registerPage(false)
   }, [registerPage])
-  return <main className="min-h-screen bg-background" />
+  return <main className="min-h-screen bg-background"><BlockEditor /></main>
 }
 
 export default function ColslandPage() {

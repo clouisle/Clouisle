@@ -10,6 +10,22 @@
       "notifications": "通知",
       "memories": "我的记忆"
     },
+    "colslandEditor": {
+      "document": "文档",
+      "title": "文档标题",
+      "untitled": "无标题",
+      "unsaved": "不会保存 · 刷新或离开页面后内容将丢失",
+      "placeholder": "开始输入，或点击 + 选择内容块",
+      "blockActions": "内容块操作",
+      "paragraph": "文本",
+      "heading1": "一级标题",
+      "heading2": "二级标题",
+      "bullet": "项目符号列表",
+      "todo": "待办事项",
+      "toggleTodo": "切换待办状态",
+      "deleteBlock": "删除内容块",
+      "addBlock": "添加内容块"
+    },
     "profile": {
       "title": "个人资料",
       "teamsDescription": "您已加入 {count} 个团队"
