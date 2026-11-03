@@ -14,6 +14,6 @@
   padding-inline: 0.5rem;
 }
 
-.colsland-rich-editor .bn-block-content:focus-within {
+.colsland-rich-editor .bn-block[data-colsland-focused-block] > .bn-block-content {
   border-color: var(--border);
 }

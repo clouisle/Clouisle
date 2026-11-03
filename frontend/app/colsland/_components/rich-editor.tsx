@@ -35,6 +35,28 @@ export function RichEditor() {
     extensions: [colslandShortcuts()],
   }, [locale])
 
+  React.useEffect(() => {
+    const updateFocusedBlock = () => {
+      const root = editor.domElement
+      if (!root) return
+      root.querySelector('[data-colsland-focused-block]')?.removeAttribute('data-colsland-focused-block')
+      if (!editor.isFocused()) return
+      const id = editor.getTextCursorPosition().block.id
+      const block = root.querySelector(`[data-node-type="blockContainer"][data-id="${CSS.escape(id)}"]`)
+      block?.setAttribute('data-colsland-focused-block', '')
+    }
+    const unsubscribeFocus = editor.onFocusChange(updateFocusedBlock)
+    const unsubscribeSelection = editor.onSelectionChange(updateFocusedBlock)
+    const unsubscribeChange = editor.onChange(updateFocusedBlock)
+    updateFocusedBlock()
+    return () => {
+      unsubscribeFocus()
+      unsubscribeSelection()
+      unsubscribeChange()
+      editor.domElement?.querySelector('[data-colsland-focused-block]')?.removeAttribute('data-colsland-focused-block')
+    }
+  }, [editor])
+
   return <>
     <BlockNoteView key={locale} className="colsland-rich-editor" editor={editor}
       theme={resolvedTheme === 'dark' ? 'dark' : 'light'} onChange={() => { content.current = editor.document }} />
