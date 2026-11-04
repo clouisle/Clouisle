@@ -18,6 +18,26 @@
   border-color: var(--border);
 }
 
+/* Markers inherit the 16px body size, so bullets and to-do boxes read as tiny
+   next to CJK text. Scale them while keeping the first-line alignment. */
+.colsland-rich-editor .bn-block-content[data-content-type='bulletListItem']::before {
+  min-width: 1.5rem;
+  padding-right: 0.35rem;
+  font-size: 1.5em;
+  line-height: 1;
+}
+
+.colsland-rich-editor .bn-block-content[data-content-type='numberedListItem']::before {
+  min-width: 1.75rem;
+  font-size: 1.1em;
+}
+
+.colsland-rich-editor .bn-block-content[data-content-type='checkListItem'] > div > input {
+  width: 16px;
+  height: 16px;
+  margin-block: 4px;
+}
+
 /* BlockNote portals menus outside the editor element. Each color section has
    one heading and ten options; flow into a second column after the first. */
 .bn-color-picker-dropdown {
