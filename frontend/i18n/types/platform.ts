@@ -26,6 +26,10 @@ export type PlatformMessages = {
       title: string
       selectProject: string
     }
+    colslandCard: {
+      resize: string
+      resizeHint: string
+    }
     profile: {
       title: string
       teamsDescription: string

@@ -24,6 +24,10 @@
       "title": "Project assets",
       "selectProject": "Select a project to view its assets."
     },
+    "colslandCard": {
+      "resize": "Resize {title} card",
+      "resizeHint": "Drag or use arrow keys to resize"
+    },
     "profile": {
       "title": "Profile",
       "teamsDescription": "You have joined {count} teams"

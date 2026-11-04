@@ -24,6 +24,10 @@
       "title": "项目资产",
       "selectProject": "选择项目后查看资产。"
     },
+    "colslandCard": {
+      "resize": "调整{title}卡片大小",
+      "resizeHint": "拖动或使用方向键调整大小"
+    },
     "profile": {
       "title": "个人资料",
       "teamsDescription": "您已加入 {count} 个团队"
