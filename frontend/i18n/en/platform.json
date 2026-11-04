@@ -20,6 +20,14 @@
       "select": "Select project",
       "empty": "No projects available"
     },
+    "colslandAssets": {
+      "title": "Project assets",
+      "selectProject": "Select a project to view its assets.",
+      "outputs": "Outputs",
+      "noOutputs": "No outputs",
+      "sources": "Sources",
+      "noSources": "No sources"
+    },
     "profile": {
       "title": "Profile",
       "teamsDescription": "You have joined {count} teams"
