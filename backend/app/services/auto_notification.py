@@ -125,6 +125,15 @@ class AutoNotificationService:
             f"Created auto notification: type={notification_type.value}, "
             f"scope={scope.value}, id={notification.id}"
         )
+        # 桥接至 IM 消息流（系统通知会话）
+        try:
+            from app.services.im_system_bridge import bridge_notification_to_im
+
+            await bridge_notification_to_im(notification)
+        except Exception as exc:
+            logger.warning(
+                "Failed to bridge notification %s to IM: %s", notification.id, exc
+            )
 
         # 获取配置的外部渠道并触发发送
         channels = await cls.get_channels()

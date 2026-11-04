@@ -48,6 +48,7 @@ mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api', () => ({
   authApi: { getCurrentUser, logout },
   notificationsApi: { unreadCount },
+  imApi: { getUnreadCount: unreadCount, listConversations: mock(async () => []), subscribeEvents: mock(() => () => {}) },
 }))
 mock.module('@/contexts/site-settings-context', () => ({
   useSiteSettings: () => ({
@@ -92,6 +93,11 @@ mock.module('@/components/settings-drawer', () => ({
 mock.module('@/components/settings-dialog', () => ({
   SettingsDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => (
     <button data-profile-open={open} onClick={() => onOpenChange(false)} />
+  ),
+}))
+mock.module('@/components/im/message-center-dialog', () => ({
+  MessageCenterDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => (
+    <button data-message-center-open={open} onClick={() => onOpenChange(false)} />
   ),
 }))
 mock.module('@/components/ui/avatar', () => ({
@@ -201,16 +207,16 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findByProps({ 'data-testid': 'user-menu-admin' })).toBeTruthy()
   })
 
-  test('shows unread notifications and requests permission before navigating', async () => {
+  test('shows unread notifications and opens message center modal', async () => {
     const renderer = await renderHeader()
 
     expect(unreadCount).toHaveBeenCalledWith({ silent: true, skipAuthRedirect: true })
-    expect(renderer.root.findByProps({ 'data-testid': 'platform-user-menu' }).findAllByType('span').some((node) => node.children.includes('99+'))).toBe(true)
+    expect(renderer.root.findByProps({ 'data-testid': 'platform-message-center-button' }).findAllByType('span').some((node) => node.children.includes('99+'))).toBe(true)
 
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-notifications' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'platform-message-center-button' }).props.onClick())
 
     expect(requestPermission).toHaveBeenCalledTimes(1)
-    expect(push).toHaveBeenCalledWith('/app/notifications')
+    expect(renderer.root.findByProps({ 'data-message-center-open': true })).toBeTruthy()
   })
 
   test('clears local authentication and redirects even when server logout fails', async () => {
@@ -290,10 +296,10 @@ describe('PlatformHeader', () => {
     Object.defineProperty(globalThis.Notification, 'permission', { configurable: true, value: 'denied' })
     const renderer = await renderHeader()
 
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-notifications' }).props.onClick())
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'platform-message-center-button' }).props.onClick())
 
     expect(requestPermission).not.toHaveBeenCalled()
-    expect(push).toHaveBeenCalledWith('/app/notifications')
+    expect(renderer.root.findByProps({ 'data-message-center-open': true })).toBeTruthy()
   })
 
   test('hides team navigation when no team is available', async () => {

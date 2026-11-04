@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+from app.models.im import ImMessageType
+
+
+class DirectConversationCreate(BaseModel):
+    team_id: UUID = Field(..., description="团队 ID")
+    target_user_id: UUID = Field(..., description="聊天对象用户 ID")
+
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(
+        ..., min_length=1, max_length=10000, description="消息文本内容"
+    )
+    client_msg_id: str | None = Field(
+        None, max_length=64, description="客户端生成的消息防重 ID"
+    )
+    msg_type: ImMessageType = Field(default=ImMessageType.TEXT, description="消息类型")
+    payload: dict[str, Any] | None = Field(
+        None, description="富交互结构体（如审批卡片状态等）"
+    )
+
+
+class MarkReadRequest(BaseModel):
+    up_to_seq: int | None = Field(
+        None, ge=1, description="标记已读到的消息序列号，默认标记至最新"
+    )
+
+
+class ImPeerOut(BaseModel):
+    id: str
+    username: str
+    full_name: str
+    avatar_url: str | None = None
+
+
+class ImConversationOut(BaseModel):
+    id: str
+    type: str
+    team_id: str
+    is_pinned: bool = False
+    is_muted: bool = False
+    last_read_seq: int = 0
+    latest_seq: int = 0
+    unread_count: int = 0
+    last_message_content: str | None = None
+    last_message_at: str | None = None
+    peer: ImPeerOut | None = None
+    created_at: str
+    updated_at: str
+
+
+class ImMessageOut(BaseModel):
+    id: str
+    conversation_id: str
+    sender_id: str | None = None
+    client_msg_id: str | None = None
+    seq: int
+    msg_type: str
+    content: str
+    payload: dict[str, Any] | None = None
+    status: str
+    created_at: str
+
+
+class ImMessageListOut(BaseModel):
+    messages: list[ImMessageOut]
+    has_more: bool
+
+
+class ImUnreadCountOut(BaseModel):
+    total: int
+
+
+class ImSearchResultOut(BaseModel):
+    message_id: str
+    conversation_id: str
+    seq: int
+    content: str
+    msg_type: str
+    conversation_type: str
+    created_at: str
+    peer: ImPeerOut | None = None

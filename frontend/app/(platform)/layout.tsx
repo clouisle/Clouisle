@@ -7,7 +7,6 @@ import { PasswordExpirationBanner } from '@/components/password-expiration-banne
 import { AuthGuard } from '@/components/auth-guard'
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
 import { OnboardingTour, allTourIds } from '@/components/onboarding/onboarding-tour'
-import { ProminentNotificationDialog } from '@/components/layout/prominent-notification-dialog'
 import { OAuthResultToast } from '@/components/tools/oauth-result-toast'
 import { GlobalWatermark } from '@/components/watermark/global-watermark'
 
@@ -42,7 +41,6 @@ export default function PlatformLayout({
                 {children}
               </main>
               <OAuthResultToast />
-              <ProminentNotificationDialog />
               <GlobalWatermark />
               {renderTours()}
             </div>
@@ -63,7 +61,6 @@ export default function PlatformLayout({
               {children}
             </main>
             <OAuthResultToast />
-            <ProminentNotificationDialog />
             <GlobalWatermark />
             {renderTours()}
           </div>

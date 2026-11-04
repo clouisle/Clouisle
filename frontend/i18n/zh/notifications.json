@@ -1,7 +1,7 @@
 {
   "notifications": {
-    "title": "通知中心",
-    "description": "管理和查看所有系统通知",
+    "title": "消息中心",
+    "description": "管理系统通知并与团队成员发送即时消息",
     "searchPlaceholder": "搜索通知...",
     "unreadOnly": "仅未读",
     "markAllRead": "全部已读",
@@ -129,6 +129,32 @@
       "channelEmail": "邮件",
       "channelWebhook": "Webhook",
       "channelFeishu": "飞书"
+    }
+    ,
+    "im": {
+      "systemNotifications": "系统通知",
+      "systemNoticeBadge": "官方通知",
+      "systemNoticeReadOnly": "系统通知由平台触发，不支持直接回复",
+      "searchConversationsPlaceholder": "搜索会话...",
+      "newChat": "发起私信",
+      "newChatTitle": "发起私信",
+      "searchCandidatesPlaceholder": "搜索团队成员...",
+      "noCandidatesFound": "未找到匹配的团队成员",
+      "noConversations": "暂无会话",
+      "noMessagesYet": "暂无消息",
+      "unknownUser": "未知用户",
+      "selectConversationTitle": "选择一个会话",
+      "selectConversationDesc": "从左侧列表选择会话以查看消息，或发起新的单聊私信",
+      "loadEarlierMessages": "加载更早的消息",
+      "noMessagesInConversation": "会话中暂无消息",
+      "approvalCardTitle": "待处理审批",
+      "inputPlaceholder": "输入消息... (Enter 发送，Shift+Enter 换行)"
+      ,
+      "messagesMatched": "条相关聊天记录",
+      "sectionConversations": "联系人与会话",
+      "sectionMessages": "聊天记录"
+      ,
+      "earliestMessageNotice": "以上为最早的消息"
     }
   }
 }

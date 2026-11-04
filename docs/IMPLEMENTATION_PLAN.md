@@ -2,6 +2,15 @@
 
 ## Active
 
+- **message-center-im** — Completed; verification via backend pytest/ruff and frontend bun test/tsc/i18n-lint. See `docs/plan/message-center-im.md`.
+  - [x] 1. Backend models, database schemas, and Redis concurrency infrastructure
+  - [x] 2. High-concurrency IM core service layer and sequence/dedup logic
+  - [x] 3. FastAPI endpoints, team-level authorization, and contract schemas
+  - [x] 4. System notification bridge and workflow approval integration
+  - [x] 5. Frontend MessageCenterDialog modal and IM stream components
+  - [x] 6. Deprecate legacy notifications page and adapt navigation/i18n
+  - [x] 7. Automated tests, regression verification, and lint/type checks
+
 - **global-watermark** — Completed; verification via backend/frontend suites and typecheck/lint (no server or browser run). See `docs/plan/global-watermark.md`.
   - [x] 1. Backend settings definition, public contract, validation
   - [x] 2. Frontend contract and rendering primitives

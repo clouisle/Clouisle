@@ -216,3 +216,24 @@ export function formatTime(
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+/**
+ * 从 Markdown 文本中剥离语法标记符号，返回适合作为列表摘要展示的单行纯文本。
+ */
+export function stripMarkdown(content: string | null | undefined): string {
+  if (!content) return ''
+  return content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*>\s+/gm, '')
+    .replace(/^\s*([-*+]|\d+\.)\s+/gm, '')
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}

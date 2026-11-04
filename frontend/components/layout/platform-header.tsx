@@ -27,7 +27,8 @@ import {
   Lock,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
-import { notificationsApi } from '@/lib/api'
+import { imApi } from '@/lib/api'
+import { MessageCenterDialog } from '@/components/im/message-center-dialog'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
@@ -132,6 +133,7 @@ export function PlatformHeader() {
   const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(
     siteSettings.theme_branding_display
   )
+  const [messageCenterOpen, setMessageCenterOpen] = React.useState(false)
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -149,10 +151,10 @@ export function PlatformHeader() {
 
   const fetchUnread = React.useCallback(async () => {
     try {
-      const data = await notificationsApi.unreadCount({ silent: true, skipAuthRedirect: true })
+      const data = await imApi.getUnreadCount({ silent: true, skipAuthRedirect: true })
       setUnreadCount(data.total)
     } catch {
-      // 忽略读取失败，不触发重定向
+      // 忽略读取失败
     }
   }, [])
 
@@ -177,16 +179,31 @@ export function PlatformHeader() {
           body: t('newNotifications', { count: newCount }),
           icon: iconUrl,
         })
-        // 点击通知跳转到通知页面
         notification.onclick = () => {
           window.focus()
-          router.push('/app/notifications')
+          setMessageCenterOpen(true)
           notification.close()
         }
       }
     }
     setPrevUnreadCount(unreadCount)
   }, [unreadCount, prevUnreadCount, siteSettings.site_name, siteSettings.site_icon, t, router])
+
+  // 全局实时 SSE 消息监听：收到新私信或已读同步时即刻刷新红点
+  React.useEffect(() => {
+    if (!user?.id) return
+    const unsubscribe = imApi.subscribeEvents({
+      onNewMessage: () => {
+        fetchUnread()
+      },
+      onConversationRead: () => {
+        fetchUnread()
+      },
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [user?.id, fetchUnread])
 
   React.useEffect(() => {
     fetchUnread()
@@ -430,6 +447,31 @@ export function PlatformHeader() {
           )}
 
 
+          {/* Message Center Dialog Toggle */}
+          <Tooltip>
+            <TooltipTrigger render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative h-8 w-8 cursor-pointer text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
+                onClick={() => {
+                  requestNotificationPermission()
+                  setMessageCenterOpen(true)
+                }}
+                data-testid="platform-message-center-button"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+                <span className="sr-only">{t('nav.notifications')}</span>
+              </Button>
+            } />
+            <TooltipContent>{t('nav.notifications')}</TooltipContent>
+          </Tooltip>
+
           {/* Settings Drawer Toggle */}
           <Tooltip>
             <TooltipTrigger render={
@@ -458,11 +500,6 @@ export function PlatformHeader() {
                       {user ? getInitials(user.username) : 'U'}
                     </AvatarFallback>
                   </Avatar>
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white hover:!text-white">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                  )}
                 </Button>
               )}
             />
@@ -496,21 +533,6 @@ export function PlatformHeader() {
               <DropdownMenuSeparator />
 
               {/* Features */}
-              <DropdownMenuItem
-                onClick={() => {
-                  requestNotificationPermission()
-                  router.push('/app/notifications')
-                }}
-                data-testid="user-menu-notifications"
-              >
-           <Bell className="mr-2 h-4 w-4" />
-                <span className="flex-1">{t('nav.notifications')}</span>
-       {unreadCount > 0 && (
-                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] !text-white">
-              {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/app/memories')} data-testid="user-menu-memories">
                 <Brain className="mr-2 h-4 w-4" />
                 {t('nav.memories')}
@@ -663,6 +685,13 @@ export function PlatformHeader() {
           </div>
         </DialogContent>
       </Dialog>
+      {/* 全局消息中心模态框 */}
+      <MessageCenterDialog
+        open={messageCenterOpen}
+        onOpenChange={setMessageCenterOpen}
+        currentUserId={user?.id || ''}
+        onUnreadUpdated={fetchUnread}
+      />
     </header>
   )
 }

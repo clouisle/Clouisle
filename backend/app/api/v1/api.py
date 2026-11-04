@@ -22,7 +22,6 @@ from app.api.v1.endpoints import (
     api_keys,
     prompt_generator,
     workflows,
-    notifications,
     sso,
     memories,
     totp,
@@ -32,6 +31,7 @@ from app.api.v1.endpoints import (
     feishu_agent_settings,
     tool_approvals,
     run_interactions,
+    im,
 )
 from app.api.v1 import workflow_versions
 from app.api.v1.admin.api import admin_router
@@ -96,9 +96,7 @@ api_router.include_router(
 )
 api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 api_router.include_router(workflow_versions.router, tags=["workflow-versions"])
-api_router.include_router(
-    notifications.router, prefix="/notifications", tags=["notifications"]
-)
+api_router.include_router(im.router, prefix="/im", tags=["im"])
 api_router.include_router(sso.router, prefix="/sso", tags=["sso"])
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"])
 api_router.include_router(totp.router, prefix="/totp", tags=["totp"])

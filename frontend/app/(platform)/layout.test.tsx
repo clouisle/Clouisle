@@ -22,9 +22,6 @@ mock.module("@/components/onboarding/onboarding-tour", () => ({
   allTourIds: ["welcome"],
   OnboardingTour: ({ tourId }: { tourId: string }) => <div data-tour={tourId} />,
 }));
-mock.module("@/components/layout/prominent-notification-dialog", () => ({
-  ProminentNotificationDialog: () => <div data-testid="notifications" />,
-}));
 mock.module("@/components/watermark/global-watermark", () => ({
   GlobalWatermark: () => <div data-testid="watermark" />,
 }));
@@ -46,5 +43,5 @@ test("hides the header and locks scrolling in a workflow editor", () => {
 
   expect(html).not.toContain('data-testid="platform-header"');
   expect(html).toContain("relative overflow-hidden");
-  expect(html).toContain('data-testid="notifications"');
+  expect(html).toContain('data-tour="welcome"');
 });
