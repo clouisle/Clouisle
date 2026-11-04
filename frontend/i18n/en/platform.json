@@ -22,11 +22,7 @@
     },
     "colslandAssets": {
       "title": "Project assets",
-      "selectProject": "Select a project to view its assets.",
-      "outputs": "Outputs",
-      "noOutputs": "No outputs",
-      "sources": "Sources",
-      "noSources": "No sources"
+      "selectProject": "Select a project to view its assets."
     },
     "profile": {
       "title": "Profile",

@@ -22,11 +22,7 @@
     },
     "colslandAssets": {
       "title": "项目资产",
-      "selectProject": "选择项目后查看资产。",
-      "outputs": "输出内容",
-      "noOutputs": "暂无输出内容",
-      "sources": "来源",
-      "noSources": "暂无来源"
+      "selectProject": "选择项目后查看资产。"
     },
     "profile": {
       "title": "个人资料",

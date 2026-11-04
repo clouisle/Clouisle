@@ -25,10 +25,6 @@ export type PlatformMessages = {
     colslandAssets: {
       title: string
       selectProject: string
-      outputs: string
-      noOutputs: string
-      sources: string
-      noSources: string
     }
     profile: {
       title: string
