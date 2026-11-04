@@ -192,3 +192,75 @@ async def test_search_messages_endpoint(fake_user: User) -> None:
         assert resp["code"] == 0
         assert len(resp["data"]) == 1
         assert resp["data"][0]["content"] == "found target text"
+
+
+@pytest.mark.asyncio
+async def test_create_or_get_direct_conversation_endpoint(fake_user: User) -> None:
+    team_id = uuid4()
+    target_user_id = uuid4()
+    mock_conv = MagicMock(
+        id=uuid4(),
+        type=MagicMock(value="direct"),
+        team_id=team_id,
+        user1_id=fake_user.id,
+        user2_id=target_user_id,
+        latest_seq=0,
+        last_message_content=None,
+        last_message_at=None,
+        created_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+        updated_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+    )
+    mock_peer_user = MagicMock(
+        id=target_user_id,
+        username="bob",
+        full_name="Bob Builder",
+        avatar_url=None,
+    )
+    with (
+        patch("app.api.v1.endpoints.im.check_team_access", return_value=None),
+        patch(
+            "app.services.im_service.get_or_create_direct_conversation",
+            return_value=mock_conv,
+        ),
+        patch(
+            "app.models.user.User.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=mock_peer_user)),
+        ),
+    ):
+        from app.schemas.im import DirectConversationCreate
+
+        payload = DirectConversationCreate(
+            team_id=team_id, target_user_id=target_user_id
+        )
+        resp = await im_endpoints.create_or_get_direct_conversation(
+            payload, current_user=fake_user
+        )
+        assert resp["code"] == 0
+        assert resp["data"].type == "direct"
+        assert resp["data"].peer.username == "bob"
+
+
+@pytest.mark.asyncio
+async def test_get_messages_endpoint(fake_user: User) -> None:
+    conv_id = uuid4()
+    msg = MagicMock(
+        id=uuid4(),
+        conversation_id=conv_id,
+        sender_id=fake_user.id,
+        client_msg_id="uuid",
+        seq=1,
+        msg_type=MagicMock(value="text"),
+        content="hi",
+        payload=None,
+        status=MagicMock(value="normal"),
+        created_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+    )
+    with patch("app.services.im_service.get_messages", return_value=([msg], False)):
+        resp = await im_endpoints.get_messages(
+            conversation_id=conv_id,
+            around_seq=1,
+            current_user=fake_user,
+        )
+        assert resp["code"] == 0
+        assert len(resp["data"].messages) == 1
+        assert resp["data"].has_more is False
