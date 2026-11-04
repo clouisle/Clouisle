@@ -1,18 +1,23 @@
 'use client'
 
 import * as React from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Grip } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
-interface FloatingCardProps {
+export interface FloatingCardProps {
   title: string
   icon: React.ReactNode
   children: React.ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
+  resizeLabel: string
+  onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void
+  onResizeMove: (event: React.PointerEvent<HTMLButtonElement>) => void
+  onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
+  onResizeKey: (event: React.KeyboardEvent<HTMLButtonElement>) => void
 }
 
-export function FloatingCard({ title, icon, children, open, onOpenChange }: FloatingCardProps) {
+export function FloatingCard({ title, icon, children, open, onOpenChange, resizeLabel, onResizeStart, onResizeMove, onResizeEnd, onResizeKey }: FloatingCardProps) {
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} className="relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-lg shadow-black/5" style={{ height: open ? '100%' : undefined }}>
@@ -23,6 +28,7 @@ export function FloatingCard({ title, icon, children, open, onOpenChange }: Floa
       <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 text-xs leading-relaxed text-muted-foreground">
         {children}
       </CollapsibleContent>
+      {open && <button type="button" aria-label={resizeLabel} className="absolute bottom-1 right-1 flex size-6 touch-none cursor-ns-resize items-center justify-center rounded text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" onPointerDown={onResizeStart} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} onLostPointerCapture={onResizeEnd} onKeyDown={onResizeKey}><Grip className="size-4" aria-hidden="true" /></button>}
     </Collapsible>
   )
 }
