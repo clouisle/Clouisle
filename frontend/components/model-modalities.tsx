@@ -40,13 +40,13 @@ export function ModelModalities({ capabilities, modelType }: { capabilities?: Re
   const renderModalities = (items: Modality[], direction: string) => items.map((item, index) => {
     const { icon: Icon, color } = modalities[item]
     const label = `${direction}: ${t(`modality.${item}`)}`
-    return <span key={`${item}-${index}`} title={label} aria-label={label} className={`inline-flex rounded p-1 ${color}`}><Icon aria-hidden="true" className="h-3 w-3" /></span>
+    return <span key={`${item}-${index}`} title={label} aria-label={label} className={`inline-flex shrink-0 rounded p-1 ${color}`}><Icon aria-hidden="true" className="h-3 w-3" /></span>
   })
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="inline-flex items-center gap-1 whitespace-nowrap">
       {renderModalities(input, t('inputModalities'))}
-      <ArrowRight aria-hidden="true" className="h-3 w-3 text-muted-foreground" />
+      <ArrowRight aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground" />
       {renderModalities(output, t('outputModalities'))}
     </div>
   )

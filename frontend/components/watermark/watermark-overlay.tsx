@@ -32,8 +32,18 @@ export function WatermarkOverlay({
 }: WatermarkOverlayProps) {
   const rawPatternId = React.useId()
   // useId() contains ":" which breaks url(#...) references.
-  const patternId = `watermark-${rawPatternId.replace(/[^a-zA-Z0-9]/g, '')}`
-
+  const basePatternId = `watermark-${rawPatternId.replace(/[^a-zA-Z0-9]/g, '')}`
+  // Include a hash of text and geometry so that whenever text (like time) updates,
+  // a new pattern ID is generated. This forces WebKit and Chromium to invalidate
+  // their cached SVG pattern tile bitmap and repaint the rect fill immediately.
+  const patternId = React.useMemo(() => {
+    let hash = 0
+    const str = `${text}:${fontSize}:${rotation}:${gap}`
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
+    }
+    return `${basePatternId}-${Math.abs(hash).toString(36)}`
+  }, [basePatternId, text, fontSize, rotation, gap])
   // Measure the real text advance instead of guessing: the rotated bounding box and therefore
   // the pitch depend on it, and a wrong guess produces either overlap or uneven gaps.
   const measureRef = React.useRef<SVGTextElement>(null)
@@ -140,6 +150,7 @@ export function WatermarkOverlay({
         </text>
         <defs>
           <pattern
+            key={patternId}
             id={patternId}
             width={tileWidth}
             height={pitchY}
@@ -161,7 +172,7 @@ export function WatermarkOverlay({
             ))}
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+        <rect key={patternId} width="100%" height="100%" fill={`url(#${patternId})`} />
       </svg>
     </div>
   )

@@ -25,3 +25,8 @@ test.each([
 test('unknown types without declarations show an unknown marker', () => {
   expect(renderToStaticMarkup(<ModelModalities modelType="unknown" capabilities={{ input_modalities: ['invalid'] }} />)).toContain('—')
 })
+
+test('renders an inline non-wrapping flex layout to prevent visual distortion in tables', () => {
+  const html = renderToStaticMarkup(<ModelModalities modelType="chat" />)
+  expect(html).toContain('inline-flex items-center gap-1 whitespace-nowrap')
+})
