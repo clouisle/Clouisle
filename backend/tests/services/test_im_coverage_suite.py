@@ -904,3 +904,207 @@ async def test_im_service_residual_branches() -> None:
         ),
     ):
         await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
+
+
+@pytest.mark.asyncio
+async def test_im_service_more_detailed_branches() -> None:
+    team_id = uuid4()
+    u1, u2 = uuid4(), uuid4()
+    conv_id = uuid4()
+
+    # 1. send_direct_message 当 sender 是 user2_id (receiver 为 user1_id)
+    conv = MagicMock(
+        id=conv_id,
+        team_id=team_id,
+        type=ImConversationType.DIRECT,
+        user1_id=u1,
+        user2_id=u2,
+        latest_seq=1,
+        save=AsyncMock(),
+        created_at=now_utc(),
+        last_message_at=now_utc(),
+    )
+    mock_msg = MagicMock(
+        id=uuid4(),
+        conversation_id=conv_id,
+        sender_id=u2,
+        seq=2,
+        msg_type=ImMessageType.TEXT,
+        content="hello from u2",
+        created_at=now_utc(),
+    )
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch("app.services.im_redis.get_cached_message_result", return_value=None),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=None)),
+        ),
+        patch("app.services.im_redis.generate_next_seq", return_value=2),
+        patch("app.models.im.ImMessage.create", return_value=mock_msg),
+        patch(
+            "app.services.im_redis.increment_user_unread", new_callable=AsyncMock
+        ) as mock_incr,
+        patch("app.services.im_redis.publish_im_event", new_callable=AsyncMock),
+    ):
+        msg = await im_service.send_direct_message(conv_id, u2, "hello from u2")
+        assert msg.id == mock_msg.id
+        mock_incr.assert_called_once_with(u1, conv_id, 1)  # receiver 为 u1
+
+    # 2. send_direct_message 幂等命中 DB 已有
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch("app.services.im_redis.get_cached_message_result", return_value=None),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=mock_msg)),
+        ),
+    ):
+        msg = await im_service.send_direct_message(
+            conv_id, u2, "hello", client_msg_id="uuid-db"
+        )
+        assert msg.id == mock_msg.id
+
+    # 3. get_messages 合法单聊 (用户为 user2) 与合法系统会话
+    fake_query = MagicMock()
+    fake_query.filter = MagicMock(return_value=fake_query)
+    fake_query.order_by = MagicMock(return_value=fake_query)
+    fake_query.limit = MagicMock(return_value=fake_query)
+    fake_query.all = AsyncMock(return_value=[mock_msg])
+
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch("app.models.im.ImMessage.filter", return_value=fake_query),
+    ):
+        msgs, has_more = await im_service.get_messages(conv_id, u2)
+        assert len(msgs) == 1
+
+    sys_conv = MagicMock(id=uuid4(), type=ImConversationType.SYSTEM, user1_id=u1)
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=sys_conv)),
+        ),
+        patch("app.models.im.ImMessage.filter", return_value=fake_query),
+    ):
+        msgs, has_more = await im_service.get_messages(sys_conv.id, u1)
+        assert len(msgs) == 1
+
+    # 4. mark_conversation_read 当 target_seq <= last_read_seq (不更新游标)
+    part = MagicMock(last_read_seq=10, save=AsyncMock())
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=part)),
+        ),
+        patch("app.services.im_redis.mark_conversation_read_in_cache", return_value=0),
+        patch("app.services.im_redis.publish_im_event", new_callable=AsyncMock),
+    ):
+        cleared = await im_service.mark_conversation_read(conv_id, u1, up_to_seq=5)
+        assert cleared == 0
+        part.save.assert_not_called()
+
+    # 5. list_conversations 命中 Redis 缓存各会话未读数分支
+    p_dir = MagicMock(
+        conversation=conv, is_pinned=False, is_muted=False, last_read_seq=1
+    )
+    with (
+        patch(
+            "app.services.im_service.get_or_create_system_conversation",
+            return_value=sys_conv,
+        ),
+        patch(
+            "app.services.im_system_bridge.sync_legacy_notifications_for_user",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=MagicMock(
+                prefetch_related=MagicMock(
+                    return_value=AsyncMock(all=AsyncMock(return_value=[p_dir]))
+                )
+            ),
+        ),
+        patch(
+            "app.services.im_redis.get_user_unread_counts",
+            return_value=(5, {str(conv_id): 5}),
+        ),  # 命中缓存
+        patch(
+            "app.models.user.User.filter",
+            return_value=AsyncMock(all=AsyncMock(return_value=[])),
+        ),
+    ):
+        items = await im_service.list_conversations(team_id, u1)
+        assert len(items) == 1
+        assert items[0]["unread_count"] == 5
+
+    # 6. sync_legacy_notifications_for_user 当所有通知已读 (unread_count == 0)
+    n1 = Notification(
+        id=uuid4(),
+        scope=NotificationScope.GLOBAL,
+        type="notice",
+        title="Title",
+        content="Content",
+        level=NotificationLevel.LOW,
+        created_at=now_utc(),
+    )
+    n1.id = uuid4()
+    part_all_read = MagicMock(last_read_seq=0, save=AsyncMock())
+    with (
+        patch("app.services.im_system_bridge.in_transaction", fake_tx),
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+        ),
+        patch(
+            "app.models.notification.Notification.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=MagicMock(
+                        limit=MagicMock(
+                            return_value=AsyncMock(all=AsyncMock(return_value=[n1]))
+                        )
+                    )
+                )
+            ),
+        ),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[n1.id])),
+        ),
+        patch("app.models.im.ImMessage.create", new_callable=AsyncMock),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=part_all_read)),
+        ),
+        patch(
+            "app.services.im_redis.increment_user_unread", new_callable=AsyncMock
+        ) as mock_incr_unread,
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
+        mock_incr_unread.assert_not_called()  # 全部已读，不增加未读数
+        assert part_all_read.last_read_seq == 1
+
+    # 7. bridge_notification_to_im 异常安全捕获
+    with patch(
+        "app.services.im_service.send_system_message",
+        side_effect=Exception("bridge error"),
+    ):
+        await im_system_bridge.bridge_notification_to_im(n1)  # 不抛异常
