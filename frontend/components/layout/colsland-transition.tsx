@@ -88,19 +88,19 @@ export function ColslandTransitionProvider({ children }: { children: React.React
 
   const context = React.useMemo(() => ({ registerAnchor: setAnchor, registerPage: setPageVisible, enter }), [enter])
   const visible = isPage ? pageVisible || departing : Boolean(anchor) || departing
-  const corner = isPage && pageVisible
+  const onPage = isPage && pageVisible
 
   return (
     <ColslandTransitionContext.Provider value={context}>
       {children}
       {visible && (
-        <div className={cn('colsland-positioner', corner ? 'colsland-positioner-corner' : 'colsland-positioner-nav', flying && 'colsland-positioner-flying')}
+        <div className={cn('colsland-positioner', onPage ? 'colsland-positioner-corner' : 'colsland-positioner-nav', flying && 'colsland-positioner-flying')}
           style={{ '--colsland-x': `${point.x}px`, '--colsland-y': `${point.y}px` } as React.CSSProperties}>
-          <button type="button" data-testid="nav-colsland" aria-label={t('nav.colsland')} aria-current={corner ? 'page' : undefined}
+          <button type="button" data-testid="nav-colsland" aria-label={t('nav.colsland')} aria-current={onPage ? 'page' : undefined}
             onClick={() => enter(true)} onPointerEnter={() => setFocused(true)} onPointerLeave={() => setFocused(false)}
             onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
             {rippling && <span className="colsland-ripple" data-testid="colsland-ripple" aria-hidden="true" />}
-            <ColslandBall focused={focused && !corner} responseKey={response} />
+            <ColslandBall focused={focused && !onPage} responseKey={response} />
           </button>
         </div>
       )}
