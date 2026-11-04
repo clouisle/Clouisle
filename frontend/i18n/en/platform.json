@@ -16,6 +16,10 @@
       "untitled": "Untitled",
       "unsaved": "Not saved · refresh or leaving this page will discard changes"
     },
+    "colslandProjects": {
+      "select": "Select project",
+      "empty": "No projects available"
+    },
     "profile": {
       "title": "Profile",
       "teamsDescription": "You have joined {count} teams"

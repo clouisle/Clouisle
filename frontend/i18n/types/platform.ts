@@ -18,6 +18,10 @@ export type PlatformMessages = {
       untitled: string
       unsaved: string
     }
+    colslandProjects: {
+      select: string
+      empty: string
+    }
     profile: {
       title: string
       teamsDescription: string

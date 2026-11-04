@@ -16,6 +16,10 @@
       "untitled": "无标题",
       "unsaved": "不会保存 · 刷新或离开页面后内容将丢失"
     },
+    "colslandProjects": {
+      "select": "选择项目",
+      "empty": "暂无可用项目"
+    },
     "profile": {
       "title": "个人资料",
       "teamsDescription": "您已加入 {count} 个团队"
