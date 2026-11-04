@@ -1274,3 +1274,160 @@ async def test_im_exact_branch_gap_closure() -> None:
     ):
         await im_system_bridge.bridge_notification_to_im(notif_team_empty)
         mock_send_team.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_final_branch_push() -> None:
+    fake_user = MagicMock(id=uuid4(), username="alice")
+    mock_conv_no_peer = MagicMock(
+        id=uuid4(),
+        type=MagicMock(value="direct"),
+        team_id=uuid4(),
+        user1_id=fake_user.id,
+        user2_id=fake_user.id,
+        latest_seq=0,
+        last_message_content=None,
+        last_message_at=None,
+        created_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+        updated_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+    )
+    with (
+        patch("app.api.v1.endpoints.im.check_team_access", return_value=None),
+        patch(
+            "app.services.im_service.get_or_create_direct_conversation",
+            return_value=mock_conv_no_peer,
+        ),
+        patch(
+            "app.models.user.User.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=None)),
+        ),
+    ):
+        from app.api.v1.endpoints import im as im_endpoints
+        from app.schemas.im import DirectConversationCreate
+
+        resp = await im_endpoints.create_or_get_direct_conversation(
+            DirectConversationCreate(team_id=uuid4(), target_user_id=uuid4()),
+            current_user=fake_user,
+        )
+        assert resp["data"].peer is None
+
+    fake_redis = AsyncMock()
+    fake_redis.incr = AsyncMock(return_value=1)
+    with (
+        patch("app.services.im_redis.get_redis", return_value=fake_redis),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=AsyncMock(first=AsyncMock(return_value=None))
+                )
+            ),
+        ),
+    ):
+        seq = await im_redis.generate_next_seq(uuid4())
+        assert seq == 1
+
+    fake_redis.get = AsyncMock(return_value=None)
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        assert await im_redis.get_cached_message_result("empty_raw_key") is None
+
+    fake_pipe = AsyncMock()
+    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        await im_redis.rebuild_unread_cache(uuid4(), 0, {})
+        fake_pipe.set.assert_called_once()
+
+    notif = Notification(
+        id=uuid4(),
+        scope=NotificationScope.USER,
+        type="notice",
+        title="T",
+        content="C",
+        level=NotificationLevel.LOW,
+    )
+    notif.user_id = uuid4()
+    notif.team_id = None
+    with (
+        patch(
+            "app.models.user.TeamMember.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=None)),
+        ),
+        patch(
+            "app.services.im_service.send_system_message", new_callable=AsyncMock
+        ) as mock_send,
+    ):
+        await im_system_bridge.bridge_notification_to_im(notif)
+        mock_send.assert_not_called()
+
+    conv = MagicMock(id=uuid4(), latest_seq=0, save=AsyncMock())
+    n = Notification(
+        id=uuid4(),
+        scope=NotificationScope.GLOBAL,
+        type="notice",
+        title="T",
+        content="C",
+        level=NotificationLevel.LOW,
+        created_at=now_utc(),
+    )
+    n.id = uuid4()
+    with (
+        patch("app.services.im_system_bridge.in_transaction", fake_tx),
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+        ),
+        patch(
+            "app.models.notification.Notification.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=MagicMock(
+                        limit=MagicMock(
+                            return_value=AsyncMock(all=AsyncMock(return_value=[n]))
+                        )
+                    )
+                )
+            ),
+        ),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch("app.models.im.ImMessage.create", new_callable=AsyncMock),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=None)),
+        ),
+        patch("app.services.im_redis.increment_user_unread", new_callable=AsyncMock),
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(uuid4(), uuid4())
+
+    foreign_conv = MagicMock(
+        id=uuid4(), type=ImConversationType.DIRECT, user1_id=uuid4(), user2_id=uuid4()
+    )
+    with patch(
+        "app.models.im.ImConversation.filter",
+        return_value=AsyncMock(first=AsyncMock(return_value=foreign_conv)),
+    ):
+        with pytest.raises(BusinessError):
+            await im_service.get_messages(foreign_conv.id, uuid4())
+
+    foreign_sys_conv = MagicMock(
+        id=uuid4(), type=ImConversationType.SYSTEM, user1_id=uuid4()
+    )
+    with patch(
+        "app.models.im.ImConversation.filter",
+        return_value=AsyncMock(first=AsyncMock(return_value=foreign_sys_conv)),
+    ):
+        with pytest.raises(BusinessError):
+            await im_service.get_messages(foreign_sys_conv.id, uuid4())
+
+    req = AsyncMock()
+    req.is_disconnected = AsyncMock(return_value=True)
+    with patch("app.core.redis.get_redis", return_value=fake_redis):
+        resp = await im_endpoints.stream_im_events(req, current_user=fake_user)
+        chunks = [c async for c in resp.body_iterator]
+        assert len(chunks) == 1
