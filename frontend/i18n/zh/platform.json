@@ -148,12 +148,12 @@
           "description": "管理可用的工具和 Skills"
         }
       },
-      "recentItems": "最近项目",
+      "recentItems": "最近应用",
       "recentItemTypes": {
         "agent": "智能体",
         "workflow": "工作流"
       },
-      "noRecentItems": "暂无最近项目",
+      "noRecentItems": "暂无最近应用",
       "createFirst": "创建您的第一个应用",
       "quickStart": "快速开始",
       "quickStartDescription": "选择一个功能开始使用",
