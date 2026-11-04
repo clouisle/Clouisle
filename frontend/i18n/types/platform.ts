@@ -27,8 +27,8 @@ export type PlatformMessages = {
       selectProject: string
     }
     colslandCard: {
+      panels: string
       resize: string
-      resizeHint: string
     }
     profile: {
       title: string

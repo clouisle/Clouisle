@@ -25,8 +25,8 @@
       "selectProject": "选择项目后查看资产。"
     },
     "colslandCard": {
-      "resize": "调整{title}卡片大小",
-      "resizeHint": "拖动或使用方向键调整大小"
+      "panels": "项目面板",
+      "resize": "调整项目面板高度"
     },
     "profile": {
       "title": "个人资料",

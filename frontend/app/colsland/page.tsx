@@ -4,8 +4,7 @@ import * as React from 'react'
 import { AuthGuard } from '@/components/auth-guard'
 import { useColslandTransition } from '@/components/layout/colsland-transition'
 import { BlockEditor } from './_components/block-editor'
-import { ProjectSelector } from './_components/project-selector'
-import { ProjectAssets } from './_components/project-assets'
+import { ProjectCardStack } from './_components/project-card-stack'
 
 function ColslandContent() {
   const { registerPage } = useColslandTransition()
@@ -13,7 +12,7 @@ function ColslandContent() {
     registerPage(true)
     return () => registerPage(false)
   }, [registerPage])
-  return <main className="min-h-screen bg-background"><div className="space-y-4 px-4 pt-4 sm:px-6 lg:fixed lg:left-6 lg:top-6 lg:z-20 lg:max-h-[calc(100dvh-3rem)] lg:w-[min(400px,calc(100vw-3rem))] lg:overflow-y-auto lg:px-0 lg:pt-0"><ProjectSelector /><ProjectAssets /></div><div className="lg:pl-[26.5rem]"><BlockEditor /></div></main>
+  return <main className="min-h-screen bg-background"><div className="px-4 pt-4 sm:px-6 lg:fixed lg:left-6 lg:top-6 lg:z-20 lg:w-64 lg:px-0 lg:pt-0"><ProjectCardStack /></div><div className="lg:pl-72"><BlockEditor /></div></main>
 }
 
 export default function ColslandPage() {

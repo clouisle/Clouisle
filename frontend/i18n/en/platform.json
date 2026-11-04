@@ -25,8 +25,8 @@
       "selectProject": "Select a project to view its assets."
     },
     "colslandCard": {
-      "resize": "Resize {title} card",
-      "resizeHint": "Drag or use arrow keys to resize"
+      "panels": "Project panels",
+      "resize": "Resize project panels"
     },
     "profile": {
       "title": "Profile",
