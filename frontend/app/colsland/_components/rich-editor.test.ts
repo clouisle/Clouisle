@@ -47,4 +47,24 @@ describe('rich document editor', () => {
       expect(editor.document[1].content).toEqual([])
     } finally { cleanup() }
   })
+
+  test('Enter starts a new list item instead of a line break inside a list', () => {
+    const { editor, cleanup } = createEditor()
+    try {
+      editor.replaceBlocks(editor.document, [
+        { type: 'bulletListItem', content: '模块规划' },
+        { type: 'paragraph', content: '普通段落' },
+      ])
+      editor.setTextCursorPosition(editor.document[0], 'end')
+      editor.focus()
+      const dom = editor.prosemirrorView.dom
+      dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      expect(editor.document.map(block => block.type)).toEqual(['bulletListItem', 'bulletListItem', 'paragraph'])
+      expect(editor.document[1].content).toEqual([])
+      editor.setTextCursorPosition(editor.document[2], 'end')
+      dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      expect(editor.document).toHaveLength(3)
+      expect(editor.document[2].content).toMatchObject([{ text: '普通段落\n' }])
+    } finally { cleanup() }
+  })
 })
