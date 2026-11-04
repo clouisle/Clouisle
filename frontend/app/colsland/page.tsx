@@ -13,7 +13,7 @@ function ColslandContent() {
     registerPage(true)
     return () => registerPage(false)
   }, [registerPage])
-  return <main className="min-h-screen bg-background pt-24"><ProjectSelector /><div className="px-4 pt-4 lg:fixed lg:left-6 lg:top-28 lg:w-64 lg:px-0 lg:pt-0"><ProjectAssets /></div><div className="lg:pl-72"><BlockEditor /></div></main>
+  return <main className="min-h-screen bg-background"><div className="space-y-4 px-4 pt-4 sm:px-6 lg:fixed lg:left-6 lg:top-6 lg:w-64 lg:px-0 lg:pt-0"><ProjectSelector /><ProjectAssets /></div><div className="lg:pl-72"><BlockEditor /></div></main>
 }
 
 export default function ColslandPage() {

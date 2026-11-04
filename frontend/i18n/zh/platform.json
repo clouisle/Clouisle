@@ -17,7 +17,7 @@
       "unsaved": "不会保存 · 刷新或离开页面后内容将丢失"
     },
     "colslandProjects": {
-      "select": "选择项目",
+      "title": "项目",
       "empty": "暂无可用项目"
     },
     "colslandAssets": {

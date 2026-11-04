@@ -19,7 +19,7 @@ export type PlatformMessages = {
       unsaved: string
     }
     colslandProjects: {
-      select: string
+      title: string
       empty: string
     }
     colslandAssets: {

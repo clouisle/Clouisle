@@ -17,7 +17,7 @@
       "unsaved": "Not saved · refresh or leaving this page will discard changes"
     },
     "colslandProjects": {
-      "select": "Select project",
+      "title": "Projects",
       "empty": "No projects available"
     },
     "colslandAssets": {
