@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { ConversationList } from './conversation-list'
 import { NewChatDialog } from './new-chat-dialog'
 import { ChatWindow } from './chat-window'
+import { MessageCenterDialog } from './message-center-dialog'
 import { type ImConversation } from '@/lib/api'
 import { stripMarkdown } from '@/lib/utils'
 
@@ -24,6 +25,9 @@ mock.module('@/components/ui/dialog', () => ({
 }))
 mock.module('streamdown', () => ({
   Streamdown: ({ children }: { children: React.ReactNode }) => <div data-testid="streamdown">{children}</div>,
+}))
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => ({ currentTeam: { id: 'team-1', name: 'Team One' } }),
 }))
 
 
@@ -313,4 +317,20 @@ test('ChatWindow renders date divider when messages span across different days',
     (node) => node.props.children === 'earliestMessageNotice'
   )
   expect(earliestNotice.length).toBe(1)
+})
+
+test('MessageCenterDialog renders and mounts correctly when open', async () => {
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(
+      <MessageCenterDialog
+        open={true}
+        onOpenChange={() => {}}
+        currentUserId="user-alice"
+      />
+    )
+    await Promise.resolve()
+  })
+
+  expect(renderer.root).toBeTruthy()
 })
