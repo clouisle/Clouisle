@@ -6,6 +6,7 @@ import { PathnameContext, SearchParamsContext } from 'next/dist/shared/lib/hooks
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { authApi } from '@/lib/api'
 import ColslandPage from './page'
+import ColslandLayout, { viewport } from './layout'
 import platformMessages from '@/i18n/en/platform.json'
 
 const router = { back: mock(() => {}), forward: mock(() => {}), refresh: mock(() => {}), push: mock(() => {}), replace: mock(() => {}), prefetch: mock(() => Promise.resolve()) }
@@ -42,5 +43,10 @@ describe('standalone Colsland page', () => {
     expect(document.querySelector('input[aria-label="Document title"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="platform-header-nav"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-colsland"]')).toBeNull()
+  })
+
+  test('renders the layout and exports the viewport configuration', () => {
+    expect(viewport.interactiveWidget).toBe('resizes-content')
+    expect(ColslandLayout({ children: 'content' })).toBe('content')
   })
 })

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { BlockNoteEditor } from '@blocknote/core'
 import { colslandShortcuts } from './editor-shortcuts'
+import { defaultEditorIntegrations } from './editor-integrations'
 
 beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register({ url: 'http://localhost' }) })
 afterAll(async () => { if (GlobalRegistrator.isRegistered) await GlobalRegistrator.unregister() })
@@ -15,6 +16,10 @@ function createEditor() {
 }
 
 describe('rich document editor', () => {
+  test('exports default editor integrations', () => {
+    expect(defaultEditorIntegrations).toEqual({})
+  })
+
   test('preserves rich text, links and table data across undo and redo', () => {
     const { editor, cleanup } = createEditor()
     try {

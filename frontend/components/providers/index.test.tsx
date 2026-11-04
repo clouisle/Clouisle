@@ -24,6 +24,9 @@ mock.module('@/contexts/site-settings-context', () => ({
 mock.module('@/components/dynamic-favicon', () => ({
   DynamicFavicon: () => <favicon />,
 }))
+mock.module('@/components/layout/colsland-transition', () => ({
+  ColslandTransitionProvider: ({ children }: { children: ReactNode }) => <colsland>{children}</colsland>,
+}))
 
 const { Providers } = await import('./index')
 
@@ -33,11 +36,13 @@ test('nests application providers and renders the dynamic favicon', () => {
   const tree = Providers({ children: 'content' }) as Tree
   const settings = tree.props.children as Tree
   const site = settings.props.children as Tree
-  const [favicon, content] = site.props.children as [Tree, string]
+  const [favicon, transition] = site.props.children as [Tree, Tree]
+  const content = transition.props.children as string
 
   expect((tree.type as { name?: string }).name).toBe('ThemeProvider')
   expect((settings.type as { name?: string }).name).toBe('SettingsProvider')
   expect((site.type as { name?: string }).name).toBe('SiteSettingsProvider')
   expect((favicon.type as { name?: string }).name).toBe('DynamicFavicon')
+  expect((transition.type as { name?: string }).name).toBe('ColslandTransitionProvider')
   expect(content).toBe('content')
 })

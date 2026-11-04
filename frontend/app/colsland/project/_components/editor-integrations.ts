@@ -6,3 +6,5 @@ export interface ColslandEditorIntegrations {
   databaseView?: React.ComponentType<{ documentId: string }>
   collaboration?: React.ComponentType<{ documentId: string }>
 }
+
+export const defaultEditorIntegrations: ColslandEditorIntegrations = {}
