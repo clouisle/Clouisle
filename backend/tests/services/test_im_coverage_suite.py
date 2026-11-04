@@ -1108,3 +1108,169 @@ async def test_im_service_more_detailed_branches() -> None:
         side_effect=Exception("bridge error"),
     ):
         await im_system_bridge.bridge_notification_to_im(n1)  # 不抛异常
+
+
+@pytest.mark.asyncio
+async def test_im_exact_branch_gap_closure() -> None:
+    team_id = uuid4()
+    u1, u2 = uuid4(), uuid4()
+    conv_id = uuid4()
+
+    # 1. _sort_user_pair 分支覆盖 (u1 > u2)
+    p1, p2 = (
+        im_service._sort_user_pair(u2, u1)
+        if str(u1) < str(u2)
+        else im_service._sort_user_pair(u1, u2)
+    )
+    assert p1 != p2
+
+    # 2. send_system_message 锁内二次检查 client_msg_id 已存在
+    sys_conv = MagicMock(id=conv_id, save=AsyncMock())
+    existing_sys_msg = MagicMock(id=uuid4())
+    with (
+        patch(
+            "app.services.im_service.get_or_create_system_conversation",
+            return_value=sys_conv,
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            side_effect=[
+                AsyncMock(first=AsyncMock(return_value=None)),  # 锁外查空
+                AsyncMock(first=AsyncMock(return_value=existing_sys_msg)),  # 锁内命中
+            ],
+        ),
+    ):
+        msg = await im_service.send_system_message(
+            team_id, u1, "text", client_msg_id="dupe-sys"
+        )
+        assert msg.id == existing_sys_msg.id
+
+    # 3. search_messages 搜索命中但没有消息
+    conv_obj = MagicMock(id=conv_id, team_id=team_id, type=ImConversationType.SYSTEM)
+    part_obj = MagicMock(conversation=conv_obj)
+    with (
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=MagicMock(
+                prefetch_related=MagicMock(
+                    return_value=AsyncMock(all=AsyncMock(return_value=[part_obj]))
+                )
+            ),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=MagicMock(
+                        limit=MagicMock(
+                            return_value=AsyncMock(all=AsyncMock(return_value=[]))
+                        )
+                    )
+                )
+            ),
+        ),
+    ):
+        assert await im_service.search_messages(team_id, u1, "notfound") == []
+
+    # 4. search_messages 搜索命中包含系统会话消息（peer 为 None）
+    sys_msg = MagicMock(
+        id=uuid4(),
+        conversation_id=conv_id,
+        seq=1,
+        content="matched text",
+        msg_type=ImMessageType.SYSTEM_NOTICE,
+        created_at=now_utc(),
+    )
+    with (
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=MagicMock(
+                prefetch_related=MagicMock(
+                    return_value=AsyncMock(all=AsyncMock(return_value=[part_obj]))
+                )
+            ),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=MagicMock(
+                        limit=MagicMock(
+                            return_value=AsyncMock(
+                                all=AsyncMock(return_value=[sys_msg])
+                            )
+                        )
+                    )
+                )
+            ),
+        ),
+    ):
+        res = await im_service.search_messages(team_id, u1, "matched")
+        assert len(res) == 1
+        assert res[0]["conversation_type"] == "system"
+        assert res[0]["peer"] is None
+
+    # 5. sync_legacy_notifications_for_user 中 conv 为 None，或二次检查时已存在
+    with patch(
+        "app.models.im.ImConversation.filter",
+        return_value=AsyncMock(first=AsyncMock(return_value=None)),
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(
+            team_id, u1
+        )  # conv 为 None 直接返回
+
+    with (
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=sys_conv)),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            side_effect=[
+                AsyncMock(exists=AsyncMock(return_value=False)),  # 锁外查空
+                AsyncMock(
+                    exists=AsyncMock(return_value=True)
+                ),  # 锁内二次检查发现已存在
+            ],
+        ),
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
+
+    # 6. bridge_notification_to_im title 已经在 content 中，以及 team scope 成员为空
+    notif_title_in = Notification(
+        id=uuid4(),
+        scope=NotificationScope.USER,
+        type="notice",
+        title="Hello",
+        content="Hello world",
+        level=NotificationLevel.LOW,
+    )
+    notif_title_in.user_id = u1
+    notif_title_in.team_id = team_id
+    with patch(
+        "app.services.im_service.send_system_message", new_callable=AsyncMock
+    ) as mock_send:
+        await im_system_bridge.bridge_notification_to_im(notif_title_in)
+        mock_send.assert_called_once()
+        assert mock_send.call_args.kwargs["content"] == "Hello world"
+
+    notif_team_empty = Notification(
+        id=uuid4(),
+        scope=NotificationScope.TEAM,
+        type="notice",
+        title="T",
+        content="C",
+        level=NotificationLevel.LOW,
+    )
+    notif_team_empty.team_id = team_id
+    with (
+        patch(
+            "app.models.user.TeamMember.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch(
+            "app.services.im_service.send_system_message", new_callable=AsyncMock
+        ) as mock_send_team,
+    ):
+        await im_system_bridge.bridge_notification_to_im(notif_team_empty)
+        mock_send_team.assert_not_called()
