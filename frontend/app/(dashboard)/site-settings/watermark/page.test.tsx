@@ -227,4 +227,43 @@ describe('SiteSettingsWatermarkPage', () => {
     await act(async () => button(renderer, 'watermarkColorPick')!.props.onClick())
     expect(input(renderer, 'watermarkColor').props.value).toBe('#000000')
   })
+
+  test('resyncs preview timestamp when the tab becomes visible', async () => {
+    const originalDate = globalThis.Date
+    let mockTime = new Date(2026, 10, 4, 10, 0, 0).getTime()
+    class MockDate extends originalDate {
+      constructor(...args: ConstructorParameters<typeof Date>) {
+        if (args.length === 0) super(mockTime)
+        else super(...args)
+      }
+      static override now() {
+        return mockTime
+      }
+    }
+    globalThis.Date = MockDate as unknown as DateConstructor
+
+    try {
+      getWatermark.mockImplementationOnce(() =>
+        Promise.resolve({ ...loadedSettings, watermark_content: '{username} {time}' })
+      )
+      const renderer = await render()
+      const initialText = renderer.root
+        .findByProps({ 'data-testid': 'watermark-overlay' })
+        .findAllByType('text')[0]
+        .children.join('')
+      expect(initialText).toContain('10:00')
+
+      mockTime = new Date(2026, 10, 4, 10, 5, 0).getTime()
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      const updatedText = renderer.root
+        .findByProps({ 'data-testid': 'watermark-overlay' })
+        .findAllByType('text')[0]
+        .children.join('')
+      expect(updatedText).toContain('10:05')
+    } finally {
+      globalThis.Date = originalDate
+    }
+  })
 })

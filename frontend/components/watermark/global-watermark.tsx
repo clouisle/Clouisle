@@ -5,8 +5,8 @@ import { useSiteSettings } from '@/contexts/site-settings-context'
 import { authApi, type User } from '@/lib/api'
 import { DEFAULT_WATERMARK_CONTENT, renderWatermarkText } from '@/lib/watermark'
 import { WatermarkOverlay } from '@/components/watermark/watermark-overlay'
-
-const CLOCK_INTERVAL_MS = 60_000
+const MINUTE_ROLLOVER_BUFFER_MS = 50
+const FALLBACK_CHECK_MS = 5_000
 
 function readAccessToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -58,20 +58,56 @@ export function GlobalWatermark() {
     }
   }, [enabled, token])
 
-  // Keep {date} and {time} current for a tab that stays open across a minute or day boundary.
+  // Keep {date} and {time} current across minute and day boundaries.
+  // Ticks precisely at the minute rollover (:00.050), checks periodically as fallback,
+  // and syncs immediately when returning to the tab.
   React.useEffect(() => {
     if (!enabled) return
-    const tick = () => setNow(new Date())
-    const timer = setInterval(tick, CLOCK_INTERVAL_MS)
+
+    let timer: NodeJS.Timeout | number | undefined
+    let cancelled = false
+
+    const tick = () => {
+      setNow(new Date())
+    }
+
+    const scheduleTick = () => {
+      const nowMs = Date.now()
+      const delay = Math.max(50, 60_000 - (nowMs % 60_000) + MINUTE_ROLLOVER_BUFFER_MS)
+      timer = setTimeout(() => {
+        if (cancelled) return
+        tick()
+        scheduleTick()
+      }, delay)
+    }
+
+    scheduleTick()
+
+    let lastMinute = Math.floor(Date.now() / 60_000)
+    const fallbackInterval = setInterval(() => {
+      const currentMinute = Math.floor(Date.now() / 60_000)
+      if (currentMinute !== lastMinute) {
+        lastMinute = currentMinute
+        tick()
+      }
+    }, FALLBACK_CHECK_MS)
+
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') tick()
+      if (document.visibilityState === 'visible') {
+        lastMinute = Math.floor(Date.now() / 60_000)
+        tick()
+        clearTimeout(timer)
+        scheduleTick()
+      }
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibilityChange)
     }
 
     return () => {
-      clearInterval(timer)
+      cancelled = true
+      clearTimeout(timer)
+      clearInterval(fallbackInterval)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibilityChange)
       }

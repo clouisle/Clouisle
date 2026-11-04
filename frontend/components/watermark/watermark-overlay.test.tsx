@@ -96,4 +96,18 @@ describe('WatermarkOverlay', () => {
     expect(render({ ...BASE, opacity: 10 }).layer.props.style.color).toBe('var(--foreground)')
     expect(render({ ...BASE, color: '#ff0000' }).layer.props.style.color).toBe('#ff0000')
   })
+
+  test('updates patternId and rect fill when text changes to invalidate browser SVG paint cache', () => {
+    const first = render({ ...BASE, text: 'alice 2026-11-04 17:51' })
+    const firstPatternId = first.root.findByType('pattern').props.id
+    const firstFill = first.root.findByType('rect').props.fill
+
+    const second = render({ ...BASE, text: 'alice 2026-11-04 17:52' })
+    const secondPatternId = second.root.findByType('pattern').props.id
+    const secondFill = second.root.findByType('rect').props.fill
+
+    expect(firstPatternId).not.toBe(secondPatternId)
+    expect(firstFill).toBe(`url(#${firstPatternId})`)
+    expect(secondFill).toBe(`url(#${secondPatternId})`)
+  })
 })

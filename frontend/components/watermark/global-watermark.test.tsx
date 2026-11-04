@@ -48,6 +48,13 @@ const installGlobals = () => {
       if (type === 'storage') storageListeners.delete(handler)
     },
   } as unknown as Window & typeof globalThis
+  if (typeof globalThis.document === 'undefined') {
+    globalThis.document = {
+      visibilityState: 'visible',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as Document & typeof globalThis
+  }
 }
 
 const setToken = (token: string | null, notify = false) => {
@@ -159,5 +166,36 @@ describe('GlobalWatermark', () => {
     await flush()
 
     expect(renderer.root.findAllByProps({ 'data-testid': 'watermark-overlay' })).toHaveLength(0)
+  })
+
+  test('updates the watermark timestamp when returning to the tab', async () => {
+    const originalDate = globalThis.Date
+    let mockTime = new Date(2026, 10, 4, 10, 0, 0).getTime()
+    class MockDate extends originalDate {
+      constructor(...args: ConstructorParameters<typeof Date>) {
+        if (args.length === 0) super(mockTime)
+        else super(...args)
+      }
+      static override now() {
+        return mockTime
+      }
+    }
+    globalThis.Date = MockDate as unknown as DateConstructor
+
+    try {
+      const renderer = await render()
+      expect(overlayText(renderer)).toContain('10:00')
+
+      mockTime = new Date(2026, 10, 4, 10, 2, 0).getTime()
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await flush()
+
+      expect(overlayText(renderer)).toContain('10:02')
+      expect(overlayText(renderer)).not.toContain('10:00')
+    } finally {
+      globalThis.Date = originalDate
+    }
   })
 })

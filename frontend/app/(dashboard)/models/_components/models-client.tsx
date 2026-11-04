@@ -451,13 +451,13 @@ export function ModelsClient() {
                   onCheckedChange={toggleSelectAll}
                 />
               </TableHead>
-              <TableHead>{t('modelName')}</TableHead>
-              <TableHead>{t('provider')}</TableHead>
-              <TableHead>{t('modelType')}</TableHead>
-              <TableHead>{t('modelId')}</TableHead>
-              <TableHead>{t('capabilities')}</TableHead>
-              <TableHead>{t('status')}</TableHead>
-              <TableHead>{t('apiKey')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('modelName')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('provider')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('modelType')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('modelId')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('capabilities')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('status')}</TableHead>
+              <TableHead className="whitespace-nowrap">{t('apiKey')}</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -502,15 +502,17 @@ export function ModelsClient() {
                       size={14}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <Badge variant="outline">{getTypeName(model.model_type)}</Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
+                  <TableCell className="font-mono text-sm text-muted-foreground whitespace-nowrap">
                     {model.model_id}
                   </TableCell>
-                  <TableCell><ModelModalities capabilities={model.capabilities} modelType={model.model_type} /></TableCell>
-                  <TableCell>{getStatusBadge(model)}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <ModelModalities capabilities={model.capabilities} modelType={model.model_type} />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{getStatusBadge(model)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {model.has_api_key ? (
                       <Badge variant="default" className="bg-blue-500/10 text-blue-500">
                         {t('configured')}

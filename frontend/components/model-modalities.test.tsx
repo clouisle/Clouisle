@@ -25,3 +25,13 @@ test.each([
 test('unknown types without declarations show an unknown marker', () => {
   expect(renderToStaticMarkup(<ModelModalities modelType="unknown" capabilities={{ input_modalities: ['invalid'] }} />)).toContain('—')
 })
+
+test('renders an inline non-wrapping flex layout with scroll containment to prevent visual distortion', () => {
+  const html = renderToStaticMarkup(<ModelModalities modelType="chat" />)
+  expect(html).toContain('inline-flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap')
+})
+
+test('merges custom className prop', () => {
+  const html = renderToStaticMarkup(<ModelModalities modelType="chat" className="custom-class" />)
+  expect(html).toContain('custom-class')
+})
