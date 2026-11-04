@@ -2,6 +2,7 @@
 
 import { ArrowDownWideNarrow, ArrowRight, AudioLines, Boxes, File, Gavel, Image, Type, Video } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { cn } from '@/lib/utils'
 
 const modalities = {
   text: { icon: Type, color: 'bg-blue-500/10 text-blue-500' },
@@ -28,7 +29,15 @@ const defaults: Record<string, { input: Modality[]; output: Modality[] }> = {
   text_to_video: { input: ['text'], output: ['video'] },
 }
 
-export function ModelModalities({ capabilities, modelType }: { capabilities?: Record<string, unknown> | null; modelType: string }) {
+export function ModelModalities({
+  capabilities,
+  modelType,
+  className,
+}: {
+  capabilities?: Record<string, unknown> | null
+  modelType: string
+  className?: string
+}) {
   const t = useTranslations('models')
   const getModalities = (value: unknown): Modality[] =>
     Array.isArray(value) ? value.filter((item): item is Modality => typeof item === 'string' && Object.hasOwn(modalities, item)) : []
@@ -44,7 +53,7 @@ export function ModelModalities({ capabilities, modelType }: { capabilities?: Re
   })
 
   return (
-    <div className="inline-flex items-center gap-1 whitespace-nowrap">
+    <div className={cn('inline-flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap', className)}>
       {renderModalities(input, t('inputModalities'))}
       <ArrowRight aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground" />
       {renderModalities(output, t('outputModalities'))}

@@ -85,7 +85,20 @@ export default function SiteSettingsWatermarkPage() {
 
   React.useEffect(() => {
     const timer = setInterval(() => setPreviewNow(new Date()), 10_000)
-    return () => clearInterval(timer)
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        setPreviewNow(new Date())
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
+    return () => {
+      clearInterval(timer)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+    }
   }, [])
 
   const loadSettings = React.useCallback(async () => {
