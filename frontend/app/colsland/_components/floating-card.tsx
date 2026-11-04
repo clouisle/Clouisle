@@ -28,7 +28,7 @@ export function FloatingCard({ title, icon, children, open, onOpenChange, resize
       <CollapsibleContent className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 text-xs leading-relaxed text-muted-foreground">
         {children}
       </CollapsibleContent>
-      {open && <button type="button" aria-label={resizeLabel} className="absolute bottom-1 right-1 flex size-6 touch-none cursor-ns-resize items-center justify-center rounded text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" onPointerDown={onResizeStart} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} onLostPointerCapture={onResizeEnd} onKeyDown={onResizeKey}><Grip className="size-4" aria-hidden="true" /></button>}
+      {open && <button type="button" aria-label={resizeLabel} className="absolute bottom-1 right-1 flex size-6 touch-none cursor-nwse-resize items-center justify-center rounded text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" onPointerDown={onResizeStart} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} onLostPointerCapture={onResizeEnd} onKeyDown={onResizeKey}><Grip className="size-4" aria-hidden="true" /></button>}
     </Collapsible>
   )
 }

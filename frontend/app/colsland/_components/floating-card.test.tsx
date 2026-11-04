@@ -27,6 +27,9 @@ test('cards resize independently within the available height and restore after c
     const resize = host.querySelectorAll<HTMLButtonElement>('[aria-label="Resize project panels"]')[0]
     const first = stack.firstElementChild as HTMLElement
     const second = stack.lastElementChild as HTMLElement
+    await act(async () => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })))
+    expect(first.style.width).toBe('272px')
+    expect(second.style.width).toBe('256px')
     await act(async () => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })))
     expect(first.style.height).toBe('136px')
     expect(second.style.height).toBe('120px')
