@@ -10,12 +10,12 @@ export function ProjectSelector() {
   return (
     <div className="fixed left-4 top-4 z-40 sm:left-6 sm:top-6">
       <Popover>
-        <PopoverTrigger className="flex h-11 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border bg-card px-3 text-sm font-medium text-card-foreground shadow-md transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <PopoverTrigger className="flex h-9 max-w-[calc(100vw-2rem)] items-center gap-1.5 rounded-lg border bg-card px-2 text-sm font-medium text-card-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><FolderKanban className="size-3.5" aria-hidden="true" /></span>
           <span className="truncate">{t('select')}</span>
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 max-w-[calc(100vw-2rem)] p-4">
+        <PopoverContent align="start" className="w-48 max-w-[calc(100vw-2rem)] rounded-lg p-3">
           <p className="text-sm text-muted-foreground">{t('empty')}</p>
         </PopoverContent>
       </Popover>
