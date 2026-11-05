@@ -89,9 +89,6 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
         ) : (
           <img src={src} alt={attachment.filename} className="max-h-72 max-w-full object-contain" />
         )}
-        <div className="truncate border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-          {attachment.filename}
-        </div>
       </div>
     )
   }
