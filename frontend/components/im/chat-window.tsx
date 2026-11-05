@@ -638,9 +638,16 @@ export function ChatWindow({
           prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
         )
       }
+      // 清掉本次已发送的草稿内容：若用户在发送期间切换了会话并输入了新内容，
+      // 只移除仍然属于这次发送的文本/附件，不覆盖新会话的草稿。
+      const sentAssetIds = new Set(
+        items.map((item) => item.asset_id).filter((id): id is string => Boolean(id))
+      )
+      setInputText((prev) => (prev.trim() === text ? '' : prev))
+      setPendingAttachments((prev) =>
+        prev.filter((attachment) => !sentAssetIds.has(attachment.asset_id))
+      )
       if (currentConvIdRef.current === sendConvId) {
-        setInputText('')
-        setPendingAttachments([])
         draftBatchIdRef.current = null
         if (textareaRef.current) {
           textareaRef.current.style.height = '44px'

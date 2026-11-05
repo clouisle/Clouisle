@@ -33,6 +33,16 @@ def _stub_team_membership_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(im_service, "_ensure_active_team_member", _allow)
 
 
+@pytest.fixture(autouse=True)
+def _stub_notification_team_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backfill tests provide their own rows; skip the real membership lookup."""
+
+    async def _none(_notification: object) -> None:
+        return None
+
+    monkeypatch.setattr(im_system_bridge, "_resolve_notification_team_id", _none)
+
+
 # ============================================================================
 # 1. im_redis.py 深入覆盖
 # ============================================================================
@@ -895,6 +905,11 @@ async def test_im_service_residual_branches() -> None:
     )
     with (
         patch(
+            "app.services.im_system_bridge._resolve_notification_team_id",
+            new_callable=AsyncMock,
+            return_value=team_id,
+        ),
+        patch(
             "app.models.user.TeamMember.filter",
             return_value=member_query,
         ),
@@ -1099,8 +1114,8 @@ async def test_im_service_more_detailed_branches() -> None:
         created_at=now_utc(),
     )
     n1.id = uuid4()
-    part_all_read = MagicMock(last_read_seq=0, save=AsyncMock())
     start_seq = conv.latest_seq
+    part_all_read = MagicMock(last_read_seq=start_seq, save=AsyncMock())
     with (
         patch("app.services.im_system_bridge.in_transaction", fake_tx),
         patch(

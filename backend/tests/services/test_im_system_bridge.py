@@ -75,6 +75,19 @@ def _notification_query_mock(
     return filter_mock, limit_mock
 
 
+_REAL_RESOLVE_NOTIFICATION_TEAM = im_system_bridge._resolve_notification_team_id
+
+
+@pytest.fixture(autouse=True)
+def _stub_notification_team_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backfill tests do not need the real TeamMember lookup."""
+
+    async def _none(_notification: object) -> None:
+        return None
+
+    monkeypatch.setattr(im_system_bridge, "_resolve_notification_team_id", _none)
+
+
 @pytest.fixture(autouse=True)
 def _reset_recording_locks() -> None:
     _RecordingLock.instances.clear()
@@ -110,7 +123,14 @@ async def test_bridge_user_notification_to_im() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bridge_user_notification_without_team_prefers_default_team() -> None:
+async def test_bridge_user_notification_without_team_prefers_default_team(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        im_system_bridge,
+        "_resolve_notification_team_id",
+        _REAL_RESOLVE_NOTIFICATION_TEAM,
+    )
     user_id = uuid4()
     default_team_id = uuid4()
     notif = _notification("notice", NotificationScope.USER, user_id=user_id)
@@ -139,7 +159,14 @@ async def test_bridge_user_notification_without_team_prefers_default_team() -> N
 
 
 @pytest.mark.asyncio
-async def test_bridge_user_notification_falls_back_to_oldest_membership() -> None:
+async def test_bridge_user_notification_falls_back_to_oldest_membership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        im_system_bridge,
+        "_resolve_notification_team_id",
+        _REAL_RESOLVE_NOTIFICATION_TEAM,
+    )
     user_id = uuid4()
     fallback_team_id = uuid4()
     notif = _notification("notice", NotificationScope.USER, user_id=user_id)
@@ -300,10 +327,13 @@ async def test_sync_legacy_notifications_for_user_imports_new_pages() -> None:
         )
 
         assert conv.latest_seq == 7
-        # read_pending 已读，游标推进到它的 seq；只有 unread_pending 计入未读数
-        assert participant.last_read_seq == 6
-        participant.save.assert_awaited_once()
-        mock_unread.assert_awaited_once_with(user_id, conv.id, 1)
+        # 会话已有未读历史（2 < 5）：单个游标无法表达空洞，任何一条都不推进
+        assert participant.last_read_seq == 2
+        participant.save.assert_not_awaited()
+        assert [c.args for c in mock_unread.await_args_list] == [
+            (user_id, conv.id, 1),
+            (user_id, conv.id, 1),
+        ]
         # Redis seq 计数器每批抬高一次，最终为新写入的 latest_seq
         seq_key = im_system_bridge.im_redis.CONV_SEQ_KEY_PREFIX.format(conv.id)
         assert [call.args for call in fake_redis.set.await_args_list] == [
@@ -357,3 +387,112 @@ async def test_raise_conversation_seq_counter_swallows_redis_errors() -> None:
 async def test_resolve_notification_team_id_without_user() -> None:
     notif = MagicMock(user_id=None)
     assert await im_system_bridge._resolve_notification_team_id(notif) is None
+
+
+@pytest.mark.asyncio
+async def test_backfill_cursor_advances_only_across_contiguous_reads() -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    conv = MagicMock(
+        id=uuid4(),
+        latest_seq=5,
+        last_message_content="older",
+        last_message_at=None,
+        save=AsyncMock(),
+    )
+    read_first = _notification("notice", NotificationScope.TEAM, team_id=team_id)
+    unread_second = _notification("notice", NotificationScope.GLOBAL)
+    participant = MagicMock(last_read_seq=5, save=AsyncMock())
+    filter_mock, limit_mock = _notification_query_mock([[read_first, unread_second]])
+    fake_redis = AsyncMock()
+    fake_redis.get = AsyncMock(return_value="5")
+    fake_redis.set = AsyncMock()
+
+    with (
+        patch("app.services.im_redis.DistributedLock", _RecordingLock),
+        patch("app.services.im_redis.get_redis", AsyncMock(return_value=fake_redis)),
+        patch("app.services.im_system_bridge.in_transaction", _fake_transaction),
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch("app.models.notification.Notification.filter", filter_mock),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[read_first.id])),
+        ),
+        patch("app.models.im.ImMessage.create", new_callable=AsyncMock),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=participant)),
+        ),
+        patch(
+            "app.services.im_redis.increment_user_unread", new_callable=AsyncMock
+        ) as mock_unread,
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(team_id, user_id)
+
+    limit_mock.assert_called_once()
+    # read_first seq 6 推进游标；unread_second seq 7 之后停止
+    assert participant.last_read_seq == 6
+    participant.save.assert_awaited_once()
+    mock_unread.assert_awaited_once_with(user_id, conv.id, 1)
+
+
+@pytest.mark.asyncio
+async def test_backfill_cursor_stops_before_an_unread_that_precedes_reads() -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    conv = MagicMock(
+        id=uuid4(),
+        latest_seq=5,
+        last_message_content=None,
+        last_message_at=None,
+        save=AsyncMock(),
+    )
+    unread_first = _notification("notice", NotificationScope.GLOBAL)
+    read_second = _notification("notice", NotificationScope.TEAM, team_id=team_id)
+    participant = MagicMock(last_read_seq=5, save=AsyncMock())
+    filter_mock, _limit_mock = _notification_query_mock([[unread_first, read_second]])
+    fake_redis = AsyncMock()
+    fake_redis.get = AsyncMock(return_value="5")
+    fake_redis.set = AsyncMock()
+
+    with (
+        patch("app.services.im_redis.DistributedLock", _RecordingLock),
+        patch("app.services.im_redis.get_redis", AsyncMock(return_value=fake_redis)),
+        patch("app.services.im_system_bridge.in_transaction", _fake_transaction),
+        patch(
+            "app.models.im.ImConversation.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=conv)),
+        ),
+        patch(
+            "app.models.im.ImMessage.filter",
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch("app.models.notification.Notification.filter", filter_mock),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(
+                values_list=AsyncMock(return_value=[read_second.id])
+            ),
+        ),
+        patch("app.models.im.ImMessage.create", new_callable=AsyncMock),
+        patch(
+            "app.models.im.ImConversationParticipant.filter",
+            return_value=AsyncMock(first=AsyncMock(return_value=participant)),
+        ),
+        patch(
+            "app.services.im_redis.increment_user_unread", new_callable=AsyncMock
+        ) as mock_unread,
+    ):
+        await im_system_bridge.sync_legacy_notifications_for_user(team_id, user_id)
+
+    # 第一条未读即阻断；其后即使已读也不能越过未读推进游标
+    assert participant.last_read_seq == 5
+    participant.save.assert_not_awaited()
+    mock_unread.assert_awaited_once_with(user_id, conv.id, 2)
