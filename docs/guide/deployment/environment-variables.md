@@ -750,6 +750,15 @@ API instances sharing the deployment Redis publish current host-resource samples
 
 The following settings configure concurrency limits, streaming timeouts, and sandbox execution parameters:
 
+### IM ORPHAN ATTACHMENT RECLAMATION
+
+| Variable | Default | Description |
+|---|---|---|
+| `IM_ORPHAN_ASSET_TTL_HOURS` | `24` | Age threshold before an IM attachment that no message references is reclaimed. Uploads younger than this are always kept, so an in-progress draft is never collected. |
+| `IM_ORPHAN_ASSET_CLEANUP_BATCH_SIZE` | `200` | Maximum orphan assets reclaimed per hourly run. |
+
+The `tasks.cleanup_orphan_im_assets` Celery beat job runs hourly on the `default` queue. It deletes the stored bytes first and the `Asset`/`AssetScopeRef` rows second, so a storage failure leaves the row for the next run instead of leaking an unrecoverable file. Files under the `im/` upload category are always served through the protected-file route (JWT/API key + conversation participation + team match).
+
 ### DB_AGGREGATE_CONCURRENCY
 
 - **Description**: Maximum concurrency semaphore for fan-out database aggregate queries (e.g. dashboard statistics). Prevents single dashboard requests from exhausting the Tortoise connection pool.

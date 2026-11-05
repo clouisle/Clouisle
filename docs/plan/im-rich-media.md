@@ -1,6 +1,6 @@
 # 消息中心富媒体（图片 / 文件）设计文档
 
-> 实现状态：Stage 1–4 已交付；Stage 5（孤儿资产回收）与 Stage 6（功能开关、运维文档）待后续阶段。本文描述的是完整目标设计。
+> 实现状态：Stage 1–5 已交付；Stage 6（功能开关、使用文档）待后续阶段。本文描述的是完整目标设计。
 
 ## Background & Goals
 
@@ -183,9 +183,9 @@
 
 ### Stage 5: 孤儿资产回收与并发回归
 
-- **Files modified**: `backend/app/tasks/`（新增回收任务或复用现有定时任务）、`backend/tests/services/test_im_*.py`、`backend/tests/api/test_im_endpoints.py`
-- **Specific logic**: 回收条件与原子判定（R7）；并发压测用例；拆分发送顺序/部分成功用例；崩溃注入用例；跨团队越权用例。
-- **Validation**: `uv run pytest` 全绿；覆盖率门槛（行/分支 ≥95%）保持；并发场景下 seq、顺序与未读数断言。
+- **Files modified**: `backend/app/tasks/im.py`、`backend/app/core/config.py`、`backend/app/core/celery.py`、`backend/tests/tasks/test_im_asset_cleanup.py`
+- **Specific logic**: `tasks.cleanup_orphan_im_assets` 每小时运行一次，选取「存在 `IM_CONVERSATION` 作用域引用 + `created_at < now - TTL` + 无任何 `ImMessage.asset_id` 引用」的资产，逐条复检消息引用后先删存储字节、再删 `Asset` 行（级联删除 `AssetScopeRef`）。字节删除失败时保留行，下一轮重试。TTL 与批量由 `IM_ORPHAN_ASSET_TTL_HOURS`（默认 24）与 `IM_ORPHAN_ASSET_CLEANUP_BATCH_SIZE`（默认 200）控制。
+- **Validation**: `uv run pytest` 全绿；覆盖率门槛（行/分支 ≥95%）保持；已覆盖「被引用不删 / 未引用删除 / 复检命中 / 字节删除失败保留 / 空批次短路 / TTL 与批量覆盖 / Celery 包装」用例。
 
 ### Stage 6: 文档、开关与交付验证
 

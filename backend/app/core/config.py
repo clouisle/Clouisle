@@ -188,6 +188,10 @@ class Settings(BaseSettings):
     SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB: float = 10.0
     SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB: float = 10.0
 
+    # IM attachment reclamation: uploads that never became a message.
+    IM_ORPHAN_ASSET_TTL_HOURS: int = Field(default=24, gt=0)
+    IM_ORPHAN_ASSET_CLEANUP_BATCH_SIZE: int = Field(default=200, ge=1, le=1000)
+
     # Internal upload gateway (worker -> api file access)
     # UPLOAD_STORAGE_MODE: "local" (api process) | "remote" (worker process)
     UPLOAD_STORAGE_MODE: str = "local"
