@@ -9,7 +9,6 @@ import {
   Image as ImageIcon,
   Loader2,
   Paperclip,
-  Send,
   ShieldAlert,
   Sparkles,
   X,
@@ -686,19 +685,20 @@ export function ChatWindow({
           {t('systemNoticeReadOnly')}
         </div>
       ) : (
-        <div className="p-3 border-t bg-background">
-          {pendingAttachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
-              {pendingAttachments.map((attachment) => (
-                <span
-                  key={attachment.asset_id}
-                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-1 text-[11px]"
-                >
-                  {attachment.content_type.startsWith('image/') ? (
-                    <ImageIcon className="size-3" />
-                  ) : (
-                    <Paperclip className="size-3" />
-                  )}
+        <div className="p-3">
+          <div className="rounded-2xl border bg-muted/40 px-2 py-1.5 transition-colors focus-within:border-ring/60">
+            {pendingAttachments.length > 0 && (
+              <div className="mb-1 flex flex-wrap gap-2 px-1 pt-1">
+                {pendingAttachments.map((attachment) => (
+                  <span
+                    key={attachment.asset_id}
+                    className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-[11px]"
+                  >
+                    {attachment.content_type.startsWith('image/') ? (
+                      <ImageIcon className="size-3" />
+                    ) : (
+                      <Paperclip className="size-3" />
+                    )}
                   <span className="max-w-32 truncate">{attachment.filename}</span>
                   <button
                     type="button"
@@ -716,7 +716,6 @@ export function ChatWindow({
               ))}
             </div>
           )}
-          <div className="flex items-end gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -727,20 +726,6 @@ export function ChatWindow({
                 e.target.value = ''
               }}
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-10 shrink-0"
-              title={t('attachFile')}
-              disabled={uploading || sending}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Paperclip className="size-4" />
-              )}
-            </Button>
             <Textarea
               ref={textareaRef}
               value={inputText}
@@ -749,19 +734,34 @@ export function ChatWindow({
               onCompositionStart={handleCompositionStart}
               onCompositionEnd={handleCompositionEnd}
               placeholder={t('inputPlaceholder')}
-              className="min-h-[44px] max-h-40 resize-none text-sm leading-normal py-2.5 transition-[height] duration-75"
+              className="min-h-[48px] max-h-40 resize-none border-0 bg-transparent px-2 py-2.5 text-sm leading-normal shadow-none transition-[height] duration-75 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               rows={1}
               disabled={isSystem}
             />
-            <Button
-              size="icon"
-              className="size-10 shrink-0 cursor-pointer"
-              onClick={handleSend}
-              onMouseDown={(e) => e.preventDefault()}
-              disabled={(!inputText.trim() && pendingAttachments.length === 0) || sending || uploading}
-            >
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            </Button>
+            <div className="flex items-center justify-between gap-2 px-1 pb-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 cursor-pointer rounded-full text-muted-foreground hover:text-foreground"
+                title={t('attachFile')}
+                disabled={uploading || sending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? (
+                  <Loader2 className="size-5 animate-spin" />
+                ) : (
+                  <Paperclip className="size-5" />
+                )}
+              </Button>
+              <Button
+                className="h-9 cursor-pointer rounded-full px-4 text-sm disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
+                onClick={handleSend}
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={(!inputText.trim() && pendingAttachments.length === 0) || sending || uploading}
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : t('send')}
+              </Button>
+            </div>
           </div>
         </div>
       )}

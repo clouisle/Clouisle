@@ -156,6 +156,7 @@ export type NotificationsMessages = {
       earliestMessageNotice: string
       unreadMessagesDivider: string
       attachFile: string
+      send: string
       uploadFailed: string
       download: string
       removeAttachment: string

@@ -157,7 +157,8 @@
       "earliestMessageNotice": "This is the beginning of the message history"
       ,
       "unreadMessagesDivider": "New messages below",
-      "attachFile": "Send file",
+      "attachFile": "Attach file",
+      "send": "Send",
       "uploadFailed": "Attachment upload failed, please retry",
       "download": "Download",
       "removeAttachment": "Remove attachment"
