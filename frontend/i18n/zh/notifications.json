@@ -157,7 +157,6 @@
       "earliestMessageNotice": "以上为最早的消息"
       ,
       "unreadMessagesDivider": "以下为未读消息",
-      "attachImage": "发送图片",
       "attachFile": "发送文件",
       "uploadFailed": "附件上传失败，请重试",
       "download": "下载",

@@ -84,7 +84,7 @@
 - 删除 `ImMessageAsset` 关联表与 `MIXED` 消息类型；`ImMessage` 只增加可空的 `asset_id` 单字段。
 - 「消息 + 附件引用」在同一行写入，R1（多表原子性）与原 R5（锁内多表事务）风险消失；锁内不再需要 `in_transaction()` 与 `bulk_create`。
 - 幂等键天然覆盖唯一的 `asset_id`，不再需要附件集合摘要（R3 简化）。
-- 前端不需要图文混排编辑器与 `position` 排序，只需图片/文件两个入口与上传队列。
+- 前端不需要图文混排编辑器与 `position` 排序，只需一个附件入口与上传队列（选择器内按类型过滤由系统文件对话框完成）。
 
 **拆分发送引入的并发新风险见 R5 / R9 / R11 / R12。**
 
@@ -173,7 +173,7 @@
 - **Files modified**: `frontend/lib/api/im.ts`、`frontend/components/im/chat-window.tsx`、`frontend/components/im/conversation-list.tsx`、`frontend/i18n/{en,zh}/notifications.json`、`frontend/i18n/types/notifications.ts`
 - **Specific logic**:
   - `ImMessageOut` 增加 `attachment`（asset_id、filename、size、content_type）；`GET /messages` 与 SSE 事件由后端批量查 Asset，避免 N+1。
-  - 新增 `imApi.uploadAttachment`（FormData）与队列：绑定 `convId` 快照、并发上传、进度、失败重试（R8）；输入区增加「图片」「文件」两个入口。
+  - 新增 `imApi.uploadAttachment`（FormData）与队列：绑定 `convId` 快照、并发上传、进度、失败重试（R8）；输入区增加一个附件入口（图片与文件共用）。
   - **拆分发送**：一次提交的文本 + 附件列表转成消息数组（文本 1 条、每张图 1 条、每个文件 1 条），按固定顺序**串行 `await`** 逐条发送，`client_msg_id = ${batchId}-${index}`（R5 / R11）。上传中禁用发送。
   - 渲染：统一 `file` 消息按 `attachment.content_type` 分流——`image/*` 走受保护文件路由按需加载预览，其余显示文件卡片 + 下载入口；无图文混排编辑器、无 `position` 排序。
   - SSE `new_message` 按 `seq` 插入并用 `client_msg_id` 去重（R12）；断线按 `after_seq` 补拉权威数据。

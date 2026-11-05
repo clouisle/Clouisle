@@ -155,7 +155,6 @@ export type NotificationsMessages = {
       sectionMessages: string
       earliestMessageNotice: string
       unreadMessagesDivider: string
-      attachImage: string
       attachFile: string
       uploadFailed: string
       download: string

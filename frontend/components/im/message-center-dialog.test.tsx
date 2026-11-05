@@ -504,17 +504,17 @@ test('ChatWindow splits text, image and file into ordered separate messages', as
   const fileInputs = renderer.root.findAll(
     (node) => node.type === 'input' && node.props.type === 'file'
   )
-  expect(fileInputs.length).toBe(2)
+  expect(fileInputs.length).toBe(1)
 
   await act(async () => {
     fileInputs[0].props.onChange({
-      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })], value: '' },
-    })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
-  await act(async () => {
-    fileInputs[1].props.onChange({
-      target: { files: [new File(['y'], 'b.pdf', { type: 'application/pdf' })], value: '' },
+      target: {
+        files: [
+          new File(['x'], 'a.png', { type: 'image/png' }),
+          new File(['y'], 'b.pdf', { type: 'application/pdf' }),
+        ],
+        value: '',
+      },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
   })

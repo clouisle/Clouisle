@@ -155,7 +155,6 @@ export function ChatWindow({
   const [uploading, setUploading] = React.useState(false)
   const [uploadFailed, setUploadFailed] = React.useState(false)
   const draftBatchIdRef = React.useRef<string | null>(null)
-  const imageInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   // 换行自适应增高，设置最大高度限制 (160px，约 6 行文本)
   const adjustTextareaHeight = React.useCallback(() => {
@@ -725,17 +724,6 @@ export function ChatWindow({
           )}
           <div className="flex items-end gap-2">
             <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                void handleFilesSelected(e.target.files)
-                e.target.value = ''
-              }}
-            />
-            <input
               ref={fileInputRef}
               type="file"
               multiple
@@ -749,21 +737,15 @@ export function ChatWindow({
               variant="ghost"
               size="icon"
               className="size-10 shrink-0"
-              title={t('attachImage')}
-              disabled={uploading || sending}
-              onClick={() => imageInputRef.current?.click()}
-            >
-              {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-10 shrink-0"
               title={t('attachFile')}
               disabled={uploading || sending}
               onClick={() => fileInputRef.current?.click()}
             >
-              <Paperclip className="size-4" />
+              {uploading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Paperclip className="size-4" />
+              )}
             </Button>
             <Textarea
               ref={textareaRef}
