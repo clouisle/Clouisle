@@ -11,11 +11,11 @@
   - [x] 6. Deprecate legacy notifications page and adapt navigation/i18n
   - [x] 7. Automated tests, regression verification, and lint/type checks
 
-- **im-rich-media** — Design finalized: images + files, no mixed layout; a single submission containing text/images/files is split into multiple messages. Distributed concurrency and team-scoped asset authorization are the core constraints. Implementation pending. See `docs/plan/im-rich-media.md`.
-  - [ ] 1. Backend models and backward-compatible migration
-  - [ ] 2. IM-scoped upload endpoint and asset authorization
-  - [ ] 3. Send path: single-row write, idempotency, attachment metadata
-  - [ ] 4. Read contract, frontend upload queue and rendering
+- **im-rich-media** — In progress: stages 1-4 delivered (image/file messages, split sends, team-scoped assets); stages 5-6 pending. Distributed concurrency and team-scoped asset authorization are the core constraints. See `docs/plan/im-rich-media.md`.
+  - [x] 1. Backend models and backward-compatible migration
+  - [x] 2. IM-scoped upload endpoint and asset authorization
+  - [x] 3. Send path: single-row write, idempotency, attachment metadata
+  - [x] 4. Read contract, frontend upload queue and rendering
   - [ ] 5. Orphan-asset reclamation and concurrency regression
   - [ ] 6. Feature flag, documentation and delivery verification
 

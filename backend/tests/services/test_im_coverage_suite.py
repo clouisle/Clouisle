@@ -715,7 +715,7 @@ async def test_im_service_residual_branches() -> None:
         await im_service._ensure_participants(uuid4(), [u1, u2])  # 不抛异常
 
     # 7. send_direct_message: 锁未抢到但自旋查库命中
-    mock_msg = MagicMock(id=uuid4())
+    mock_msg = MagicMock(id=uuid4(), asset_id=None)
     mock_conv = MagicMock(
         id=uuid4(), type=ImConversationType.DIRECT, user1_id=u1, user2_id=u2
     )
@@ -931,6 +931,7 @@ async def test_im_service_more_detailed_branches() -> None:
         seq=2,
         msg_type=ImMessageType.TEXT,
         content="hello from u2",
+        asset_id=None,
         created_at=now_utc(),
     )
     with (

@@ -329,6 +329,7 @@ export {
   type ImConversation,
   type ImConversationType,
   type ImMessage,
+  type ImAttachment,
   type ImMessageType,
   type ImMessageListResponse,
   type ImPeer,

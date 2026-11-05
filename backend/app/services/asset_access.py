@@ -227,6 +227,19 @@ async def authorize_asset_scope(
                 raise _access_denied() from error
             raise
         team_id = run.workflow.team_id
+    elif scope_type == AssetScopeType.IM_CONVERSATION:
+        from app.models.im import ImConversation
+
+        conv = await ImConversation.filter(id=scope_id).first()
+        if conv is None:
+            raise _not_found()
+        if user is None or (
+            conv.user1_id != user.id
+            and conv.user2_id != user.id
+            and not user.is_superuser
+        ):
+            raise _access_denied()
+        team_id = conv.team_id
     else:
         raise _not_found()
 

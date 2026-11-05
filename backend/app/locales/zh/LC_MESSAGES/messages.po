@@ -1051,6 +1051,15 @@ msgstr "{failed_count}/{total_chunks} 个分块嵌入失败：{error}"
 msgid "chunks_still_failed_after_retry"
 msgstr "重试后仍有 {failed_count}/{total_chunks} 个分块失败：{error}"
 
+msgid "conversation_access_denied"
+msgstr "你不是该会话的参与者"
+
+msgid "invalid_conversation_type"
+msgstr "仅单聊会话支持附件"
+
+msgid "im_attachment_mismatch"
+msgstr "重试消息引用的附件与首次发送不一致"
+
 msgid "conversation_created"
 msgstr "对话创建成功"
 

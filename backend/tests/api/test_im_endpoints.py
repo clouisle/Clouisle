@@ -67,6 +67,7 @@ async def test_send_message_endpoint(fake_user: User) -> None:
     fake_msg.payload = None
     fake_msg.status = AsyncMock(value="normal")
     fake_msg.created_at = AsyncMock(isoformat=lambda: "2026-11-04T00:00:00Z")
+    fake_msg.asset_id = None
 
     payload = SendMessageRequest(
         content="hello world",
@@ -254,6 +255,7 @@ async def test_get_messages_endpoint(fake_user: User) -> None:
         payload=None,
         status=MagicMock(value="normal"),
         created_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
+        asset_id=None,
     )
     with patch("app.services.im_service.get_messages", return_value=([msg], False)):
         resp = await im_endpoints.get_messages(

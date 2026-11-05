@@ -156,7 +156,12 @@
       ,
       "earliestMessageNotice": "This is the beginning of the message history"
       ,
-      "unreadMessagesDivider": "New messages below"
+      "unreadMessagesDivider": "New messages below",
+      "attachImage": "Send image",
+      "attachFile": "Send file",
+      "uploadFailed": "Attachment upload failed, please retry",
+      "download": "Download",
+      "removeAttachment": "Remove attachment"
     }
   }
 }

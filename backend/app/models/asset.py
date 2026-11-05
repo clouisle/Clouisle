@@ -35,6 +35,7 @@ class AssetStatus(str, Enum):
 class AssetScopeType(str, Enum):
     CONVERSATION = "conversation"
     WORKFLOW_RUN = "workflow_run"
+    IM_CONVERSATION = "im_conversation"
 
 
 class Asset(models.Model):

@@ -2,10 +2,25 @@
 
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import { Bell, Loader2, Send, ShieldAlert, Sparkles } from 'lucide-react'
-import { imApi, type ImConversation, type ImMessage } from '@/lib/api'
+import {
+  Bell,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  Paperclip,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  X,
+} from 'lucide-react'
+import { imApi, type ImAttachment, type ImConversation, type ImMessage, type ImMessageType } from '@/lib/api'
 import { Streamdown } from 'streamdown'
 import { PauseRequestActions } from '@/components/chat/pause-request-actions'
+import {
+  downloadAuthenticatedAsset,
+  useAuthenticatedAssetUrl,
+} from '@/components/chat/authenticated-asset'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -49,6 +64,64 @@ function formatDateDivider(date: Date, locale: string = 'zh'): string {
   return isSameYear ? `${month}/${day}` : `${year}/${month}/${day}`
 }
 
+
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function AttachmentBubble({
+  attachment,
+  kind,
+}: {
+  attachment: ImAttachment
+  kind: ImMessageType
+}) {
+  const t = useTranslations('notifications.im')
+  const { src, loading, error } = useAuthenticatedAssetUrl(attachment.url)
+
+  if (kind === 'image') {
+    return (
+      <div className="max-w-[75%] overflow-hidden rounded-2xl border bg-muted/30">
+        {loading ? (
+          <div className="flex size-40 items-center justify-center text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
+          </div>
+        ) : error || !src ? (
+          <div className="flex size-40 items-center justify-center px-4 text-center text-xs text-muted-foreground">
+            {attachment.filename}
+          </div>
+        ) : (
+          <img src={src} alt={attachment.filename} className="max-h-72 max-w-full object-contain" />
+        )}
+        <div className="truncate border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+          {attachment.filename}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex max-w-[75%] items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
+      <FileText className="size-8 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{attachment.filename}</div>
+        <div className="text-[11px] text-muted-foreground">{formatFileSize(attachment.size)}</div>
+      </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-8 shrink-0"
+        title={t('download')}
+        onClick={() => void downloadAuthenticatedAsset(attachment.url, attachment.filename)}
+      >
+        <Download className="size-4" />
+      </Button>
+    </div>
+  )
+}
+
 interface ChatWindowProps {
   conversation: ImConversation | null
   currentUserId: string
@@ -83,6 +156,14 @@ export function ChatWindow({
   const shouldScrollToUnreadRef = React.useRef(false)
   const currentConvIdRef = React.useRef<string | null>(null)
   const [unreadWatermark, setUnreadWatermark] = React.useState<number | null>(null)
+  const [pendingAttachments, setPendingAttachments] = React.useState<
+    Array<{ attachment: ImAttachment; kind: 'image' | 'file' }>
+  >([])
+  const [uploading, setUploading] = React.useState(false)
+  const [uploadFailed, setUploadFailed] = React.useState(false)
+  const draftBatchIdRef = React.useRef<string | null>(null)
+  const imageInputRef = React.useRef<HTMLInputElement>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   // 换行自适应增高，设置最大高度限制 (160px，约 6 行文本)
   const adjustTextareaHeight = React.useCallback(() => {
     const textarea = textareaRef.current
@@ -146,11 +227,17 @@ export function ChatWindow({
     if (!convId || !conversation) {
       setMessages([])
       setUnreadWatermark(null)
+      setPendingAttachments([])
+      setUploadFailed(false)
+      draftBatchIdRef.current = null
       currentConvIdRef.current = null
       return
     }
 
     currentConvIdRef.current = convId
+    setPendingAttachments([])
+    setUploadFailed(false)
+    draftBatchIdRef.current = null
 
     if (targetSeq) {
       setUnreadWatermark(null)
@@ -213,7 +300,8 @@ export function ChatWindow({
           shouldScrollToBottomRef.current = true
         }
 
-        return [...prev, incomingMessage]
+        const next = [...prev, incomingMessage]
+        return next.sort((a, b) => a.seq - b.seq)
       })
     }
   }, [incomingMessage, convId])
@@ -291,22 +379,76 @@ export function ChatWindow({
     }
   }
 
-  // 发送消息
+  const handleFilesSelected = React.useCallback(
+    async (kind: 'image' | 'file', files: FileList | null) => {
+      if (!files || files.length === 0 || !convId) return
+      const snapshotConvId = convId
+      setUploading(true)
+      setUploadFailed(false)
+      try {
+        const uploaded = await Promise.all(
+          Array.from(files).map(async (file) => ({
+            attachment: await imApi.uploadAttachment(snapshotConvId, file),
+            kind,
+          }))
+        )
+        if (currentConvIdRef.current !== snapshotConvId) return
+        setPendingAttachments((prev) => [...prev, ...uploaded])
+      } catch (err) {
+        console.error('Failed to upload attachment:', err)
+        if (currentConvIdRef.current === snapshotConvId) setUploadFailed(true)
+      } finally {
+        setUploading(false)
+      }
+    },
+    [convId]
+  )
+
+  // 发送：文本与每个附件拆成独立消息，串行 await 保证顺序与 seq 一致
   const handleSend = async () => {
     const text = inputText.trim()
-    if (!convId || !text || sending || isSystem) return
+    if (!convId || sending || isSystem || uploading) return
 
-    setSending(true)
-    const clientMsgId = `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    try {
-      const newMsg = await imApi.sendMessage(convId, {
-        content: text,
-        client_msg_id: clientMsgId,
+    const items: Array<{
+      content: string
+      msg_type: ImMessageType
+      asset_id?: string
+      dedupeKey: string
+    }> = []
+    if (text) items.push({ content: text, msg_type: 'text', dedupeKey: 'text' })
+    for (const item of pendingAttachments) {
+      items.push({
+        content: '',
+        msg_type: item.kind,
+        asset_id: item.attachment.asset_id,
+        dedupeKey: item.attachment.asset_id.slice(0, 8),
       })
-      shouldScrollToBottomRef.current = true
-      shouldScrollToUnreadRef.current = false
-      setMessages((prev) => [...prev, newMsg])
+    }
+    if (items.length === 0) return
+
+    // 同一草稿重试复用 batch id，保证 client_msg_id 稳定、已成功的消息幂等去重
+    const batchId =
+      draftBatchIdRef.current ??
+      `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    draftBatchIdRef.current = batchId
+    setSending(true)
+    try {
+      for (let i = 0; i < items.length; i += 1) {
+        const newMsg = await imApi.sendMessage(convId, {
+          content: items[i].content,
+          msg_type: items[i].msg_type,
+          asset_id: items[i].asset_id,
+          client_msg_id: `${batchId}-${items[i].dedupeKey}`,
+        })
+        shouldScrollToBottomRef.current = true
+        shouldScrollToUnreadRef.current = false
+        setMessages((prev) =>
+          prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
+        )
+      }
       setInputText('')
+      setPendingAttachments([])
+      draftBatchIdRef.current = null
       if (textareaRef.current) {
         textareaRef.current.style.height = '44px'
         textareaRef.current.style.overflowY = 'hidden'
@@ -314,6 +456,7 @@ export function ChatWindow({
       }
       onMessageSent?.()
     } catch (err) {
+      // 保留草稿：已成功的消息靠 client_msg_id 幂等，整批重试不会产生重复
       console.error('Failed to send message:', err)
     } finally {
       setSending(false)
@@ -514,6 +657,8 @@ export function ChatWindow({
                       />
                     </div>
                   </div>
+                ) : msg.attachment ? (
+                  <AttachmentBubble attachment={msg.attachment} kind={msg.msg_type} />
                 ) : (
                   <div
                     className={cn(
@@ -553,32 +698,103 @@ export function ChatWindow({
           {t('systemNoticeReadOnly')}
         </div>
       ) : (
-        <div className="p-3 border-t flex items-end gap-2 bg-background">
-          <Textarea
-            ref={textareaRef}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={handleCompositionStart}
-            onCompositionEnd={handleCompositionEnd}
-            placeholder={t('inputPlaceholder')}
-            className="min-h-[44px] max-h-40 resize-none text-sm leading-normal py-2.5 transition-[height] duration-75"
-            rows={1}
-            disabled={isSystem}
-          />
-          <Button
-            size="icon"
-            className="size-10 shrink-0 cursor-pointer"
-            onClick={handleSend}
-            onMouseDown={(e) => e.preventDefault()}
-            disabled={!inputText.trim() || sending}
-          >
-            {sending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-          </Button>
+        <div className="p-3 border-t bg-background">
+          {uploadFailed && (
+            <div className="mb-2 text-xs text-destructive">{t('uploadFailed')}</div>
+          )}
+          {pendingAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {pendingAttachments.map((item) => (
+                <span
+                  key={item.attachment.asset_id}
+                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-1 text-[11px]"
+                >
+                  {item.kind === 'image' ? (
+                    <ImageIcon className="size-3" />
+                  ) : (
+                    <Paperclip className="size-3" />
+                  )}
+                  <span className="max-w-32 truncate">{item.attachment.filename}</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground"
+                    title={t('removeAttachment')}
+                    onClick={() =>
+                      setPendingAttachments((prev) =>
+                        prev.filter((p) => p.attachment.asset_id !== item.attachment.asset_id)
+                      )
+                    }
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void handleFilesSelected('image', e.target.files)
+                e.target.value = ''
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void handleFilesSelected('file', e.target.files)
+                e.target.value = ''
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0"
+              title={t('attachImage')}
+              disabled={uploading || sending}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10 shrink-0"
+              title={t('attachFile')}
+              disabled={uploading || sending}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="size-4" />
+            </Button>
+            <Textarea
+              ref={textareaRef}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onCompositionStart={handleCompositionStart}
+              onCompositionEnd={handleCompositionEnd}
+              placeholder={t('inputPlaceholder')}
+              className="min-h-[44px] max-h-40 resize-none text-sm leading-normal py-2.5 transition-[height] duration-75"
+              rows={1}
+              disabled={isSystem}
+            />
+            <Button
+              size="icon"
+              className="size-10 shrink-0 cursor-pointer"
+              onClick={handleSend}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={(!inputText.trim() && pendingAttachments.length === 0) || sending || uploading}
+            >
+              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            </Button>
+          </div>
         </div>
       )}
     </div>

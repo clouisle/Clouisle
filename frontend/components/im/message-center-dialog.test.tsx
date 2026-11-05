@@ -29,6 +29,10 @@ mock.module('streamdown', () => ({
 mock.module('@/contexts/team-context', () => ({
   useTeam: () => ({ currentTeam: { id: 'team-1', name: 'Team One' } }),
 }))
+mock.module('@/components/chat/authenticated-asset', () => ({
+  useAuthenticatedAssetUrl: () => ({ src: '/blob-url', loading: false, error: false }),
+  downloadAuthenticatedAsset: mock(async () => {}),
+}))
 
 
 mock.module('@/lib/api', () => ({
@@ -438,4 +442,180 @@ test('ChatWindow preserves textarea focus and enabled state while sending', asyn
 
   expect(preventDefault).toHaveBeenCalledTimes(1)
   expect(textarea.props.disabled).toBe(false)
+})
+
+test('ChatWindow splits text, image and file into ordered separate messages', async () => {
+  const conv: ImConversation = {
+    id: 'conv-split',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 0,
+    latest_seq: 0,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+
+  const { imApi } = await import('@/lib/api')
+  const sent: Array<Record<string, unknown>> = []
+  imApi.uploadAttachment = mock(async (_convId: string, file: File) => ({
+    asset_id: `asset-${file.name}`,
+    filename: file.name,
+    size: 10,
+    content_type: file.type,
+    url: `/api/v1/upload/files/${file.name}`,
+  }))
+  imApi.sendMessage = mock(async (_convId: string, payload: Record<string, unknown>) => {
+    sent.push(payload)
+    return {
+      id: `msg-${String(payload.client_msg_id)}`,
+      conversation_id: conv.id,
+      seq: sent.length,
+      msg_type: payload.msg_type ?? 'text',
+      content: payload.content,
+      status: 'normal',
+      created_at: '2026-11-04T00:00:00Z',
+      attachment: payload.asset_id
+        ? {
+            asset_id: payload.asset_id,
+            filename: 'f',
+            size: 10,
+            content_type: 'image/png',
+            url: '/x',
+          }
+        : null,
+    }
+  })
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await Promise.resolve()
+  })
+
+  const textarea = renderer.root.findByType('textarea')
+  act(() => {
+    textarea.props.onChange({ target: { value: 'hello' } })
+  })
+
+  const fileInputs = renderer.root.findAll(
+    (node) => node.type === 'input' && node.props.type === 'file'
+  )
+  expect(fileInputs.length).toBe(2)
+
+  await act(async () => {
+    fileInputs[0].props.onChange({
+      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })], value: '' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  await act(async () => {
+    fileInputs[1].props.onChange({
+      target: { files: [new File(['y'], 'b.pdf', { type: 'application/pdf' })], value: '' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  const sendButton = renderer.root.findAll(
+    (node) =>
+      node.type === 'button' &&
+      String(node.props.className ?? '').includes('size-10 shrink-0 cursor-pointer')
+  )[0]
+  await act(async () => {
+    await sendButton.props.onClick()
+  })
+
+  expect(sent.length).toBe(3)
+  expect(sent[0]).toMatchObject({ content: 'hello', msg_type: 'text' })
+  expect(sent[1]).toMatchObject({ content: '', msg_type: 'image', asset_id: 'asset-a.png' })
+  expect(sent[2]).toMatchObject({ content: '', msg_type: 'file', asset_id: 'asset-b.pdf' })
+  expect(String(sent[0].client_msg_id).endsWith('-text')).toBe(true)
+  expect(String(sent[1].client_msg_id).endsWith('-asset-a.')).toBe(true)
+  expect(String(sent[2].client_msg_id).endsWith('-asset-b.')).toBe(true)
+})
+
+test('ChatWindow retries a failed draft with stable client message ids', async () => {
+  const conv: ImConversation = {
+    id: 'conv-retry',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 0,
+    latest_seq: 0,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+
+  const { imApi } = await import('@/lib/api')
+  const imageIds: string[] = []
+  let failImage = true
+  imApi.uploadAttachment = mock(async (_convId: string, file: File) => ({
+    asset_id: 'asset-retry-image',
+    filename: file.name,
+    size: 10,
+    content_type: file.type,
+    url: `/api/v1/upload/files/${file.name}`,
+  }))
+  imApi.sendMessage = mock(async (_convId: string, payload: Record<string, unknown>) => {
+    if (payload.msg_type === 'image') {
+      imageIds.push(String(payload.client_msg_id))
+      if (failImage) {
+        failImage = false
+        throw new Error('network down')
+      }
+    }
+    return {
+      id: `msg-${String(payload.client_msg_id)}`,
+      conversation_id: conv.id,
+      seq: 1,
+      msg_type: payload.msg_type ?? 'text',
+      content: payload.content,
+      status: 'normal',
+      created_at: '2026-11-04T00:00:00Z',
+      attachment: null,
+    }
+  })
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await Promise.resolve()
+  })
+
+  const textarea = renderer.root.findByType('textarea')
+  act(() => {
+    textarea.props.onChange({ target: { value: 'draft' } })
+  })
+  const imageInput = renderer.root.findAll(
+    (node) => node.type === 'input' && node.props.type === 'file'
+  )[0]
+  await act(async () => {
+    imageInput.props.onChange({
+      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })], value: '' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  const sendButton = () =>
+    renderer.root.findAll(
+      (node) =>
+        node.type === 'button' &&
+        String(node.props.className ?? '').includes('size-10 shrink-0 cursor-pointer')
+    )[0]
+
+  await act(async () => {
+    await sendButton().props.onClick()
+  })
+  await act(async () => {
+    await sendButton().props.onClick()
+  })
+
+  expect(imageIds.length).toBe(2)
+  expect(imageIds[0]).toBe(imageIds[1])
 })

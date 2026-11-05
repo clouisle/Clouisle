@@ -1,7 +1,7 @@
 import { api } from './client'
 
 export type ImConversationType = 'direct' | 'system'
-export type ImMessageType = 'text' | 'markdown' | 'card' | 'system_notice'
+export type ImMessageType = 'text' | 'markdown' | 'card' | 'system_notice' | 'image' | 'file'
 
 export interface ImPeer {
   id: string
@@ -37,6 +37,15 @@ export interface ImMessage {
   payload?: Record<string, unknown> | null
   status: string
   created_at: string
+  attachment?: ImAttachment | null
+}
+
+export interface ImAttachment {
+  asset_id: string
+  filename: string
+  size: number
+  content_type: string
+  url: string
 }
 
 export interface ImMessageListResponse {
@@ -92,9 +101,18 @@ export const imApi = {
       client_msg_id?: string
       msg_type?: ImMessageType
       payload?: Record<string, unknown>
+      asset_id?: string
     }
   ): Promise<ImMessage> => {
     return api.post(`/im/conversations/${conversationId}/messages`, payload)
+  },
+
+  uploadAttachment: async (conversationId: string, file: File): Promise<ImAttachment> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/im/conversations/${conversationId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
   },
 
   markRead: async (conversationId: string, upToSeq?: number): Promise<{ cleared: number }> => {

@@ -5,15 +5,20 @@ import json
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api import deps
 from app.api.team_access import check_team_access
-from app.schemas.response import Response, success
+from app.api.v1.endpoints.upload import save_generated_upload, _validate_upload_size
+from app.schemas.response import BusinessError, Response, ResponseCode, success
+from app.models.im import ImConversation, ImConversationType, ImMessage
+from app.models.asset import Asset, AssetScopeType, AssetSource
 from app.models.user import TeamMember, User
+from app.services.asset import asset_service
 from app.schemas.im import (
     DirectConversationCreate,
+    ImAttachmentOut,
     ImConversationOut,
     ImMessageListOut,
     ImMessageOut,
@@ -26,6 +31,24 @@ from app.schemas.im import (
 from app.services import im_service
 
 router = APIRouter()
+
+
+async def _build_attachment_map(msgs: list[ImMessage]) -> dict[UUID, ImAttachmentOut]:
+    """按 asset_id 批量取回附件元信息，避免 N+1 查询。"""
+    ids = {m.asset_id for m in msgs if m.asset_id}
+    if not ids:
+        return {}
+    assets = await Asset.filter(id__in=ids).all()
+    return {
+        a.id: ImAttachmentOut(
+            asset_id=str(a.id),
+            filename=a.display_filename or a.original_filename,
+            size=a.size,
+            content_type=a.content_type,
+            url=f"/api/v1/upload/files/{a.storage_key}",
+        )
+        for a in assets
+    }
 
 
 @router.get("/conversations", response_model=Response[list[ImConversationOut]])
@@ -108,6 +131,7 @@ async def get_messages(
         around_seq=around_seq,
     )
 
+    attachment_map = await _build_attachment_map(msgs)
     formatted = [
         ImMessageOut(
             id=str(m.id),
@@ -120,6 +144,7 @@ async def get_messages(
             payload=m.payload,
             status=m.status.value,
             created_at=m.created_at.isoformat(),
+            attachment=attachment_map.get(m.asset_id),
         )
         for m in msgs
     ]
@@ -143,7 +168,9 @@ async def send_message(
         client_msg_id=payload.client_msg_id,
         msg_type=payload.msg_type,
         payload=payload.payload,
+        asset_id=payload.asset_id,
     )
+    attachment_map = await _build_attachment_map([msg])
 
     return success(
         data=ImMessageOut(
@@ -157,6 +184,71 @@ async def send_message(
             payload=msg.payload,
             status=msg.status.value,
             created_at=msg.created_at.isoformat(),
+            attachment=attachment_map.get(msg.asset_id),
+        )
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/attachments",
+    response_model=Response[ImAttachmentOut],
+)
+async def upload_im_attachment(
+    conversation_id: UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """上传单个 IM 附件并绑定到会话与团队作用域（字节 IO 在会话锁外完成）。"""
+    conv = await ImConversation.filter(id=conversation_id).first()
+    if conv is None or conv.type != ImConversationType.DIRECT:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="invalid_conversation_type",
+            status_code=400,
+        )
+    if conv.user1_id != current_user.id and conv.user2_id != current_user.id:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="conversation_access_denied",
+            status_code=403,
+        )
+    await im_service.check_users_in_same_team(
+        conv.team_id, conv.user1_id, conv.user2_id
+    )
+
+    content = await file.read()
+    _validate_upload_size(content)
+    content_type = file.content_type or "application/octet-stream"
+    upload_info = await save_generated_upload(
+        content=content,
+        category="im",
+        content_type=content_type,
+        filename=file.filename,
+    )
+    asset = await asset_service.register_bytes(
+        storage_key=upload_info["storage_key"],
+        original_filename=file.filename or upload_info["filename"],
+        content_type=content_type,
+        content=content,
+        source=AssetSource.UPLOAD,
+        team_id=conv.team_id,
+        created_by_id=current_user.id,
+        provenance={"im_conversation_id": str(conversation_id)},
+    )
+
+    await asset_service.get_or_create_ref(
+        scope_type=AssetScopeType.IM_CONVERSATION,
+        scope_id=conversation_id,
+        asset=asset,
+    )
+
+    return success(
+        data=ImAttachmentOut(
+            asset_id=str(asset.id),
+            filename=asset.display_filename or asset.original_filename,
+            size=asset.size,
+            content_type=asset.content_type,
+            url=upload_info["url"],
         )
     )
 

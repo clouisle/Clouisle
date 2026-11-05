@@ -21,6 +21,8 @@ class ImMessageType(str, Enum):
     MARKDOWN = "markdown"
     CARD = "card"
     SYSTEM_NOTICE = "system_notice"
+    IMAGE = "image"
+    FILE = "file"
 
 
 class ImMessageStatus(str, Enum):
@@ -135,6 +137,7 @@ class ImMessage(models.Model):
     )
     content = fields.TextField()
     payload: dict | None = fields.JSONField(null=True)  # type: ignore[assignment]
+    asset_id: UUID | None = fields.UUIDField(null=True)  # type: ignore[assignment]
     status = fields.CharEnumField(
         ImMessageStatus, max_length=20, default=ImMessageStatus.NORMAL
     )

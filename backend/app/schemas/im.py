@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.im import ImMessageType
 
@@ -15,7 +15,7 @@ class DirectConversationCreate(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(
-        ..., min_length=1, max_length=10000, description="消息文本内容"
+        default="", max_length=10000, description="消息文本内容（附件消息为空）"
     )
     client_msg_id: str | None = Field(
         None, max_length=64, description="客户端生成的消息防重 ID"
@@ -24,6 +24,19 @@ class SendMessageRequest(BaseModel):
     payload: dict[str, Any] | None = Field(
         None, description="富交互结构体（如审批卡片状态等）"
     )
+    asset_id: UUID | None = Field(None, description="图片/文件消息引用的资产 ID")
+
+    @model_validator(mode="after")
+    def _validate_attachment(self) -> SendMessageRequest:
+        is_attachment = self.msg_type in (ImMessageType.IMAGE, ImMessageType.FILE)
+        if is_attachment:
+            if self.asset_id is None or self.content.strip():
+                raise ValueError(
+                    "image/file messages require an asset_id and empty content"
+                )
+        elif self.asset_id is not None or not self.content.strip():
+            raise ValueError("text messages require non-empty content and no asset_id")
+        return self
 
 
 class MarkReadRequest(BaseModel):
@@ -55,6 +68,14 @@ class ImConversationOut(BaseModel):
     updated_at: str
 
 
+class ImAttachmentOut(BaseModel):
+    asset_id: str
+    filename: str
+    size: int
+    content_type: str
+    url: str
+
+
 class ImMessageOut(BaseModel):
     id: str
     conversation_id: str
@@ -66,6 +87,7 @@ class ImMessageOut(BaseModel):
     payload: dict[str, Any] | None = None
     status: str
     created_at: str
+    attachment: ImAttachmentOut | None = None
 
 
 class ImMessageListOut(BaseModel):

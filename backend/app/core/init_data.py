@@ -1381,6 +1381,23 @@ async def init_assets_tables() -> None:
     logger.info("Asset table initialization complete")
 
 
+async def init_im_rich_media_columns() -> None:
+    """Add the IM attachment reference column.
+
+    Must run after Tortoise.generate_schemas() so im_messages exists on fresh
+    databases; generate_schemas does not ALTER existing tables.
+    """
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE im_messages
+            ADD COLUMN IF NOT EXISTS asset_id UUID
+        """,
+    )
+    logger.info("IM rich-media columns initialization complete")
+
+
 async def init_permission_is_system_field():
     """
     Add is_system field to permissions table if it doesn't exist.

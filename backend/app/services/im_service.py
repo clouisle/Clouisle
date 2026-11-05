@@ -46,6 +46,53 @@ def _strip_markdown_summary(text: str, max_length: int = 200) -> str:
     return clean[:max_length]
 
 
+def _ensure_same_asset(existing: ImMessage, asset_id: UUID | None) -> None:
+    """幂等重试必须携带同一个附件，避免静默替换。"""
+    if existing.asset_id != asset_id:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="im_attachment_mismatch",
+            status_code=400,
+        )
+
+
+async def _resolve_im_attachment(
+    conv: ImConversation, asset_id: UUID, msg_type: ImMessageType
+) -> Any:
+    """校验附件资产属于本会话与团队，且已绑定 IM 会话作用域。"""
+    from app.models.asset import Asset, AssetScopeRef, AssetScopeType, AssetStatus
+
+    asset = await Asset.filter(
+        id=asset_id, team_id=conv.team_id, status=AssetStatus.AVAILABLE
+    ).first()
+    if asset is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="file_not_found",
+            status_code=404,
+        )
+    if msg_type == ImMessageType.IMAGE and not (asset.content_type or "").startswith(
+        "image/"
+    ):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="file_not_found",
+            status_code=400,
+        )
+    bound = await AssetScopeRef.filter(
+        asset_id=asset_id,
+        scope_type=AssetScopeType.IM_CONVERSATION,
+        scope_id=conv.id,
+    ).exists()
+    if not bound:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="file_not_found",
+            status_code=404,
+        )
+    return asset
+
+
 async def check_users_in_same_team(team_id: UUID, user_a: UUID, user_b: UUID) -> None:
     """校验两个用户是否同时隶属于指定团队且处于激活状态。"""
     members = await TeamMember.filter(
@@ -194,6 +241,7 @@ async def send_direct_message(
     client_msg_id: str | None = None,
     msg_type: ImMessageType = ImMessageType.TEXT,
     payload: dict | None = None,
+    asset_id: UUID | None = None,
 ) -> ImMessage:
     """发送单聊消息：
     - 分布式会话排他锁保证会话内绝对单调有序、无序号空洞。
@@ -228,12 +276,14 @@ async def send_direct_message(
         if cached_result:
             existing = await ImMessage.filter(id=UUID(cached_result["id"])).first()
             if existing:
+                _ensure_same_asset(existing, asset_id)
                 return existing
 
         existing_msg = await ImMessage.filter(
             conversation_id=conversation_id, client_msg_id=client_msg_id
         ).first()
         if existing_msg:
+            _ensure_same_asset(existing_msg, asset_id)
             return existing_msg
 
     # 2. 会话分布式排他锁（单会话多实例写入串行化，保证 seq 严格单调无空洞）
@@ -245,7 +295,13 @@ async def send_direct_message(
                 conversation_id=conversation_id, client_msg_id=client_msg_id
             ).first()
             if existing_msg:
+                _ensure_same_asset(existing_msg, asset_id)
                 return existing_msg
+
+        # 附件资产校验（字节 IO 在锁外完成，此处只做元数据校验）
+        asset = None
+        if asset_id is not None:
+            asset = await _resolve_im_attachment(conv, asset_id, msg_type)
 
         # 3. 原子生成单调自增序号
         seq = await im_redis.generate_next_seq(conversation_id)
@@ -259,11 +315,17 @@ async def send_direct_message(
             msg_type=msg_type,
             content=content,
             payload=payload,
+            asset_id=asset_id,
             status=ImMessageStatus.NORMAL,
         )
 
         # 5. 更新会话摘要
-        summary = _strip_markdown_summary(content, 200)
+        if msg_type == ImMessageType.IMAGE:
+            summary = "[图片]"
+        elif msg_type == ImMessageType.FILE:
+            summary = "[文件]"
+        else:
+            summary = _strip_markdown_summary(content, 200)
         conv.last_message_content = summary
         conv.last_message_at = now_utc()
         conv.latest_seq = seq
@@ -291,6 +353,18 @@ async def send_direct_message(
                 "msg_type": msg_type.value,
                 "content": content,
                 "payload": payload,
+                "asset_id": str(asset_id) if asset_id else None,
+                "attachment": (
+                    {
+                        "asset_id": str(asset.id),
+                        "filename": asset.display_filename,
+                        "size": asset.size,
+                        "content_type": asset.content_type,
+                        "url": f"/api/v1/upload/files/{asset.storage_key}",
+                    }
+                    if asset is not None
+                    else None
+                ),
                 "created_at": msg.created_at.isoformat(),
             }
             await im_redis.publish_im_event(receiver_id, "new_message", msg_dict)
