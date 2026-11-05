@@ -206,3 +206,16 @@ def test_get_event_loop_recovers_when_no_loop_is_set() -> None:
         assert im_tasks._get_event_loop() is new_loop
 
     set_event_loop.assert_called_once_with(new_loop)
+
+
+def test_get_event_loop_reuses_an_open_loop() -> None:
+    open_loop = MagicMock()
+    open_loop.is_closed.return_value = False
+
+    with (
+        patch("asyncio.get_event_loop", return_value=open_loop),
+        patch("asyncio.set_event_loop") as set_event_loop,
+    ):
+        assert im_tasks._get_event_loop() is open_loop
+
+    set_event_loop.assert_not_called()

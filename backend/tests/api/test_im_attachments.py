@@ -445,3 +445,170 @@ async def test_send_direct_message_with_attachment(
     assert event["asset_id"] == str(asset_id)
     assert event["attachment"]["filename"] == "a.bin"
     assert event["attachment"]["url"] == "/api/v1/upload/files/im/2026/11/a.bin"
+
+
+# --- 上传失败时回收半成品（避免无作用域引用的孤儿资产） ---
+
+
+def _upload_fixture(fake_user: User):
+    conv = MagicMock(
+        id=uuid4(),
+        type=ImConversationType.DIRECT,
+        user1_id=fake_user.id,
+        user2_id=uuid4(),
+        team_id=uuid4(),
+    )
+    qs = MagicMock()
+    qs.first = AsyncMock(return_value=conv)
+    file = MagicMock()
+    file.read = AsyncMock(return_value=b"hello")
+    file.filename = "a.png"
+    file.content_type = "image/png"
+    asset = MagicMock(
+        id=uuid4(),
+        display_filename="a.png",
+        original_filename="a.png",
+        size=5,
+        content_type="image/png",
+    )
+    upload_info = {
+        "storage_key": "im/2026/11/a.png",
+        "url": "/api/v1/upload/files/im/2026/11/a.png",
+        "filename": "a.png",
+    }
+    return conv, qs, file, asset, upload_info
+
+
+def _upload_patches(
+    qs, upload_info, register, create_ref, *, asset_filter=None, storage=None
+):
+    stack = [
+        patch("app.api.v1.endpoints.im.ImConversation.filter", return_value=qs),
+        patch(
+            "app.services.im_service.check_users_in_same_team", new_callable=AsyncMock
+        ),
+        patch("app.api.v1.endpoints.im._validate_upload_size"),
+        patch(
+            "app.api.v1.endpoints.im.save_generated_upload",
+            new_callable=AsyncMock,
+            return_value=upload_info,
+        ),
+        patch(
+            "app.api.v1.endpoints.im.asset_service.register_bytes",
+            new_callable=AsyncMock,
+            side_effect=register,
+        ),
+        patch(
+            "app.services.asset.asset_service.get_or_create_ref",
+            new_callable=AsyncMock,
+            side_effect=create_ref,
+        ),
+        patch(
+            "app.api.v1.endpoints.im._upload_storage",
+            new_callable=AsyncMock,
+            return_value=storage,
+        ),
+    ]
+    if asset_filter is not None:
+        stack.append(
+            patch("app.api.v1.endpoints.im.Asset.filter", return_value=asset_filter)
+        )
+    return stack
+
+
+@pytest.mark.asyncio
+async def test_upload_scoping_failure_deletes_asset_and_bytes(fake_user: User) -> None:
+    conv, qs, file, asset, upload_info = _upload_fixture(fake_user)
+    asset_delete = MagicMock()
+    asset_delete.delete = AsyncMock()
+    storage = MagicMock()
+    storage.delete = AsyncMock()
+    stack = _upload_patches(
+        qs,
+        upload_info,
+        register=[asset],
+        create_ref=RuntimeError("scope write failed"),
+        asset_filter=asset_delete,
+        storage=storage,
+    )
+    with (
+        stack[0],
+        stack[1],
+        stack[2],
+        stack[3],
+        stack[4],
+        stack[5],
+        stack[6],
+        stack[7],
+    ):
+        with pytest.raises(RuntimeError, match="scope write failed"):
+            await im_endpoints.upload_im_attachment(conv.id, file, fake_user)
+
+    asset_delete.delete.assert_awaited_once()
+    storage.delete.assert_awaited_once_with(upload_info["storage_key"])
+
+
+@pytest.mark.asyncio
+async def test_upload_registration_failure_deletes_bytes_only(fake_user: User) -> None:
+    conv, qs, file, _asset, upload_info = _upload_fixture(fake_user)
+    asset_delete = MagicMock()
+    asset_delete.delete = AsyncMock()
+    storage = MagicMock()
+    storage.delete = AsyncMock()
+    stack = _upload_patches(
+        qs,
+        upload_info,
+        register=RuntimeError("insert failed"),
+        create_ref=None,
+        asset_filter=asset_delete,
+        storage=storage,
+    )
+    with (
+        stack[0],
+        stack[1],
+        stack[2],
+        stack[3],
+        stack[4],
+        stack[5],
+        stack[6],
+        stack[7],
+    ):
+        with pytest.raises(RuntimeError, match="insert failed"):
+            await im_endpoints.upload_im_attachment(conv.id, file, fake_user)
+
+    asset_delete.delete.assert_not_awaited()
+    storage.delete.assert_awaited_once_with(upload_info["storage_key"])
+
+
+@pytest.mark.asyncio
+async def test_upload_cleanup_failures_do_not_mask_the_original_error(
+    fake_user: User,
+) -> None:
+    conv, qs, file, asset, upload_info = _upload_fixture(fake_user)
+    asset_delete = MagicMock()
+    asset_delete.delete = AsyncMock(side_effect=OSError("row delete failed"))
+    storage = MagicMock()
+    storage.delete = AsyncMock(side_effect=OSError("storage offline"))
+    stack = _upload_patches(
+        qs,
+        upload_info,
+        register=[asset],
+        create_ref=RuntimeError("scope write failed"),
+        asset_filter=asset_delete,
+        storage=storage,
+    )
+    with (
+        stack[0],
+        stack[1],
+        stack[2],
+        stack[3],
+        stack[4],
+        stack[5],
+        stack[6],
+        stack[7],
+    ):
+        with pytest.raises(RuntimeError, match="scope write failed"):
+            await im_endpoints.upload_im_attachment(conv.id, file, fake_user)
+
+    asset_delete.delete.assert_awaited_once()
+    storage.delete.assert_awaited_once()
