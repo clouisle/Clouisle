@@ -4,8 +4,6 @@ import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import {
   Bell,
-  Download,
-  FileText,
   Image as ImageIcon,
   Loader2,
   Paperclip,
@@ -71,6 +69,28 @@ function formatFileSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
+function fileBadge(filename: string): { label: string; className: string } {
+  const extension = filename.includes('.')
+    ? filename.split('.').pop()!.toUpperCase()
+    : ''
+  const label = extension.slice(0, 4) || 'FILE'
+  const palette: Record<string, string> = {
+    PDF: 'bg-red-600',
+    DOC: 'bg-blue-600',
+    DOCX: 'bg-blue-600',
+    XLS: 'bg-green-600',
+    XLSX: 'bg-green-600',
+    CSV: 'bg-green-600',
+    PPT: 'bg-red-500',
+    PPTX: 'bg-red-500',
+    ZIP: 'bg-amber-600',
+    RAR: 'bg-amber-600',
+    TXT: 'bg-slate-500',
+    MD: 'bg-slate-500',
+  }
+  return { label, className: palette[label] ?? 'bg-slate-500' }
+}
+
 function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
   const t = useTranslations('notifications.im')
   const { src, loading, error } = useAuthenticatedAssetUrl(attachment.url)
@@ -97,23 +117,29 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
     )
   }
 
+  const badge = fileBadge(attachment.filename)
+
   return (
-    <div className="flex max-w-[75%] items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
-      <FileText className="size-8 shrink-0 text-muted-foreground" />
+    <button
+      type="button"
+      className="flex w-full max-w-[320px] cursor-pointer items-start gap-3 rounded-xl bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+      title={t('download')}
+      onClick={() => void downloadAuthenticatedAsset(attachment.url, attachment.filename)}
+    >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{attachment.filename}</div>
-        <div className="text-[11px] text-muted-foreground">{formatFileSize(attachment.size)}</div>
+        <div className="line-clamp-2 break-all text-sm font-medium leading-snug">
+          {attachment.filename}
+        </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          {formatFileSize(attachment.size)}
+        </div>
       </div>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-8 shrink-0"
-        title={t('download')}
-        onClick={() => void downloadAuthenticatedAsset(attachment.url, attachment.filename)}
+      <div
+        className={`flex size-14 shrink-0 items-center justify-center rounded-lg text-white ${badge.className}`}
       >
-        <Download className="size-4" />
-      </Button>
-    </div>
+        <span className="text-base font-semibold leading-none">{badge.label}</span>
+      </div>
+    </button>
   )
 }
 
