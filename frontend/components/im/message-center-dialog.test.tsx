@@ -32,6 +32,9 @@ mock.module('@/components/ui/dialog', () => ({
 mock.module('streamdown', () => ({
   Streamdown: ({ children }: { children: React.ReactNode }) => <div data-testid="streamdown">{children}</div>,
 }))
+mock.module('sonner', () => ({
+  toast: { error: mock(() => {}), success: mock(() => {}), info: mock(() => {}) },
+}))
 mock.module('@/contexts/team-context', () => ({
   useTeam: () => ({ currentTeam: { id: 'team-1', name: 'Team One' } }),
 }))
@@ -181,7 +184,7 @@ test('ChatWindow ignores Enter key during Chinese IME composition', async () => 
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const textarea = renderer.root.findByType('textarea')
@@ -319,7 +322,7 @@ test('ChatWindow renders date divider when messages span across different days',
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const dividers = renderer.root.findAll(
@@ -429,7 +432,7 @@ test('ChatWindow preserves textarea focus and enabled state while sending', asyn
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const textarea = renderer.root.findByType('textarea')
@@ -503,7 +506,7 @@ test('ChatWindow splits text, image and file into ordered separate messages', as
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const textarea = renderer.root.findByType('textarea')
@@ -593,7 +596,7 @@ test('ChatWindow retries a failed draft with stable client message ids', async (
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const textarea = renderer.root.findByType('textarea')
@@ -972,7 +975,7 @@ test('ChatWindow renders attachments without a filename caption and downloads fi
   let renderer!: ReactTestRenderer
   await act(async () => {
     renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   const images = renderer.root.findAllByType('img')
@@ -1114,4 +1117,161 @@ test('MessageCenterDialog loads conversations, applies live events and search ju
     await newChat.props.onSelectUser('user-2')
   })
   expect(imApi.createDirectConversation).toHaveBeenCalledWith('team-1', 'user-2')
+})
+
+test('ChatWindow loads earlier history and removes a pending attachment', async () => {
+  const conv: ImConversation = {
+    id: 'conv-history',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 1,
+    latest_seq: 2,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-05T00:00:00Z',
+  }
+  const { imApi } = await import('@/lib/api')
+  const newer = {
+    id: 'msg-newer',
+    conversation_id: conv.id,
+    seq: 2,
+    content: 'newer',
+    msg_type: 'text',
+    status: 'normal',
+    created_at: '2026-11-05T09:00:00Z',
+  }
+  const older = { ...newer, id: 'msg-older', seq: 1, content: 'older' }
+  imApi.getMessages = mock(async (_id: string, params?: { before_seq?: number }) =>
+    params?.before_seq
+      ? { messages: [older], has_more: false }
+      : { messages: [newer], has_more: true }
+  )
+  imApi.uploadAttachment = mock(async (_id: string, file: File) => ({
+    asset_id: 'asset-chip',
+    filename: file.name,
+    size: 12,
+    content_type: file.type,
+    url: '/api/v1/upload/files/im/2026/11/chip.txt',
+  }))
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  const loadEarlier = renderer.root
+    .findAll((node) => node.type === 'button')
+    .find((node) => nodeText(node) === 'loadEarlierMessages')
+  expect(loadEarlier).toBeDefined()
+  await act(async () => {
+    await loadEarlier!.props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  expect(imApi.getMessages).toHaveBeenCalledWith(conv.id, { before_seq: 2, limit: 30 })
+  expect(nodeText(renderer.root)).toContain('older')
+
+  const fileInput = renderer.root.findAll(
+    (node) => node.type === 'input' && node.props.type === 'file'
+  )[0]
+  await act(async () => {
+    fileInput.props.onChange({
+      target: { files: [new File(['x'], 'chip.txt', { type: 'text/plain' })], value: '' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  const remove = renderer.root
+    .findAll((node) => node.type === 'button' && node.props.title === 'removeAttachment')
+    .at(0)
+  expect(remove).toBeDefined()
+  act(() => {
+    remove!.props.onClick()
+  })
+  expect(
+    renderer.root.findAll(
+      (node) => node.type === 'button' && node.props.title === 'removeAttachment'
+    ).length
+  ).toBe(0)
+})
+
+test('ChatWindow shows a toast when an attachment upload fails', async () => {
+  const conv: ImConversation = {
+    id: 'conv-upload-fail',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 0,
+    latest_seq: 0,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-05T00:00:00Z',
+  }
+  const { imApi } = await import('@/lib/api')
+  imApi.uploadAttachment = mock(async () => {
+    throw new Error('upload down')
+  })
+  const { toast } = await import('sonner')
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  const fileInput = renderer.root.findAll(
+    (node) => node.type === 'input' && node.props.type === 'file'
+  )[0]
+  await act(async () => {
+    fileInput.props.onChange({
+      target: { files: [new File(['x'], 'broken.txt', { type: 'text/plain' })], value: '' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  expect(toast.error).toHaveBeenCalledWith('uploadFailed')
+})
+
+test('NewChatDialog filters candidates and selects a user', async () => {
+  const { imApi } = await import('@/lib/api')
+  imApi.listTeamCandidates = mock(async () => [
+    { id: 'user-bob', username: 'bob', full_name: 'Bob', role: 'member' },
+    { id: 'user-charlie', username: 'charlie', full_name: 'Charlie', role: 'member' },
+  ])
+  const picked: string[] = []
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(
+      <NewChatDialog
+        open
+        onOpenChange={() => {}}
+        teamId="team-1"
+        onSelectUser={(userId) => picked.push(userId)}
+      />
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  const searchInput = renderer.root.findAll(
+    (node) => node.type === 'input' && node.props.placeholder === 'searchCandidatesPlaceholder'
+  )[0]
+  act(() => {
+    searchInput.props.onChange({
+    target: { value: 'cha' },
+    currentTarget: { value: 'cha' },
+    nativeEvent: { defaultPrevented: false },
+  })
+  })
+  const candidate = renderer.root
+    .findAll((node) => node.type === 'button')
+    .find((node) => nodeText(node).includes('Charlie'))
+  expect(candidate).toBeDefined()
+  act(() => {
+    candidate!.props.onClick()
+  })
+  expect(picked).toEqual(['user-charlie'])
 })

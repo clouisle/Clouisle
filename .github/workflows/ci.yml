@@ -80,7 +80,9 @@ jobs:
     - name: Install Bun
       uses: oven-sh/setup-bun@v2
       with:
-        bun-version: latest
+        # Pin the version the coverage gate is calibrated against: Bun 1.4.4
+        # reports ~0.35pp lower function coverage for the same suite.
+        bun-version: "1.4.2"
 
     - name: Install dependencies
       run: bun install
