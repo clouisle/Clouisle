@@ -79,6 +79,26 @@ def test_get_file_authorizes_protected_categories(upload_test_client):
     assert authorize.await_args.kwargs["authenticated"][0].id == "user-1"
 
 
+def test_get_file_always_protects_im_attachments(upload_test_client):
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        response=AsyncMock(return_value=JSONResponse({"content": "private"})),
+    )
+    authorize = AsyncMock()
+    with (
+        patch(
+            "app.api.v1.endpoints.upload._upload_storage",
+            new=AsyncMock(return_value=storage),
+        ),
+        patch("app.api.v1.endpoints.upload.authorize_protected_asset", new=authorize),
+    ):
+        response = upload_test_client.get("/api/v1/upload/files/im/2026/11/a.png")
+
+    assert response.status_code == 200
+    authorize.assert_awaited_once()
+    assert authorize.await_args.args == ("im/2026/11/a.png",)
+
+
 def test_get_file_keeps_regular_upload_categories_public(upload_test_client):
     storage = SimpleNamespace(
         exists=AsyncMock(return_value=True),

@@ -20,7 +20,13 @@ from app.schemas.response import BusinessError, ResponseCode
 
 
 PROTECTED_FILE_CATEGORIES = frozenset(
-    {"agent-attachments", "sandbox-artifacts", "generated-images", "generated-videos"}
+    {
+        "agent-attachments",
+        "sandbox-artifacts",
+        "generated-images",
+        "generated-videos",
+        "im",
+    }
 )
 
 
