@@ -1365,7 +1365,7 @@ async def init_assets_tables() -> None:
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS asset_scope_refs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            scope_type VARCHAR(20) NOT NULL,
+            scope_type VARCHAR(32) NOT NULL,
             scope_id UUID NOT NULL,
             asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
             ref VARCHAR(4) NOT NULL CHECK (ref ~ '^[0-9a-f]{4}$'),
@@ -1378,6 +1378,16 @@ async def init_assets_tables() -> None:
         CREATE INDEX IF NOT EXISTS idx_asset_scope_refs_scope
         ON asset_scope_refs(scope_type, scope_id)
     """)
+    # The column was sized from the longest enum value at table-creation time
+    # ("workflow_run" = 12). Widening is metadata-only in PostgreSQL, so adding
+    # enum members never needs a manual migration.
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE asset_scope_refs
+            ALTER COLUMN scope_type TYPE VARCHAR(32)
+        """,
+    )
     logger.info("Asset table initialization complete")
 
 

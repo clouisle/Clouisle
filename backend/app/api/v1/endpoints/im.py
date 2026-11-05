@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +11,11 @@ from fastapi.responses import StreamingResponse
 
 from app.api import deps
 from app.api.team_access import check_team_access
-from app.api.v1.endpoints.upload import save_generated_upload, _validate_upload_size
+from app.api.v1.endpoints.upload import (
+    _upload_storage,
+    _validate_upload_size,
+    save_generated_upload,
+)
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.models.im import ImConversation, ImConversationType, ImMessage
 from app.models.asset import Asset, AssetScopeType, AssetSource
@@ -29,6 +34,8 @@ from app.schemas.im import (
     ImSearchResultOut,
 )
 from app.services import im_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -225,22 +232,39 @@ async def upload_im_attachment(
         content_type=content_type,
         filename=file.filename,
     )
-    asset = await asset_service.register_bytes(
-        storage_key=upload_info["storage_key"],
-        original_filename=file.filename or upload_info["filename"],
-        content_type=content_type,
-        content=content,
-        source=AssetSource.UPLOAD,
-        team_id=conv.team_id,
-        created_by_id=current_user.id,
-        provenance={"im_conversation_id": str(conversation_id)},
-    )
-
-    await asset_service.get_or_create_ref(
-        scope_type=AssetScopeType.IM_CONVERSATION,
-        scope_id=conversation_id,
-        asset=asset,
-    )
+    asset = None
+    try:
+        asset = await asset_service.register_bytes(
+            storage_key=upload_info["storage_key"],
+            original_filename=file.filename or upload_info["filename"],
+            content_type=content_type,
+            content=content,
+            source=AssetSource.UPLOAD,
+            team_id=conv.team_id,
+            created_by_id=current_user.id,
+            provenance={"im_conversation_id": str(conversation_id)},
+        )
+        await asset_service.get_or_create_ref(
+            scope_type=AssetScopeType.IM_CONVERSATION,
+            scope_id=conversation_id,
+            asset=asset,
+        )
+    except Exception:
+        # Registration and scoping are two statements: a crash between them
+        # would otherwise leave bytes (and possibly an Asset row) that no
+        # message can reference and that the orphan task cannot see.
+        if asset is not None:
+            try:
+                await Asset.filter(id=asset.id).delete()
+            except Exception:
+                logger.exception("Failed to clean up IM asset %s", asset.id)
+        try:
+            await (await _upload_storage()).delete(upload_info["storage_key"])
+        except Exception:
+            logger.exception(
+                "Failed to clean up IM upload %s", upload_info["storage_key"]
+            )
+        raise
 
     return success(
         data=ImAttachmentOut(

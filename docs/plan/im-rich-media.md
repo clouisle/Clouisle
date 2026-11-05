@@ -143,7 +143,7 @@
   - `ImMessage` 增加 `asset_id: UUIDField(null=True)`（弱引用 `Asset`，避免跨表 FK 迁移复杂度）；**不在启动迁移里创建唯一索引**（见 R3b）。
   - `AssetScopeType` 增加 `IM_CONVERSATION`。
   - **不新建 `ImMessageAsset` 关联表**：拆分发送后消息与附件引用在同一行，天然原子。
-  - 迁移：`init_data.py` 新增 `init_im_rich_media_columns()`，用 `execute_startup_migration_query` 执行 `ALTER TABLE im_messages ADD COLUMN IF NOT EXISTS asset_id UUID`，并挂到 lifespan 初始化链；沿用现有 `ADD COLUMN IF NOT EXISTS` 幂等模式（`asset_scope_refs.scope_type` 已是 `VARCHAR(20)`，可容纳 `im_conversation`，无需改列宽）。**不建索引**（见 R3b）。
+  - 迁移：`init_data.py` 新增 `init_im_rich_media_columns()`，用 `execute_startup_migration_query` 执行 `ALTER TABLE im_messages ADD COLUMN IF NOT EXISTS asset_id UUID`，并挂到 lifespan 初始化链；沿用现有 `ADD COLUMN IF NOT EXISTS` 幂等模式；`asset_scope_refs.scope_type` 在旧库中按当时最长枚举值建成 `VARCHAR(12)`，无法容纳 `im_conversation`，因此 `init_assets_tables()` 增加幂等 `ALTER COLUMN scope_type TYPE VARCHAR(32)`（PostgreSQL 加宽不做表重写），模型显式声明 `max_length=32`。**不建索引**（见 R3b）。
   - 旧行 `asset_id` 为 NULL，`msg_type` 不变，无需回填；启动迁移把早期 `msg_type='image'` 的行归一为 `'file'`（幂等 `UPDATE`）。
 - **Validation**: 在现有 DB 上重复执行启动迁移不报错；查询历史文本消息渲染不变；`uv run pytest` 模型相关测试通过。
 
