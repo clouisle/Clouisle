@@ -120,6 +120,132 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
   )
 }
 
+
+interface MessageRowProps {
+  message: ImMessage
+  isMe: boolean
+  isSystem: boolean
+  showDateDivider: boolean
+  showUnreadDivider: boolean
+  isTarget: boolean
+  locale: string
+  onPauseResolved: () => void
+}
+
+/**
+ * Memoized so typing in the composer only re-renders the composer instead of
+ * every markdown bubble. Props must stay primitive or referentially stable.
+ */
+const MessageRow = React.memo(function MessageRow({
+  message: msg,
+  isMe,
+  isSystem,
+  showDateDivider,
+  showUnreadDivider,
+  isTarget,
+  locale,
+  onPauseResolved,
+}: MessageRowProps) {
+  const t = useTranslations('notifications.im')
+  const currentDate = new Date(msg.created_at)
+  const pauseData =
+    msg.payload && typeof msg.payload === 'object'
+      ? (msg.payload.data as Record<string, unknown> | undefined) ||
+        (msg.payload as Record<string, unknown>)
+      : null
+
+  const pauseReqId =
+    pauseData?.pause_request_id ||
+    pauseData?.pauseRequestId ||
+    (msg.payload?.pause_request_id as string)
+  const workflowId =
+    pauseData?.workflow_id ||
+    pauseData?.workflowId ||
+    (msg.payload?.workflow_id as string)
+  const runId =
+    pauseData?.run_id || pauseData?.runId || (msg.payload?.run_id as string)
+
+  return (
+    <React.Fragment>
+      {showDateDivider && (
+        <div className="relative my-4 flex select-none items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border/50" />
+          </div>
+          <span className="relative rounded-full border border-border/40 bg-background px-3 py-0.5 text-[11px] font-medium text-muted-foreground/80 shadow-2xs">
+            {formatDateDivider(currentDate, locale)}
+          </span>
+        </div>
+      )}
+      {showUnreadDivider && (
+        <div
+          id="im-unread-divider"
+          className="relative my-4 flex select-none items-center justify-center"
+        >
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-primary/40 dark:border-primary/50" />
+          </div>
+          <span className="relative rounded-full border border-primary/30 bg-background px-3 py-0.5 text-[11px] font-medium text-primary shadow-2xs">
+            {t('unreadMessagesDivider')}
+          </span>
+        </div>
+      )}
+      <div
+        id={`im-msg-${msg.id}`}
+        className={cn(
+          'flex flex-col [content-visibility:auto] [contain-intrinsic-size:auto_96px]',
+          isMe ? 'items-end' : 'items-start'
+        )}
+      >
+        {msg.msg_type === 'card' && pauseReqId && workflowId && runId ? (
+          <div className="w-full max-w-2xl space-y-3 rounded-xl border bg-card p-4 shadow-xs">
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+              <ShieldAlert className="size-4" />
+              {t('approvalCardTitle')}
+            </div>
+            <div className="prose prose-xs max-w-none text-xs dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              <Streamdown>{msg.content}</Streamdown>
+            </div>
+            <div className="border-t pt-2">
+              <PauseRequestActions
+                workflowId={String(workflowId)}
+                runId={String(runId)}
+                pauseRequestId={String(pauseReqId)}
+                variant="compact"
+                onResolved={onPauseResolved}
+              />
+            </div>
+          </div>
+        ) : msg.attachment ? (
+          <AttachmentBubble attachment={msg.attachment} />
+        ) : (
+          <div
+            className={cn(
+              'prose prose-sm max-w-none break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-all duration-300 dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+              isTarget && 'ring-2 ring-primary ring-offset-2 shadow-lg animate-pulse',
+              isMe
+                ? 'rounded-br-xs bg-primary text-primary-foreground prose-headings:text-primary-foreground prose-p:text-primary-foreground prose-strong:text-primary-foreground prose-a:text-primary-foreground prose-code:text-primary-foreground prose-ul:text-primary-foreground prose-ol:text-primary-foreground'
+                : isSystem
+                  ? 'rounded-bl-xs border bg-muted/70 text-foreground'
+                  : 'rounded-bl-xs bg-muted text-foreground'
+            )}
+          >
+            <Streamdown>{msg.content}</Streamdown>
+          </div>
+        )}
+
+        <span className="mt-1 px-1 text-[10px] text-muted-foreground/70">
+          {currentDate.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })}
+        </span>
+      </div>
+    </React.Fragment>
+  )
+})
+
 interface ChatWindowProps {
   conversation: ImConversation | null
   currentUserId: string
@@ -216,6 +342,10 @@ export function ChatWindow({
     },
     []
   )
+
+  const handlePauseResolved = React.useCallback(() => {
+    if (convId) void loadInitialMessages(convId)
+  }, [convId, loadInitialMessages])
 
   React.useEffect(() => {
     if (!convId || !conversation) {
@@ -568,114 +698,22 @@ export function ChatWindow({
             return messages.map((msg, idx) => {
               const currentDate = new Date(msg.created_at)
               const prevDate = idx > 0 ? new Date(messages[idx - 1].created_at) : null
-              const showDateDivider = isDifferentDay(currentDate, prevDate)
-              const showUnreadDivider = idx === firstUnreadIndex
-              const isMe = msg.sender_id === currentUserId
-              const isCard = msg.msg_type === 'card'
-            const pauseData =
-              msg.payload && typeof msg.payload === 'object'
-                ? (msg.payload.data as Record<string, unknown> | undefined) ||
-                  (msg.payload as Record<string, unknown>)
-                : null
-
-            const pauseReqId =
-              pauseData?.pause_request_id ||
-              pauseData?.pauseRequestId ||
-              (msg.payload?.pause_request_id as string)
-            const workflowId =
-              pauseData?.workflow_id ||
-              pauseData?.workflowId ||
-              (msg.payload?.workflow_id as string)
-            const runId =
-              pauseData?.run_id ||
-              pauseData?.runId ||
-              (msg.payload?.run_id as string)
-
-            const isTarget = Boolean(
-              (targetMessageId && msg.id === targetMessageId) ||
-              (targetSeq && msg.seq === targetSeq)
-            )
-
-            return (
-              <React.Fragment key={msg.id}>
-                {showDateDivider && (
-                  <div className="relative flex items-center justify-center my-4 select-none">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border/50" />
-                    </div>
-                    <span className="relative bg-background px-3 text-[11px] font-medium text-muted-foreground/80 rounded-full border border-border/40 py-0.5 shadow-2xs">
-                      {formatDateDivider(currentDate, locale)}
-                    </span>
-                  </div>
-                )}
-                  {showUnreadDivider && (
-                    <div
-                      id="im-unread-divider"
-                      className="relative flex items-center justify-center my-4 select-none"
-                    >
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t border-primary/40 dark:border-primary/50" />
-                      </div>
-                      <span className="relative bg-background px-3 text-[11px] font-medium text-primary rounded-full border border-primary/30 py-0.5 shadow-2xs">
-                        {t('unreadMessagesDivider')}
-                      </span>
-                    </div>
+              return (
+                <MessageRow
+                  key={msg.id}
+                  message={msg}
+                  isMe={msg.sender_id === currentUserId}
+                  isSystem={isSystem}
+                  showDateDivider={isDifferentDay(currentDate, prevDate)}
+                  showUnreadDivider={idx === firstUnreadIndex}
+                  isTarget={Boolean(
+                    (targetMessageId && msg.id === targetMessageId) ||
+                      (targetSeq && msg.seq === targetSeq)
                   )}
-                <div
-                  id={`im-msg-${msg.id}`}
-                  className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}
-                >
-                {/* 消息主体 */}
-                {isCard && pauseReqId && workflowId && runId ? (
-                  <div className="w-full max-w-2xl rounded-xl border bg-card p-4 shadow-xs space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-primary">
-                      <ShieldAlert className="size-4" />
-                      {t('approvalCardTitle')}
-                    </div>
-                    <div className="text-xs prose prose-xs max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                      <Streamdown>{msg.content}</Streamdown>
-                    </div>
-                    <div className="pt-2 border-t">
-                      <PauseRequestActions
-                        workflowId={String(workflowId)}
-                        runId={String(runId)}
-                        pauseRequestId={String(pauseReqId)}
-                        variant="compact"
-                        onResolved={() => {
-                          loadInitialMessages(conversation.id)
-                        }}
-                      />
-                    </div>
-                  </div>
-                ) : msg.attachment ? (
-                  <AttachmentBubble attachment={msg.attachment} />
-                ) : (
-                  <div
-                    className={cn(
-                      'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm break-words leading-relaxed prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 transition-all duration-300',
-                      isTarget && 'ring-2 ring-primary ring-offset-2 shadow-lg animate-pulse',
-                      isMe
-                        ? 'bg-primary text-primary-foreground rounded-br-xs prose-headings:text-primary-foreground prose-p:text-primary-foreground prose-strong:text-primary-foreground prose-a:text-primary-foreground prose-code:text-primary-foreground prose-ul:text-primary-foreground prose-ol:text-primary-foreground'
-                        : isSystem
-                        ? 'bg-muted/70 border text-foreground rounded-bl-xs'
-                        : 'bg-muted text-foreground rounded-bl-xs'
-                    )}
-                  >
-                    <Streamdown>{msg.content}</Streamdown>
-                  </div>
-                )}
-
-                {/* 时间戳 */}
-                <span className="text-[10px] text-muted-foreground/70 mt-1 px-1">
-                  {new Date(msg.created_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  })}
-                </span>
-              </div>
-              </React.Fragment>
-            )
+                  locale={locale}
+                  onPauseResolved={handlePauseResolved}
+                />
+              )
             })
           })()
         )}
