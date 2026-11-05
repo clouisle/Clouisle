@@ -5,21 +5,48 @@ export const coverageSummary = (output: string) => {
 
 if (import.meta.main) {
 const minimum = 95
-const result = Bun.spawnSync([
+// Stream the child output instead of buffering it: a long test run can exceed
+// spawnSync's buffer, and a crashed runner hides the failing test entirely.
+const child = Bun.spawn([
   'bun',
   'test',
   '--isolate',
   '--coverage',
   '--coverage-reporter=text',
   '--coverage-reporter=lcov',
-], { cwd: import.meta.dir + '/..' })
+], { cwd: import.meta.dir + '/..', stdout: 'pipe', stderr: 'pipe' })
 
-const stdout = result.stdout.toString()
-const stderr = result.stderr.toString()
-process.stdout.write(stdout)
-process.stderr.write(stderr)
+let output = ''
+const pump = async (
+  stream: ReadableStream<Uint8Array>,
+  sink: (text: string) => void
+) => {
+  const decoder = new TextDecoder()
+  for await (const chunk of stream) {
+    const text = decoder.decode(chunk, { stream: true })
+    output += text
+    sink(text)
+  }
+  const tail = decoder.decode()
+  if (tail) {
+    output += tail
+    sink(tail)
+  }
+}
 
-if (!result.success) process.exit(result.exitCode)
+await Promise.all([
+  pump(child.stdout, (text) => process.stdout.write(text)),
+  pump(child.stderr, (text) => process.stderr.write(text)),
+])
+const exitCode = await child.exited
+const stdout = output
+const stderr = ''
+
+if (exitCode !== 0) {
+  const signal = child.signalCode ? ` signal=${child.signalCode}` : ''
+  console.error(`bun test failed: exit=${exitCode}${signal}`)
+  process.exit(exitCode || 1)
+}
 
 const metrics = coverageSummary(`${stdout}\n${stderr}`)
 if (!metrics) {

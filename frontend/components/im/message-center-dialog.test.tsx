@@ -10,6 +10,12 @@ import { stripMarkdown } from '@/lib/utils'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+function nodeText(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  const children = (node as { children?: unknown[] } | null)?.children
+  return Array.isArray(children) ? children.map(nodeText).join('') : ''
+}
+
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
   useLocale: () => 'zh',
@@ -48,6 +54,7 @@ mock.module('@/lib/api', () => ({
       created_at: '2026-11-04T00:00:00Z',
     })),
     markRead: mock(async () => ({ cleared: 0 })),
+    createDirectConversation: mock(async () => null),
     listTeamCandidates: mock(async () => [
       { id: 'user-2', username: 'bob', full_name: 'Bob', role: 'member' },
     ]),
@@ -780,4 +787,331 @@ test('ChatWindow discards a stale history response after switching conversations
   ).toBe(1)
   // 过期响应的 has_more 不得覆盖当前会话
   expect(JSON.stringify(renderer.toJSON())).not.toContain('loadEarlierMessages')
+})
+
+test('ConversationList highlights search matches and keeps the unread badge', () => {
+  const convs: ImConversation[] = [
+    {
+      id: 'conv-bob',
+      type: 'direct',
+      team_id: 'team-1',
+      is_pinned: false,
+      is_muted: false,
+      last_read_seq: 1,
+      latest_seq: 5,
+      unread_count: 4,
+      last_message_content: 'hello there',
+      last_message_at: '2026-11-04T12:00:00Z',
+      peer: { id: 'user-bob', username: 'bobbity', full_name: 'Bob Builder' },
+      created_at: '2026-11-04T10:00:00Z',
+      updated_at: '2026-11-04T12:00:00Z',
+    },
+  ]
+  let selected: ImConversation | null = null
+  let renderer!: ReactTestRenderer
+  act(() => {
+    renderer = create(
+      <ConversationList
+        teamId="team-1"
+        conversations={convs}
+        selectedId={null}
+        onSelect={(conv) => {
+          selected = conv
+        }}
+        onNewChat={() => {}}
+        search="bob"
+        onSearchChange={() => {}}
+      />
+    )
+  })
+
+  expect(JSON.stringify(renderer.toJSON())).toContain('"4"')
+  expect(nodeText(renderer.root)).toContain('Bob')
+
+  act(() => {
+    renderer.root
+      .findAll((node) => node.type === 'button' && node.props.onClick)
+      .at(-1)!
+      .props.onClick()
+  })
+  expect(selected?.id).toBe('conv-bob')
+})
+
+test('ConversationList shows the search-specific empty state', async () => {
+  const { imApi } = await import('@/lib/api')
+  imApi.searchMessages = mock(async () => [])
+  let renderer!: ReactTestRenderer
+  act(() => {
+    renderer = create(
+      <ConversationList
+        teamId="team-1"
+        conversations={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onNewChat={() => {}}
+        search="nothing-matches"
+        onSearchChange={() => {}}
+      />
+    )
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  })
+  expect(
+    renderer.root.findAll((node) => String(node.props.children) === 'noSearchResults').length
+  ).toBe(1)
+})
+
+test('ConversationList renders message search results and selects them', async () => {
+  const { imApi } = await import('@/lib/api')
+  imApi.searchMessages = mock(async () => [
+    {
+      message_id: 'msg-found-1',
+      conversation_id: 'conv-user',
+      seq: 5,
+      content: 'I found what you asked',
+      msg_type: 'text',
+      conversation_type: 'direct',
+      created_at: '2026-11-04T12:00:00Z',
+      peer: { id: 'user-bob', username: 'bob', full_name: 'Bob Builder' },
+    },
+  ])
+  let picked: { conversation_id: string; seq: number } | null = null
+  let renderer!: ReactTestRenderer
+  act(() => {
+    renderer = create(
+      <ConversationList
+        teamId="team-1"
+        conversations={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onSelectSearchResult={(result) => {
+          picked = { conversation_id: result.conversation_id, seq: result.seq }
+        }}
+        onNewChat={() => {}}
+        search="found"
+        onSearchChange={() => {}}
+      />
+    )
+  })
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  })
+
+  const resultButton = renderer.root
+    .findAll((node) => node.type === 'button' && node.props.onClick)
+    .find((node) => nodeText(node).includes('I found what you asked'))
+  expect(resultButton).toBeDefined()
+  act(() => {
+    resultButton!.props.onClick()
+  })
+  expect(picked).toEqual({ conversation_id: 'conv-user', seq: 5 })
+})
+
+test('ChatWindow renders attachments without a filename caption and downloads files', async () => {
+  const conv: ImConversation = {
+    id: 'conv-files',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 2,
+    latest_seq: 2,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-05T00:00:00Z',
+  }
+  const { imApi } = await import('@/lib/api')
+  imApi.getMessages = mock(async () => ({
+    messages: [
+      {
+        id: 'msg-image',
+        conversation_id: conv.id,
+        seq: 1,
+        msg_type: 'file',
+        content: '',
+        status: 'normal',
+        created_at: '2026-11-05T09:00:00Z',
+        attachment: {
+          asset_id: 'asset-image',
+          filename: 'photo.png',
+          size: 2048,
+          content_type: 'image/png',
+          url: '/api/v1/upload/files/im/2026/11/photo.png',
+        },
+      },
+      {
+        id: 'msg-pdf',
+        conversation_id: conv.id,
+        seq: 2,
+        msg_type: 'file',
+        content: '',
+        status: 'normal',
+        created_at: '2026-11-05T09:01:00Z',
+        attachment: {
+          asset_id: 'asset-pdf',
+          filename: 'report.pdf',
+          size: 4096,
+          content_type: 'application/pdf',
+          url: '/api/v1/upload/files/im/2026/11/report.pdf',
+        },
+      },
+    ],
+    has_more: false,
+  }))
+
+  const { downloadAuthenticatedAsset } = await import('@/components/chat/authenticated-asset')
+  const download = downloadAuthenticatedAsset as unknown as {
+    mockClear: () => void
+    mock: { calls: unknown[][] }
+  }
+  download.mockClear()
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await Promise.resolve()
+  })
+
+  const images = renderer.root.findAllByType('img')
+  expect(images.length).toBe(1)
+  expect(images[0].props.src).toBe('/blob-url')
+  const caption = renderer.root.findAll((node) => node.props.children === 'photo.png')
+  expect(caption.length).toBe(0)
+  expect(renderer.root.findAll((node) => node.props.children === 'report.pdf').length).toBeGreaterThan(0)
+
+  act(() => {
+    renderer.root
+      .findAll((node) => node.type === 'button' && node.props.title === 'download')
+      .at(-1)!
+      .props.onClick()
+  })
+  expect(download.mock.calls.at(-1)).toEqual([
+    '/api/v1/upload/files/im/2026/11/report.pdf',
+    'report.pdf',
+  ])
+})
+
+test('MessageCenterDialog loads conversations, applies live events and search jumps', async () => {
+  const { imApi } = await import('@/lib/api')
+  const systemConv: ImConversation = {
+    id: 'conv-system',
+    type: 'system',
+    team_id: 'team-1',
+    is_pinned: true,
+    is_muted: false,
+    last_read_seq: 3,
+    latest_seq: 3,
+    unread_count: 0,
+    last_message_content: 'welcome',
+    last_message_at: '2026-11-05T08:00:00Z',
+    created_at: '2026-11-04T10:00:00Z',
+    updated_at: '2026-11-05T08:00:00Z',
+  }
+  const directConv: ImConversation = {
+    id: 'conv-direct-live',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 2,
+    latest_seq: 4,
+    unread_count: 2,
+    last_message_content: 'older message',
+    last_message_at: '2026-11-05T07:00:00Z',
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T10:00:00Z',
+    updated_at: '2026-11-05T07:00:00Z',
+  }
+
+  imApi.listConversations = mock(async () => [systemConv, directConv])
+  imApi.getMessages = mock(async () => ({ messages: [], has_more: false }))
+  imApi.markRead = mock(async () => ({ cleared: 0 }))
+  imApi.createDirectConversation = mock(async () => directConv)
+  let handlers: {
+    onNewMessage: (msg: Record<string, unknown>) => void
+    onConversationRead: (data: { conversation_id: string; last_read_seq: number }) => void
+  } | null = null
+  imApi.subscribeEvents = mock((next: typeof handlers) => {
+    handlers = next
+    return () => {}
+  })
+
+  let unreadUpdates = 0
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(
+      <MessageCenterDialog
+        open
+        onOpenChange={() => {}}
+        currentUserId="user-alice"
+        onUnreadUpdated={() => {
+          unreadUpdates += 1
+        }}
+      />
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  // 系统通知会话默认选中
+  expect(nodeText(renderer.root)).toContain('systemNotifications')
+  expect(imApi.listConversations).toHaveBeenCalledWith('team-1')
+
+  // 非当前会话的实时消息：更新预览、未读数并触发回调
+  act(() => {
+    handlers!.onNewMessage({
+      id: 'live-1',
+      conversation_id: directConv.id,
+      seq: 5,
+      content: 'live text',
+      msg_type: 'text',
+      created_at: '2026-11-05T09:00:00Z',
+    })
+  })
+  expect(nodeText(renderer.root)).toContain('live text')
+  expect(unreadUpdates).toBeGreaterThan(0)
+
+  // 已读事件按游标重算未读
+  act(() => {
+    handlers!.onConversationRead({ conversation_id: directConv.id, last_read_seq: 5 })
+  })
+
+  // 点击会话切换
+  const directRow = renderer.root
+    .findAll((node) => node.type === 'button' && /bob/i.test(nodeText(node)))
+    .at(-1)
+  act(() => {
+    directRow!.props.onClick()
+  })
+
+  // 搜索结果：已在列表中 → 选中并跳到指定 seq
+  const conversationList = renderer.root.findByType(ConversationList)
+  act(() => {
+    conversationList.props.onSelectSearchResult({
+      message_id: 'msg-jump',
+      conversation_id: directConv.id,
+      seq: 3,
+      content: 'found it',
+      msg_type: 'text',
+      conversation_type: 'direct',
+      created_at: '2026-11-05T06:00:00Z',
+    })
+  })
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(imApi.getMessages).toHaveBeenCalledWith(directConv.id, {
+    around_seq: 3,
+    limit: 40,
+  })
+
+  // 新建会话后刷新列表
+  const newChat = renderer.root.findByType(NewChatDialog)
+  await act(async () => {
+    await newChat.props.onSelectUser('user-2')
+  })
+  expect(imApi.createDirectConversation).toHaveBeenCalledWith('team-1', 'user-2')
 })
