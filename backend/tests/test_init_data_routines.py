@@ -893,3 +893,41 @@ async def test_storage_settings_migration_reports_already_correct_category(
     await init_data.migrate_storage_settings_category()
 
     migrated.save.assert_not_awaited()
+
+
+async def _run_init_assets_tables(
+    monkeypatch: pytest.MonkeyPatch, scope_type_rows: list[dict[str, int]]
+) -> list[str]:
+    conn = SimpleNamespace(execute_query=AsyncMock())
+    statements: list[str] = []
+
+    async def migration(_conn: object, sql: str, *args: object, **kwargs: object):
+        if "character_maximum_length" in sql:
+            return (1, scope_type_rows)
+        if "representation_key" in sql and "SELECT" in sql:
+            return (1, [{"column_name": "representation_key"}])
+        statements.append(sql)
+        return (1, [])
+
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+    await init_data.init_assets_tables()
+    return statements
+
+
+@pytest.mark.asyncio
+async def test_assets_tables_widens_scope_type_only_when_narrow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    narrowed = await _run_init_assets_tables(
+        monkeypatch, [{"character_maximum_length": 12}]
+    )
+    assert any("ALTER COLUMN scope_type TYPE VARCHAR(32)" in sql for sql in narrowed)
+
+    wide = await _run_init_assets_tables(
+        monkeypatch, [{"character_maximum_length": 32}]
+    )
+    assert not any("ALTER COLUMN scope_type" in sql for sql in wide)
+
+    unknown = await _run_init_assets_tables(monkeypatch, [])
+    assert not any("ALTER COLUMN scope_type" in sql for sql in unknown)

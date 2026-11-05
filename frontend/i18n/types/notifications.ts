@@ -157,6 +157,8 @@ export type NotificationsMessages = {
       unreadMessagesDivider: string
       attachFile: string
       send: string
+      composerMessageTooLong: string
+      noSearchResults: string
       uploadFailed: string
       download: string
       removeAttachment: string

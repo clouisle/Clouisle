@@ -69,6 +69,10 @@ describe('imApi', () => {
     await promise
     unsubscribe()
     expect(fetchMock).toHaveBeenCalled()
+    // new_message 先于 conversation_read 到达，必须收到完整负载
+    expect(onNewMessage).toHaveBeenCalledTimes(1)
+    expect(onNewMessage).toHaveBeenCalledWith({ id: 'msg-1' })
+    expect(onConversationRead).toHaveBeenCalledWith({ conversation_id: 'c1', last_read_seq: 5 })
     fetchMock.mockRestore()
   })
 })

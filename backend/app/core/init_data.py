@@ -1380,14 +1380,28 @@ async def init_assets_tables() -> None:
     """)
     # The column was sized from the longest enum value at table-creation time
     # ("workflow_run" = 12). Widening is metadata-only in PostgreSQL, so adding
-    # enum members never needs a manual migration.
-    await execute_startup_migration_query(
+    # enum members never needs a manual migration. Only issue the ALTER when
+    # the column is still narrow: it takes ACCESS EXCLUSIVE and runs on every
+    # startup otherwise.
+    _, col_info = await execute_startup_migration_query(
         conn,
         """
-        ALTER TABLE asset_scope_refs
-            ALTER COLUMN scope_type TYPE VARCHAR(32)
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_name = 'asset_scope_refs'
+          AND table_schema = 'public'
+          AND column_name = 'scope_type'
         """,
     )
+    scope_type_width = col_info[0]["character_maximum_length"] if col_info else None
+    if scope_type_width is not None and scope_type_width < 32:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE asset_scope_refs
+                ALTER COLUMN scope_type TYPE VARCHAR(32)
+            """,
+        )
     logger.info("Asset table initialization complete")
 
 

@@ -60,11 +60,19 @@ async def _cleanup_orphan_im_assets(
     scoped_asset_ids = AssetScopeRef.filter(
         scope_type=AssetScopeType.IM_CONVERSATION
     ).values_list("asset_id", flat=True)
+    # Filter at SQL level: picking the oldest N and discarding referenced ones
+    # in Python would let a pile of long-lived referenced assets starve the
+    # batch forever. The subquery selects non-null ids only, so NOT IN cannot
+    # become vacuously empty.
+    message_asset_ids = ImMessage.filter(asset_id__isnull=False).values_list(
+        "asset_id", flat=True
+    )
     candidates = await (
         Asset.filter(
             created_at__lt=cutoff,
             id__in=Subquery(scoped_asset_ids),
         )
+        .exclude(id__in=Subquery(message_asset_ids))
         .order_by("created_at")
         .limit(limit)
         .values_list("id", "storage_key")

@@ -33,11 +33,34 @@ export function MessageCenterDialog({
   const [targetJump, setTargetJump] = React.useState<{ seq: number; messageId: string } | null>(null)
   const [liveMessage, setLiveMessage] = React.useState<ImMessage | null>(null)
 
+  // 会话列表请求令牌：只接受最新一次请求、且仍属当前团队的结果
+  const listRequestRef = React.useRef(0)
+  const teamIdRef = React.useRef(teamId)
+
+  React.useEffect(() => {
+    teamIdRef.current = teamId
+  }, [teamId])
+
+  // 切换团队时清空上一团队的选择与会话，避免串队
+  React.useEffect(() => {
+    setConversations([])
+    setSelectedConv(null)
+    setTargetJump(null)
+    setLiveMessage(null)
+  }, [teamId])
+
   // 刷新会话列表
   const refreshConversations = React.useCallback(async (targetSelectId?: string) => {
     if (!teamId) return
+    const requestId = listRequestRef.current + 1
+    listRequestRef.current = requestId
+    const requestTeamId = teamId
     try {
       const items = await imApi.listConversations(teamId)
+      if (requestId !== listRequestRef.current || requestTeamId !== teamIdRef.current) {
+        // 迟到的旧请求/旧团队响应，丢弃
+        return undefined
+      }
       setConversations(items)
       if (targetSelectId) {
         const found = items.find((c) => c.id === targetSelectId)
@@ -47,8 +70,10 @@ export function MessageCenterDialog({
         const sys = items.find((c) => c.type === 'system')
         setSelectedConv(sys || items[0])
       }
+      return items
     } catch (err) {
       console.error('Failed to load conversations:', err)
+      return undefined
     }
   }, [teamId, selectedConv])
 
@@ -75,15 +100,18 @@ export function MessageCenterDialog({
             refreshConversations()
             return prev
           }
+          const current = prev[idx]
+          // 迟到的旧事件不能回退会话预览与最新序号
+          if (msg.seq <= current.latest_seq) return prev
           const next = [...prev]
-          const item = { ...next[idx] }
-          item.last_message_content = msg.content
-          item.last_message_at = msg.created_at
-          item.latest_seq = msg.seq
-          if (!isCurrent) {
-            item.unread_count = (item.unread_count || 0) + 1
+          next[idx] = {
+            ...current,
+            last_message_content: msg.content,
+            last_message_at: msg.created_at,
+            latest_seq: msg.seq,
+            // 仅在非当前会话且事件确实更新时递增，避免重复投递重复计数
+            unread_count: isCurrent ? current.unread_count : (current.unread_count || 0) + 1,
           }
-          next[idx] = item
           return next.sort((a, b) => {
             const pA = a.is_pinned ? 1 : 0
             const pB = b.is_pinned ? 1 : 0
@@ -98,9 +126,16 @@ export function MessageCenterDialog({
       },
       onConversationRead: (data) => {
         setConversations((prev) =>
-          prev.map((c) =>
-            c.id === data.conversation_id ? { ...c, unread_count: 0 } : c
-          )
+          prev.map((c) => {
+            if (c.id !== data.conversation_id) return c
+            // 按已读游标重算：部分已读时，更新的消息仍保持未读
+            const lastRead = Math.max(c.last_read_seq || 0, data.last_read_seq || 0)
+            return {
+              ...c,
+              last_read_seq: lastRead,
+              unread_count: Math.max((c.latest_seq || 0) - lastRead, 0),
+            }
+          })
         )
         onUnreadUpdated?.()
       },
@@ -126,11 +161,19 @@ export function MessageCenterDialog({
 
   // 点击历史消息搜索结果直接定位会话与消息切片
   const handleSelectSearchResult = (result: ImSearchResult) => {
-    const conv = conversations.find((c) => c.id === result.conversation_id)
-    if (conv) {
-      setSelectedConv(conv)
+    setTargetJump(null)
+    const existing = conversations.find((c) => c.id === result.conversation_id)
+    if (existing) {
+      handleSelectConversation(existing)
+      setTargetJump({ seq: result.seq, messageId: result.message_id })
+      return
     }
-    setTargetJump({ seq: result.seq, messageId: result.message_id })
+    // 列表里没有该会话（例如刚被创建/不在当前分页内）：先刷新列表再定位
+    void refreshConversations(result.conversation_id).then((items) => {
+      if (items?.some((c) => c.id === result.conversation_id)) {
+        setTargetJump({ seq: result.seq, messageId: result.message_id })
+      }
+    })
   }
 
   // 发起新聊天

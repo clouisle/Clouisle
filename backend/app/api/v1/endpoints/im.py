@@ -12,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from app.api import deps
 from app.api.team_access import check_team_access
 from app.api.v1.endpoints.upload import (
+    ALLOWED_DOCUMENT_TYPES,
+    ALLOWED_IMAGE_TYPES,
     _upload_storage,
     _validate_upload_size,
     save_generated_upload,
@@ -38,6 +40,15 @@ from app.services import im_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Attachments are served inline from the application origin, so the client
+# supplied content type must never be trusted for active content. Raster
+# images and the document types accepted by the generic upload endpoints are
+# safe; SVG/HTML (and unknown types) are rejected outright.
+IM_ATTACHMENT_ALLOWED_TYPES = frozenset(
+    (ALLOWED_IMAGE_TYPES | ALLOWED_DOCUMENT_TYPES)
+    - {"image/svg+xml", "text/html", "application/xhtml+xml"}
+)
 
 
 async def _build_attachment_map(msgs: list[ImMessage]) -> dict[UUID, ImAttachmentOut]:
@@ -223,9 +234,17 @@ async def upload_im_attachment(
         conv.team_id, conv.user1_id, conv.user2_id
     )
 
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in IM_ATTACHMENT_ALLOWED_TYPES:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_file_type",
+            status_code=400,
+            data={"allowed": sorted(IM_ATTACHMENT_ALLOWED_TYPES)},
+        )
+
     content = await file.read()
     _validate_upload_size(content)
-    content_type = file.content_type or "application/octet-stream"
     upload_info = await save_generated_upload(
         content=content,
         category="im",

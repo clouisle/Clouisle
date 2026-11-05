@@ -70,11 +70,14 @@ export function ConversationList({
     const q = search.trim()
     if (!q || !teamId) {
       setMatchedMessages([])
+      setSearchingMessages(false)
       return
     }
 
     let active = true
     setSearchingMessages(true)
+    // 立刻清空上一轮结果，避免新搜索请求期间旧结果仍可点击，失败时也不会残留
+    setMatchedMessages([])
     const timer = setTimeout(() => {
       imApi
         .searchMessages(teamId, q)
@@ -186,8 +189,18 @@ export function ConversationList({
                             </span>
                           )}
                         </div>
-                        <p className="truncate text-xs text-muted-foreground font-normal mt-0.5">
-                          {highlightMatch(subtitle, search.trim())}
+                        <p className="flex items-center justify-between gap-1 mt-0.5">
+                          <span className="truncate text-xs text-muted-foreground font-normal min-w-0">
+                            {highlightMatch(subtitle, search.trim())}
+                          </span>
+                          {conv.unread_count > 0 && (
+                            <Badge
+                              variant="destructive"
+                              className="size-4.5 rounded-full p-0 flex items-center justify-center text-[10px] shrink-0 font-medium"
+                            >
+                              {conv.unread_count > 99 ? '99+' : conv.unread_count}
+                            </Badge>
+                          )}
                         </p>
                       </div>
                     </button>
@@ -241,7 +254,7 @@ export function ConversationList({
 
             {filtered.length === 0 && matchedMessages.length === 0 && !searchingMessages && (
               <div className="text-muted-foreground py-10 text-center text-xs">
-                {t('noMessagesInConversation')}
+                {t('noSearchResults')}
               </div>
             )}
           </>

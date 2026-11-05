@@ -3,9 +3,17 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.im import ImMessageType
+
+# 客户端可发送的消息类型：card / system_notice 只能由服务端内部生成，
+# 否则客户端可伪造审批卡片等系统消息。
+_CLIENT_MSG_TYPES = {
+    ImMessageType.TEXT,
+    ImMessageType.MARKDOWN,
+    ImMessageType.FILE,
+}
 
 
 class DirectConversationCreate(BaseModel):
@@ -20,11 +28,21 @@ class SendMessageRequest(BaseModel):
     client_msg_id: str | None = Field(
         None, max_length=64, description="客户端生成的消息防重 ID"
     )
-    msg_type: ImMessageType = Field(default=ImMessageType.TEXT, description="消息类型")
+    msg_type: ImMessageType = Field(
+        default=ImMessageType.TEXT,
+        description="消息类型（客户端仅支持 text / markdown / file）",
+    )
     payload: dict[str, Any] | None = Field(
         None, description="富交互结构体（如审批卡片状态等）"
     )
     asset_id: UUID | None = Field(None, description="图片/文件消息引用的资产 ID")
+
+    @field_validator("msg_type")
+    @classmethod
+    def _validate_msg_type(cls, value: ImMessageType) -> ImMessageType:
+        if value not in _CLIENT_MSG_TYPES:
+            raise ValueError("msg_type must be one of text, markdown, file")
+        return value
 
     @model_validator(mode="after")
     def _validate_attachment(self) -> SendMessageRequest:

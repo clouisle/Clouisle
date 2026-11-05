@@ -14,28 +14,37 @@ CONV_SEQ_KEY_PREFIX = "im:conv:{}:seq"
 CONV_LOCK_PREFIX = "im:lock:conv:{}"
 CREATE_CONV_LOCK_PREFIX = "im:lock:create_conv:{}:{}:{}"
 DEDUP_KEY_PREFIX = "im:dedup:{}"
-DEDUP_RESULT_PREFIX = "im:msg_result:{}"
+DEDUP_RESULT_PREFIX = "im:msg_result:{}:{}"
 USER_TOTAL_UNREAD_PREFIX = "im:user:{}:total_unread"
 USER_CONV_UNREAD_PREFIX = "im:user:{}:conv_unread"
 USER_EVENT_CHANNEL_PREFIX = "im:channel:user:{}"
 
-# Lua Script: 原子扣减会话未读数与总未读数，避免分布式竞态与负数
-_MARK_READ_LUA = """
+# Lua Script: 原子写入会话剩余未读数，并按差值调整总未读数，避免分布式竞态与负数
+_SET_CONV_UNREAD_LUA = """
 local conv_hash_key = KEYS[1]
 local total_key = KEYS[2]
 local conv_field = ARGV[1]
+local remaining = tonumber(ARGV[2]) or 0
+if remaining < 0 then remaining = 0 end
 
 local current_raw = redis.call('HGET', conv_hash_key, conv_field)
-if current_raw then
-    local current_val = tonumber(current_raw)
-    if current_val and current_val > 0 then
-        redis.call('HSET', conv_hash_key, conv_field, 0)
-        local new_total = redis.call('DECRBY', total_key, current_val)
-        if new_total < 0 then
-            redis.call('SET', total_key, 0)
-        end
-        return current_val
+local current_val = tonumber(current_raw) or 0
+if current_val < 0 then current_val = 0 end
+
+if remaining ~= current_val then
+    if remaining > 0 then
+        redis.call('HSET', conv_hash_key, conv_field, remaining)
+    else
+        redis.call('HDEL', conv_hash_key, conv_field)
     end
+    local new_total = redis.call('INCRBY', total_key, remaining - current_val)
+    if new_total < 0 then
+        redis.call('SET', total_key, 0)
+    end
+end
+
+if current_val > remaining then
+    return current_val - remaining
 end
 return 0
 """
@@ -172,26 +181,38 @@ async def acquire_dedup_lock(client_msg_id: str, ttl_seconds: int = 60) -> bool:
 
 
 async def cache_message_result(
-    client_msg_id: str, message_data: dict[str, Any], ttl_seconds: int = 60
+    conversation_id: UUID,
+    client_msg_id: str,
+    message_data: dict[str, Any],
+    ttl_seconds: int = 60,
 ) -> None:
-    """缓存消息投递结果，供并发重试直接命中返回。"""
+    """缓存消息投递结果，供同一会话内的并发重试直接命中返回。
+
+    键必须包含会话 ID：客户端的 client_msg_id 只在会话内唯一，跨会话复用时
+    不得命中其他会话的消息。
+    """
     if not client_msg_id:
         return
-    key = DEDUP_RESULT_PREFIX.format(client_msg_id)
+    key = DEDUP_RESULT_PREFIX.format(conversation_id, client_msg_id)
     try:
         r = await get_redis()
         await r.setex(key, ttl_seconds, json.dumps(message_data, default=str))
     except Exception as exc:
         logger.warning(
-            "Redis cache_message_result failed for %s: %s", client_msg_id, exc
+            "Redis cache_message_result failed for %s/%s: %s",
+            conversation_id,
+            client_msg_id,
+            exc,
         )
 
 
-async def get_cached_message_result(client_msg_id: str) -> dict[str, Any] | None:
-    """获取已缓存的消息投递结果。"""
+async def get_cached_message_result(
+    conversation_id: UUID, client_msg_id: str
+) -> dict[str, Any] | None:
+    """获取指定会话内已缓存的消息投递结果。"""
     if not client_msg_id:
         return None
-    key = DEDUP_RESULT_PREFIX.format(client_msg_id)
+    key = DEDUP_RESULT_PREFIX.format(conversation_id, client_msg_id)
     try:
         r = await get_redis()
         raw = await r.get(key)
@@ -200,7 +221,10 @@ async def get_cached_message_result(client_msg_id: str) -> dict[str, Any] | None
             return json.loads(text)
     except Exception as exc:
         logger.warning(
-            "Redis get_cached_message_result failed for %s: %s", client_msg_id, exc
+            "Redis get_cached_message_result failed for %s/%s: %s",
+            conversation_id,
+            client_msg_id,
+            exc,
         )
     return None
 
@@ -235,10 +259,13 @@ async def increment_user_unread(
         )
 
 
-async def mark_conversation_read_in_cache(user_id: UUID, conversation_id: UUID) -> int:
-    """通过 Lua 脚本原子将指定会话在 Redis 中的未读数清零，并从总未读数中扣减。
+async def mark_conversation_read_in_cache(
+    user_id: UUID, conversation_id: UUID, remaining_unread: int = 0
+) -> int:
+    """通过 Lua 脚本原子写入会话的剩余未读数，并按差值调整全局总未读数。
 
-    返回扣减的未读消息数。
+    `remaining_unread` 为该会话在已读游标之后仍然未读的消息数：完全已读时为 0，
+    部分已读时由调用方按数据库计数传入。返回本次清掉的未读数（旧值 - 剩余值）。
     """
     user_str = str(user_id)
     conv_str = str(conversation_id)
@@ -247,7 +274,14 @@ async def mark_conversation_read_in_cache(user_id: UUID, conversation_id: UUID) 
 
     try:
         r = await get_redis()
-        deducted = await r.eval(_MARK_READ_LUA, 2, conv_hash_key, total_key, conv_str)
+        deducted = await r.eval(
+            _SET_CONV_UNREAD_LUA,
+            2,
+            conv_hash_key,
+            total_key,
+            conv_str,
+            max(remaining_unread, 0),
+        )
         return int(deducted or 0)
     except Exception as exc:
         logger.warning(

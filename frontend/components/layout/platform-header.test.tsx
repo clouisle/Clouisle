@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 const push = mock(() => {})
 const logout = mock(async () => {})
 const getCurrentUser = mock(async () => ({
+  id: 'user-1',
   username: 'Ada Lovelace',
   email: 'ada@example.com',
   avatar_url: null,

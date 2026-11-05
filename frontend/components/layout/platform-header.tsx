@@ -455,6 +455,7 @@ export function PlatformHeader() {
                 size="icon"
                 className="relative h-8 w-8 cursor-pointer text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground"
                 onClick={() => {
+                  if (!user?.id) return
                   requestNotificationPermission()
                   setMessageCenterOpen(true)
                 }}
@@ -685,13 +686,15 @@ export function PlatformHeader() {
           </div>
         </DialogContent>
       </Dialog>
-      {/* 全局消息中心模态框 */}
-      <MessageCenterDialog
-        open={messageCenterOpen}
-        onOpenChange={setMessageCenterOpen}
-        currentUserId={user?.id || ''}
-        onUnreadUpdated={fetchUnread}
-      />
+      {/* 全局消息中心模态框：用户信息就绪后再挂载，避免 ChatWindow 拿到空 currentUserId */}
+      {user?.id && (
+        <MessageCenterDialog
+          open={messageCenterOpen}
+          onOpenChange={setMessageCenterOpen}
+          currentUserId={user.id}
+          onUnreadUpdated={fetchUnread}
+        />
+      )}
     </header>
   )
 }

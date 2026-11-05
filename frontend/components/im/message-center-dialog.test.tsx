@@ -5,7 +5,7 @@ import { ConversationList } from './conversation-list'
 import { NewChatDialog } from './new-chat-dialog'
 import { ChatWindow } from './chat-window'
 import { MessageCenterDialog } from './message-center-dialog'
-import { type ImConversation } from '@/lib/api'
+import { type ImConversation, type ImMessage } from '@/lib/api'
 import { stripMarkdown } from '@/lib/utils'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -183,6 +183,9 @@ test('ChatWindow ignores Enter key during Chinese IME composition', async () => 
   })
 
   const preventDefault = mock()
+  const { imApi } = await import('@/lib/api')
+  const sendMessage = imApi.sendMessage as unknown as { mockClear: () => void; mock: { calls: unknown[] } }
+  sendMessage.mockClear()
 
   // 1. 在 compositionstart 激活期间按 Enter：应当忽略，不发送
   act(() => {
@@ -198,6 +201,7 @@ test('ChatWindow ignores Enter key during Chinese IME composition', async () => 
     })
   })
   expect(preventDefault).not.toHaveBeenCalled()
+  expect(imApi.sendMessage).not.toHaveBeenCalled()
 
   // 2. compositionend 结束后按 Enter：正常发送
   act(() => {
@@ -613,4 +617,167 @@ test('ChatWindow retries a failed draft with stable client message ids', async (
 
   expect(imageIds.length).toBe(2)
   expect(imageIds[0]).toBe(imageIds[1])
+})
+
+test('ChatWindow keeps a live SSE message that arrives during the initial history load', async () => {
+  const conv: ImConversation = {
+    id: 'conv-live-merge',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 0,
+    latest_seq: 2,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+
+  const { imApi } = await import('@/lib/api')
+  type MessagePage = { messages: ImMessage[]; has_more: boolean }
+  let resolveLoad!: (value: MessagePage) => void
+  const loadPromise = new Promise<MessagePage>((resolve) => {
+    resolveLoad = resolve
+  })
+  imApi.getMessages = mock(async () => loadPromise)
+
+  const loaded: ImMessage[] = [
+    {
+      id: 'msg-loaded-1',
+      conversation_id: conv.id,
+      seq: 1,
+      content: 'loaded one',
+      msg_type: 'text',
+      status: 'normal',
+      created_at: '2026-11-04T10:00:00Z',
+    },
+    {
+      id: 'msg-loaded-2',
+      conversation_id: conv.id,
+      seq: 2,
+      content: 'loaded two',
+      msg_type: 'text',
+      status: 'normal',
+      created_at: '2026-11-04T10:01:00Z',
+    },
+  ]
+  const live: ImMessage = {
+    id: 'msg-live-3',
+    conversation_id: conv.id,
+    seq: 3,
+    content: 'live message',
+    msg_type: 'text',
+    status: 'normal',
+    created_at: '2026-11-04T10:02:00Z',
+  }
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+  })
+
+  // SSE 在历史请求返回前到达
+  await act(async () => {
+    renderer.update(
+      <ChatWindow conversation={conv} currentUserId="user-alice" incomingMessage={live} />
+    )
+  })
+
+  await act(async () => {
+    resolveLoad({ messages: loaded, has_more: false })
+    await loadPromise
+  })
+
+  const liveBubbles = renderer.root.findAll(
+    (node) =>
+      node.props['data-testid'] === 'streamdown' && node.props.children === 'live message'
+  )
+  expect(liveBubbles.length).toBe(1)
+  expect(
+    renderer.root.findAll((node) => node.props.id === 'im-msg-msg-loaded-2').length
+  ).toBe(1)
+})
+
+test('ChatWindow discards a stale history response after switching conversations', async () => {
+  const convA: ImConversation = {
+    id: 'conv-stale-a',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 0,
+    latest_seq: 0,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+  const convB: ImConversation = {
+    ...convA,
+    id: 'conv-stale-b',
+    peer: { id: 'user-carol', username: 'carol', full_name: 'Carol' },
+  }
+
+  const { imApi } = await import('@/lib/api')
+  type MessagePage = { messages: ImMessage[]; has_more: boolean }
+  let resolveA!: (value: MessagePage) => void
+  const pendingA = new Promise<MessagePage>((resolve) => {
+    resolveA = resolve
+  })
+  const currentMessage: ImMessage = {
+    id: 'msg-current-b',
+    conversation_id: convB.id,
+    seq: 1,
+    content: 'current B message',
+    msg_type: 'text',
+    status: 'normal',
+    created_at: '2026-11-04T11:00:00Z',
+  }
+  imApi.getMessages = mock(async (id: string) => {
+    if (id === convA.id) return pendingA
+    return { messages: [currentMessage], has_more: false }
+  })
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={convA} currentUserId="user-alice" />)
+  })
+
+  await act(async () => {
+    renderer.update(<ChatWindow conversation={convB} currentUserId="user-alice" />)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  // 旧会话的请求此时才返回（带 has_more），应当被完全丢弃
+  await act(async () => {
+    resolveA({
+      messages: [
+        {
+          id: 'msg-stale-a',
+          conversation_id: convA.id,
+          seq: 4,
+          content: 'stale A message',
+          msg_type: 'text',
+          status: 'normal',
+          created_at: '2026-11-04T10:00:00Z',
+        },
+      ],
+      has_more: true,
+    })
+    await pendingA
+  })
+
+  expect(
+    renderer.root.findAll((node) => node.props.children === 'stale A message').length
+  ).toBe(0)
+  expect(
+    renderer.root.findAll(
+      (node) =>
+        node.props['data-testid'] === 'streamdown' &&
+        node.props.children === 'current B message'
+    ).length
+  ).toBe(1)
+  // 过期响应的 has_more 不得覆盖当前会话
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('loadEarlierMessages')
 })

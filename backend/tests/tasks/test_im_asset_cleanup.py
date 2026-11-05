@@ -4,12 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from tortoise.expressions import Subquery
 
 from app.tasks import im as im_tasks
 
 
 def _candidate_query(rows: list[tuple[object, str]]) -> MagicMock:
     query = MagicMock()
+    query.exclude = MagicMock(return_value=query)
     query.order_by = MagicMock(return_value=query)
     query.limit = MagicMock(return_value=query)
     query.values_list = AsyncMock(return_value=rows)
@@ -44,7 +46,9 @@ async def test_cleanup_deletes_only_unreferenced_assets() -> None:
     asset_filter = _asset_filter_factory(candidate_query, delete_query)
     message_filter = MagicMock(
         side_effect=lambda **kwargs: (
-            SimpleNamespace(
+            SimpleNamespace(values_list=MagicMock(return_value=[]))
+            if kwargs.get("asset_id__isnull") is False
+            else SimpleNamespace(
                 values_list=AsyncMock(return_value=[referenced_id]),
             )
             if "asset_id__in" in kwargs
@@ -75,6 +79,14 @@ async def test_cleanup_deletes_only_unreferenced_assets() -> None:
         scope_filter.call_args.kwargs["scope_type"]
         == im_tasks.AssetScopeType.IM_CONVERSATION
     )
+    # Referenced assets are excluded in SQL before the batch limit, so a large
+    # set of long-lived referenced assets cannot starve the cleanup.
+    exclude_kwargs = candidate_query.exclude.call_args.kwargs
+    assert set(exclude_kwargs) == {"id__in"}
+    assert isinstance(exclude_kwargs["id__in"], Subquery)
+    assert {"asset_id__isnull": False} in [
+        call.kwargs for call in message_filter.call_args_list
+    ]
     storage.delete.assert_awaited_once_with("im/2026/11/orphan.png")
     delete_query.delete.assert_awaited_once()
     [delete_call] = [c for c in asset_filter.calls if "id" in c]  # type: ignore[attr-defined]
@@ -99,9 +111,13 @@ async def test_cleanup_keeps_row_when_storage_delete_fails() -> None:
         patch.object(
             im_tasks.ImMessage,
             "filter",
-            return_value=SimpleNamespace(
-                values_list=AsyncMock(return_value=[]),
-                exists=AsyncMock(return_value=False),
+            side_effect=lambda **kwargs: (
+                SimpleNamespace(values_list=MagicMock(return_value=[]))
+                if "asset_id__isnull" in kwargs
+                else SimpleNamespace(
+                    values_list=AsyncMock(return_value=[]),
+                    exists=AsyncMock(return_value=False),
+                )
             ),
         ),
         patch.object(
@@ -127,6 +143,11 @@ async def test_cleanup_keeps_row_when_storage_delete_fails() -> None:
 async def test_cleanup_short_circuits_without_candidates() -> None:
     with (
         patch.object(im_tasks.Asset, "filter", return_value=_candidate_query([])),
+        patch.object(
+            im_tasks.ImMessage,
+            "filter",
+            return_value=SimpleNamespace(values_list=MagicMock(return_value=[])),
+        ),
         patch.object(
             im_tasks.AssetScopeRef,
             "filter",
@@ -154,6 +175,11 @@ async def test_cleanup_applies_ttl_and_batch_overrides() -> None:
         patch.object(im_tasks, "now_utc", return_value=now),
         patch.object(im_tasks.Asset, "filter", side_effect=asset_filter),
         patch.object(
+            im_tasks.ImMessage,
+            "filter",
+            return_value=SimpleNamespace(values_list=MagicMock(return_value=[])),
+        ),
+        patch.object(
             im_tasks.AssetScopeRef,
             "filter",
             return_value=SimpleNamespace(values_list=MagicMock(return_value=[])),
@@ -163,6 +189,7 @@ async def test_cleanup_applies_ttl_and_batch_overrides() -> None:
 
     kwargs = asset_filter.call_args.kwargs
     assert kwargs["created_at__lt"] == datetime(2026, 11, 5, 6, tzinfo=timezone.utc)
+    candidate_query.exclude.assert_called_once()
     candidate_query.limit.assert_called_once_with(7)
 
 
@@ -219,3 +246,17 @@ def test_get_event_loop_reuses_an_open_loop() -> None:
         assert im_tasks._get_event_loop() is open_loop
 
     set_event_loop.assert_not_called()
+
+
+def test_task_wrapper_reraises_cleanup_failures() -> None:
+    def _raise(coro):
+        coro.close()
+        raise RuntimeError("boom")
+
+    loop = MagicMock()
+    loop.run_until_complete = MagicMock(side_effect=_raise)
+    with (
+        patch.object(im_tasks, "_get_event_loop", return_value=loop),
+        pytest.raises(RuntimeError, match="boom"),
+    ):
+        im_tasks.cleanup_orphan_im_assets_task()

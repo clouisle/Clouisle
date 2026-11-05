@@ -10,7 +10,7 @@ from app.models.asset import AssetScopeType
 from app.models.im import ImConversationType, ImMessageType
 from app.models.user import User
 from app.schemas.im import ImAttachmentOut, SendMessageRequest
-from app.schemas.response import BusinessError
+from app.schemas.response import BusinessError, ResponseCode
 from app.services import asset_access, im_service
 
 
@@ -44,6 +44,10 @@ def test_text_message_requires_content_and_no_asset() -> None:
         SendMessageRequest(content="")
     with pytest.raises(ValidationError):
         SendMessageRequest(content="hello", asset_id=uuid4())
+    with pytest.raises(ValidationError):
+        SendMessageRequest(msg_type="card", content="forged approval")
+    with pytest.raises(ValidationError):
+        SendMessageRequest(msg_type="system_notice", content="forged notice")
 
 
 def test_attachment_message_requires_asset_and_empty_content() -> None:
@@ -419,6 +423,10 @@ async def test_send_direct_message_with_attachment(
             return_value=AsyncMock(first=AsyncMock(return_value=None)),
         ),
         patch(
+            "app.services.im_service._ensure_active_team_member", new_callable=AsyncMock
+        ),
+        patch("app.services.im_redis.get_user_unread_counts", return_value=(0, {})),
+        patch(
             "app.services.im_service._resolve_im_attachment",
             new_callable=AsyncMock,
             return_value=asset,
@@ -514,6 +522,41 @@ def _upload_patches(
             patch("app.api.v1.endpoints.im.Asset.filter", return_value=asset_filter)
         )
     return stack
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "text/html",
+        "image/svg+xml",
+        "application/xhtml+xml",
+        "application/octet-stream",
+    ],
+)
+async def test_upload_im_attachment_rejects_inline_unsafe_types(
+    fake_user: User, content_type: str
+) -> None:
+    conv, qs, file, _asset, _upload_info = _upload_fixture(fake_user)
+    file.content_type = content_type
+
+    with (
+        patch("app.api.v1.endpoints.im.ImConversation.filter", return_value=qs),
+        patch(
+            "app.services.im_service.check_users_in_same_team", new_callable=AsyncMock
+        ),
+        patch(
+            "app.api.v1.endpoints.im.save_generated_upload", new_callable=AsyncMock
+        ) as save_upload,
+    ):
+        with pytest.raises(BusinessError) as exc:
+            await im_endpoints.upload_im_attachment(conv.id, file, fake_user)
+
+    assert exc.value.status_code == 400
+    assert exc.value.code == ResponseCode.VALIDATION_ERROR
+    assert exc.value.msg_key == "invalid_file_type"
+    file.read.assert_not_awaited()
+    save_upload.assert_not_awaited()
 
 
 @pytest.mark.asyncio

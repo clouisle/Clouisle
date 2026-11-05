@@ -25,6 +25,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
+function isSameMessage(a: ImMessage, b: ImMessage): boolean {
+  if (a.id === b.id) return true
+  return Boolean(
+    a.client_msg_id && b.client_msg_id && a.client_msg_id === b.client_msg_id
+  )
+}
+
 function isDifferentDay(d1: Date, d2: Date | null): boolean {
   if (!d2) return true
   return (
@@ -279,6 +286,11 @@ export function ChatWindow({
   const shouldScrollToBottomRef = React.useRef(false)
   const shouldScrollToUnreadRef = React.useRef(false)
   const currentConvIdRef = React.useRef<string | null>(null)
+  // 初始历史请求令牌：切换会话或发起新请求后，旧的响应一律丢弃
+  const loadTokenRef = React.useRef(0)
+  // 当前消息流是否定位在 around_seq 历史切片上（中间历史可能未加载）
+  const aroundSeqViewRef = React.useRef(false)
+  const messagesRef = React.useRef<ImMessage[]>([])
   const [unreadWatermark, setUnreadWatermark] = React.useState<number | null>(null)
   const [pendingAttachments, setPendingAttachments] = React.useState<ImAttachment[]>([])
   const [uploading, setUploading] = React.useState(false)
@@ -303,6 +315,10 @@ export function ChatWindow({
   const convId = conversation?.id
   const isSystem = conversation?.type === 'system'
 
+  React.useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
   // 加载会话最新消息（支持未读消息位置探测与加载）
   const loadInitialMessages = React.useCallback(
     async (
@@ -311,6 +327,9 @@ export function ChatWindow({
       watermark?: number | null,
       unreadCount?: number
     ) => {
+      const token = ++loadTokenRef.current
+      const isAround = Boolean(seqTarget)
+      aroundSeqViewRef.current = isAround
       setLoading(true)
       try {
         let params: { around_seq?: number; limit?: number } = { limit: 40 }
@@ -321,34 +340,63 @@ export function ChatWindow({
         }
 
         const resp = await imApi.getMessages(id, params)
-        setMessages(resp.messages)
+        // 会话已切换或已有更新的请求：丢弃过期响应
+        if (token !== loadTokenRef.current || currentConvIdRef.current !== id) return
+
+        if (isAround) {
+          setMessages(resp.messages)
+        } else {
+          // SSE 可能在历史请求期间到达：保留响应中不存在且比已加载消息更新的实时消息
+          setMessages((prev) => {
+            const newestSeq = resp.messages.reduce((max, m) => Math.max(max, m.seq), 0)
+            const live = prev.filter(
+              (m) =>
+                m.conversation_id === id &&
+                m.seq > newestSeq &&
+                !resp.messages.some((loaded) => isSameMessage(loaded, m))
+            )
+            if (live.length === 0) return resp.messages
+            return [...resp.messages, ...live].sort((a, b) => a.seq - b.seq)
+          })
+        }
         setHasMore(resp.has_more)
 
         if (watermark !== null && watermark !== undefined) {
           shouldScrollToUnreadRef.current = true
           shouldScrollToBottomRef.current = false
-        } else if (!seqTarget) {
+        } else if (!isAround) {
           shouldScrollToUnreadRef.current = false
           shouldScrollToBottomRef.current = true
         }
 
-        // 进入会话自动标记已读
-        await imApi.markRead(id)
+        // 进入会话自动标记已读：
+        // - 定位到历史消息（around_seq）时不标记，否则会把整段最新消息误标为已读
+        // - 未读数超出本次已加载窗口时不标记，避免清掉未加载消息的未读状态
+        const unreadWithinWindow =
+          unreadCount === undefined || unreadCount <= resp.messages.length
+        if (!isAround && unreadWithinWindow) {
+          await imApi.markRead(id)
+        }
       } catch (err) {
         console.error('Failed to load messages:', err)
       } finally {
-        setLoading(false)
+        if (token === loadTokenRef.current) setLoading(false)
       }
     },
     []
   )
 
   const handlePauseResolved = React.useCallback(() => {
-    if (convId) void loadInitialMessages(convId)
-  }, [convId, loadInitialMessages])
+    if (convId) {
+      void loadInitialMessages(convId, null, null, conversation?.unread_count)
+    }
+  }, [convId, conversation?.unread_count, loadInitialMessages])
 
   React.useEffect(() => {
     if (!convId || !conversation) {
+      loadTokenRef.current += 1
+      aroundSeqViewRef.current = false
+      setLoading(false)
       setMessages([])
       setUnreadWatermark(null)
       setPendingAttachments([])
@@ -400,33 +448,42 @@ export function ChatWindow({
 
   // 实时 SSE 增量新消息推入
   React.useEffect(() => {
-    if (incomingMessage && incomingMessage.conversation_id === convId) {
-      setMessages((prev) => {
-        const exists = prev.some(
-          (m) =>
-            m.id === incomingMessage.id ||
-            (m.client_msg_id &&
-              incomingMessage.client_msg_id &&
-              m.client_msg_id === incomingMessage.client_msg_id)
-        )
-        if (exists) return prev
+    if (!incomingMessage || incomingMessage.conversation_id !== convId) return
 
-        const container = scrollContainerRef.current
-        if (container) {
-          const isNearBottom =
-            container.scrollHeight - container.scrollTop - container.clientHeight <= 150
-          if (isNearBottom) {
-            shouldScrollToBottomRef.current = true
-          }
-        } else {
-          shouldScrollToBottomRef.current = true
-        }
+    const prev = messagesRef.current
+    if (prev.some((m) => isSameMessage(m, incomingMessage))) return
 
-        const next = [...prev, incomingMessage]
-        return next.sort((a, b) => a.seq - b.seq)
-      })
+    // around_seq 切片只包含目标附近的消息：若新消息与当前切片之间存在断层，
+    // 说明中间历史从未加载，直接追加会漏消息，改为重新加载最新历史。
+    // 切换会话后尚未加载完成时，state 里仍是上一个会话的消息，不做断层判断。
+    const hasCurrentConvMessages = prev.length > 0 && prev[0].conversation_id === convId
+    const newestSeq = prev.reduce((max, m) => Math.max(max, m.seq), 0)
+    if (
+      aroundSeqViewRef.current &&
+      hasCurrentConvMessages &&
+      incomingMessage.seq > newestSeq + 1
+    ) {
+      void loadInitialMessages(convId, null, null, conversation?.unread_count)
+      return
     }
-  }, [incomingMessage, convId])
+
+    const container = scrollContainerRef.current
+    if (container) {
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <= 150
+      if (isNearBottom) {
+        shouldScrollToBottomRef.current = true
+      }
+    } else {
+      shouldScrollToBottomRef.current = true
+    }
+
+    setMessages((current) => {
+      if (current.some((m) => isSameMessage(m, incomingMessage))) return current
+      const next = [...current, incomingMessage]
+      return next.sort((a, b) => a.seq - b.seq)
+    })
+  }, [incomingMessage, convId, conversation?.unread_count, loadInitialMessages])
 
   // 精准视口位置锚定与滚底调度（优先处理未读分割线定位）
   React.useEffect(() => {
@@ -476,6 +533,7 @@ export function ChatWindow({
   // 加载更早历史消息
   const handleLoadMore = async () => {
     if (!convId || loadingMore || messages.length === 0) return
+    const snapshotConvId = convId
     const container = scrollContainerRef.current
     if (container) {
       pendingScrollAnchorRef.current = {
@@ -486,10 +544,15 @@ export function ChatWindow({
     const earliestSeq = messages[0].seq
     setLoadingMore(true)
     try {
-      const resp = await imApi.getMessages(convId, {
+      const resp = await imApi.getMessages(snapshotConvId, {
         before_seq: earliestSeq,
         limit: 30,
       })
+      // 会话已切换：丢弃过期响应，且不覆盖新会话的 hasMore / 滚动锚点
+      if (currentConvIdRef.current !== snapshotConvId) {
+        pendingScrollAnchorRef.current = null
+        return
+      }
       shouldScrollToBottomRef.current = false
       setMessages((prev) => [...resp.messages, ...prev])
       setHasMore(resp.has_more)
@@ -528,6 +591,14 @@ export function ChatWindow({
   const handleSend = async () => {
     const text = inputText.trim()
     if (!convId || sending || isSystem || uploading) return
+    // 与后端 max_length 对齐（按 Unicode 码点计数），超限时不发送并保留草稿
+    if (text && [...text].length > 10000) {
+      toast.error(t('composerMessageTooLong'))
+      return
+    }
+
+    // 发送始终绑定发起时的会话；会话切换后不再把结果写进新会话
+    const sendConvId = convId
 
     const items: Array<{
       content: string
@@ -554,25 +625,28 @@ export function ChatWindow({
     setSending(true)
     try {
       for (let i = 0; i < items.length; i += 1) {
-        const newMsg = await imApi.sendMessage(convId, {
+        const newMsg = await imApi.sendMessage(sendConvId, {
           content: items[i].content,
           msg_type: items[i].msg_type,
           asset_id: items[i].asset_id,
           client_msg_id: `${batchId}-${items[i].dedupeKey}`,
         })
+        if (currentConvIdRef.current !== sendConvId) continue
         shouldScrollToBottomRef.current = true
         shouldScrollToUnreadRef.current = false
         setMessages((prev) =>
           prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
         )
       }
-      setInputText('')
-      setPendingAttachments([])
-      draftBatchIdRef.current = null
-      if (textareaRef.current) {
-        textareaRef.current.style.height = '44px'
-        textareaRef.current.style.overflowY = 'hidden'
-        textareaRef.current.focus()
+      if (currentConvIdRef.current === sendConvId) {
+        setInputText('')
+        setPendingAttachments([])
+        draftBatchIdRef.current = null
+        if (textareaRef.current) {
+          textareaRef.current.style.height = '44px'
+          textareaRef.current.style.overflowY = 'hidden'
+          textareaRef.current.focus()
+        }
       }
       onMessageSent?.()
     } catch (err) {

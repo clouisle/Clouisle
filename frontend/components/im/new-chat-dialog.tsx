@@ -27,6 +27,8 @@ export function NewChatDialog({ open, onOpenChange, teamId, onSelectUser }: NewC
     if (!open || !teamId) return
     let active = true
     setLoading(true)
+    // 换团队/重新打开时立刻清空上一轮候选，避免请求中或失败后残留旧成员
+    setCandidates([])
     imApi
       .listTeamCandidates(teamId)
       .then((data) => {

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 import logging
+from bisect import bisect_left
 from typing import Any
 from uuid import UUID
 
 from tortoise.exceptions import IntegrityError
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.schemas.response import BusinessError, ResponseCode
@@ -29,17 +31,131 @@ def _sort_user_pair(u1: UUID, u2: UUID) -> tuple[UUID, UUID]:
     return (u1, u2) if str(u1) < str(u2) else (u2, u1)
 
 
+def _replace_paired(text: str, markers: tuple[str, ...]) -> str:
+    """把成对标记 `marker + inner + marker` 折叠成 `inner`。
+
+    单次前向扫描（不使用带回溯的量词），保证对任意用户输入都是线性复杂度。
+    与旧正则语义一致：同一轮按给定顺序尝试各标记，成对标记不跨换行匹配。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    # 当前行结束位置（换行符下标），-1 表示后面没有换行
+    line_end = text.find("\n")
+    # 每个标记在本行内是否已确认找不到配对，避免逐字符重复扫描造成平方复杂度
+    exhausted = {marker: False for marker in markers}
+    while i < n:
+        if line_end != -1 and i >= line_end:
+            line_end = text.find("\n", i + 1)
+            exhausted = {marker: False for marker in markers}
+        for marker in markers:
+            if exhausted[marker] or not text.startswith(marker, i):
+                continue
+            end = text.find(marker, i + len(marker), n if line_end == -1 else line_end)
+            if end == -1:
+                exhausted[marker] = True
+                continue
+            out.append(text[i + len(marker) : end])
+            i = end + len(marker)
+            break
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def _strip_fenced_code(text: str) -> str:
+    """移除 ``` 围栏代码块内容，单次扫描。"""
+    out: list[str] = []
+    i = 0
+    while True:
+        start = text.find("```", i)
+        if start == -1:
+            out.append(text[i:])
+            return "".join(out)
+        end = text.find("```", start + 3)
+        if end == -1:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i:start])
+        out.append(" ")
+        i = end + 3
+
+
+def _strip_inline_code(text: str) -> str:
+    """移除行内代码的反引号但保留内容，单次扫描。"""
+    out: list[str] = []
+    i = 0
+    while True:
+        start = text.find("`", i)
+        if start == -1:
+            out.append(text[i:])
+            return "".join(out)
+        end = text.find("`", start + 1)
+        if end == -1:
+            out.append(text[i:])
+            return "".join(out)
+        if end == start + 1:
+            # 空 `` 不成对，越过第一个反引号后继续向后找
+            out.append(text[i : start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        out.append(text[start + 1 : end])
+        i = end + 1
+
+
+def _next_index(indices: list[int], start: int) -> int:
+    """返回 `indices` 中第一个 >= start 的位置，不存在返回 -1。"""
+    pos = bisect_left(indices, start)
+    return indices[pos] if pos < len(indices) else -1
+
+
+def _replace_markdown_links(text: str, prefix: str, min_text: int) -> str:
+    """把 `![alt](url)`（prefix="!"）或 `[text](url)`（prefix=""）折叠成 alt/text。
+
+    括号位置预先建表后单向查找，不使用嵌套/回溯量词。
+    """
+    close_brackets = [i for i, ch in enumerate(text) if ch == "]"]
+    close_parens = [i for i, ch in enumerate(text) if ch == ")"]
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    prefix_len = len(prefix)
+    while i < n:
+        if text.startswith(prefix + "[", i):
+            open_idx = i + prefix_len
+            close_bracket = _next_index(close_brackets, open_idx + 1)
+            if (
+                close_bracket != -1
+                and close_bracket - open_idx - 1 >= min_text
+                and close_bracket + 1 < n
+                and text[close_bracket + 1] == "("
+            ):
+                close_paren = _next_index(close_parens, close_bracket + 2)
+                if close_paren != -1:
+                    out.append(text[open_idx + 1 : close_bracket])
+                    i = close_paren + 1
+                    continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
 def _strip_markdown_summary(text: str, max_length: int = 200) -> str:
-    """去除 Markdown 标记符号，返回纯文本摘要。"""
+    """去除 Markdown 标记符号，返回纯文本摘要。
+
+    各标记均按线性扫描处理（不使用嵌套/回溯正则），避免恶意长文本触发 ReDoS。
+    """
     if not text:
         return ""
-    clean = re.sub(r"```[\s\S]*?```", " ", text)
-    clean = re.sub(r"`([^`]+)`", r"\1", clean)
-    clean = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", clean)
-    clean = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", clean)
-    clean = re.sub(r"(\*\*|__)(.*?)\1", r"\2", clean)
-    clean = re.sub(r"(\*|_)(.*?)\1", r"\2", clean)
-    clean = re.sub(r"~~(.*?)~~", r"\1", clean)
+    clean = _strip_fenced_code(text)
+    clean = _strip_inline_code(clean)
+    clean = _replace_markdown_links(clean, "!", 0)
+    clean = _replace_markdown_links(clean, "", 1)
+    clean = _replace_paired(clean, ("**", "__"))
+    clean = _replace_paired(clean, ("*", "_"))
+    clean = _replace_paired(clean, ("~~",))
     clean = re.sub(r"^#{1,6}\s+", "", clean, flags=re.MULTILINE)
     clean = re.sub(r"^\s*>\s+", "", clean, flags=re.MULTILINE)
     clean = re.sub(r"\s+", " ", clean).strip()
@@ -86,10 +202,11 @@ async def _resolve_im_attachment(
 
 
 async def check_users_in_same_team(team_id: UUID, user_a: UUID, user_b: UUID) -> None:
-    """校验两个用户是否同时隶属于指定团队且处于激活状态。"""
+    """校验两个用户是否同时隶属于指定团队且账号均处于激活状态。"""
     members = await TeamMember.filter(
         team_id=team_id,
         user_id__in=[user_a, user_b],
+        user__is_active=True,
     ).values_list("user_id", flat=True)
 
     member_set = set(members)
@@ -97,6 +214,24 @@ async def check_users_in_same_team(team_id: UUID, user_a: UUID, user_b: UUID) ->
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,
             msg_key="team_access_denied",
+            status_code=403,
+        )
+
+
+async def _ensure_active_team_member(team_id: UUID, user_id: UUID) -> None:
+    """校验用户当前仍是该团队成员且账号处于激活状态。
+
+    被移出团队（或账号被停用）的用户即使仍保留会话参与者记录，也不得再读写会话。
+    """
+    is_active_member = await TeamMember.filter(
+        team_id=team_id,
+        user_id=user_id,
+        user__is_active=True,
+    ).exists()
+    if not is_active_member:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="conversation_access_denied",
             status_code=403,
         )
 
@@ -226,6 +361,39 @@ async def _ensure_participants(
             pass
 
 
+async def _count_unread_messages(
+    conversation_id: UUID, user_id: UUID, last_read_seq: int
+) -> int:
+    """统计会话游标之后的消息数，排除本人发送的消息。
+
+    系统通知的 sender 为空，不能被 `sender_id != user_id` 过滤掉（SQL 中 NULL 比较为假），
+    因此显式保留 `sender_id IS NULL`。
+    """
+    return (
+        await ImMessage.filter(conversation_id=conversation_id, seq__gt=last_read_seq)
+        .filter(Q(sender_id__isnull=True) | ~Q(sender_id=user_id))
+        .count()
+    )
+
+
+async def _rebuild_unread_cache_from_db(user_id: UUID) -> dict[str, int]:
+    """按数据库消息全量重算并写入用户未读缓存（排除本人发送的消息）。"""
+    participants = (
+        await ImConversationParticipant.filter(user_id=user_id)
+        .prefetch_related("conversation")
+        .all()
+    )
+
+    conv_unread: dict[str, int] = {}
+    for p in participants:
+        conv_unread[str(p.conversation.id)] = await _count_unread_messages(
+            p.conversation.id, user_id, p.last_read_seq
+        )
+
+    await im_redis.rebuild_unread_cache(user_id, sum(conv_unread.values()), conv_unread)
+    return conv_unread
+
+
 async def send_direct_message(
     conversation_id: UUID,
     sender_id: UUID,
@@ -236,8 +404,9 @@ async def send_direct_message(
     asset_id: UUID | None = None,
 ) -> ImMessage:
     """发送单聊消息：
+    - 校验发送者仍为会话所属团队的激活成员（被移出团队后立即失去读写权限）。
     - 分布式会话排他锁保证会话内绝对单调有序、无序号空洞。
-    - 分布式幂等去重防重复提交。
+    - 分布式幂等去重防重复提交（缓存键含会话 ID，避免跨会话误命中）。
     - 异步广播事件至 Redis Pub/Sub 实现跨多实例实时推送。
     """
     conv = await ImConversation.filter(id=conversation_id).first()
@@ -262,9 +431,13 @@ async def send_direct_message(
             status_code=403,
         )
 
+    await _ensure_active_team_member(conv.team_id, sender_id)
+
     # 1. 快速检查幂等缓存
     if client_msg_id:
-        cached_result = await im_redis.get_cached_message_result(client_msg_id)
+        cached_result = await im_redis.get_cached_message_result(
+            conversation_id, client_msg_id
+        )
         if cached_result:
             existing = await ImMessage.filter(id=UUID(cached_result["id"])).first()
             if existing:
@@ -289,6 +462,14 @@ async def send_direct_message(
             if existing_msg:
                 _ensure_same_asset(existing_msg, asset_id)
                 return existing_msg
+
+        # 接收方未读缓存：总键缺失（Redis 冷启动/TTL 过期）时先从数据库重建，
+        # 且重建发生在消息落库之前，因此不会把本条消息重复计入。
+        receiver_id = conv.user2_id if conv.user1_id == sender_id else conv.user1_id
+        if receiver_id is not None:
+            cached_total, _ = await im_redis.get_user_unread_counts(receiver_id)
+            if cached_total is None:
+                await _rebuild_unread_cache_from_db(receiver_id)
 
         # 附件资产校验（字节 IO 在锁外完成，此处只做元数据校验）
         asset = None
@@ -333,8 +514,7 @@ async def send_direct_message(
         )
 
         # 6. 原子增加接收方未读数
-        receiver_id = conv.user2_id if conv.user1_id == sender_id else conv.user1_id
-        if receiver_id:
+        if receiver_id is not None:
             await im_redis.increment_user_unread(receiver_id, conversation_id, 1)
 
             # 7. 跨实例 Pub/Sub 广播
@@ -363,9 +543,10 @@ async def send_direct_message(
             }
             await im_redis.publish_im_event(receiver_id, "new_message", msg_dict)
 
-        # 8. 写入幂等结果缓存
+        # 8. 写入幂等结果缓存（键含会话 ID）
         if client_msg_id:
             await im_redis.cache_message_result(
+                conversation_id,
                 client_msg_id,
                 {
                     "id": str(msg.id),
@@ -449,7 +630,10 @@ async def send_system_message(
 
 
 async def list_conversations(team_id: UUID, user_id: UUID) -> list[dict[str, Any]]:
-    """获取当前用户在指定团队下的所有会话列表（置顶排前，包含未读数与对方信息）。"""
+    """获取当前用户在指定团队下的所有会话列表（置顶排前，包含未读数与对方信息）。
+
+    缓存缺失时按数据库消息重算未读数，本人发送的消息不计入未读。
+    """
     await get_or_create_system_conversation(team_id, user_id)
 
     try:
@@ -495,7 +679,9 @@ async def list_conversations(team_id: UUID, user_id: UUID) -> list[dict[str, Any
         if cached_conv_unread is not None and conv_id_str in cached_conv_unread:
             unread_count = cached_conv_unread[conv_id_str]
         else:
-            unread_count = max(conv.latest_seq - p.last_read_seq, 0)
+            unread_count = await _count_unread_messages(
+                conv.id, user_id, p.last_read_seq
+            )
             computed_unread_map[conv_id_str] = unread_count
 
         peer_info: dict[str, Any] | None = None
@@ -551,7 +737,10 @@ async def get_messages(
     around_seq: int | None = None,
     limit: int = 50,
 ) -> tuple[list[ImMessage], bool]:
-    """基于游标 (Cursor) 高性能分页查询消息流，避免深分页全表扫描。"""
+    """基于游标 (Cursor) 高性能分页查询消息流，避免深分页全表扫描。
+
+    仅会话参与者且仍是会话所属团队激活成员的请求会被放行。
+    """
     conv = await ImConversation.filter(id=conversation_id).first()
     if not conv:
         raise BusinessError(
@@ -574,6 +763,8 @@ async def get_messages(
                 msg_key="conversation_access_denied",
                 status_code=403,
             )
+
+    await _ensure_active_team_member(conv.team_id, user_id)
 
     safe_limit = max(1, min(limit, 100))
     query = ImMessage.filter(conversation_id=conversation_id)
@@ -620,7 +811,13 @@ async def get_messages(
 async def mark_conversation_read(
     conversation_id: UUID, user_id: UUID, up_to_seq: int | None = None
 ) -> int:
-    """标记会话已读：更新参与者 last_read_seq 游标，并原子扣减 Redis 未读数，多端广播。"""
+    """标记会话已读：更新参与者 last_read_seq 游标，并刷新 Redis 未读数，多端广播。
+
+    - 校验调用者仍是会话所属团队的激活成员。
+    - `up_to_seq` 会先收敛到 `conv.latest_seq`，读游标不会越过最新消息。
+    - 部分已读时缓存保留剩余未读（按数据库消息计数，排除本人发送的消息），
+      而不是无条件清零。
+    """
     conv = await ImConversation.filter(id=conversation_id).first()
     if not conv:
         raise BusinessError(
@@ -629,18 +826,32 @@ async def mark_conversation_read(
             status_code=404,
         )
 
+    await _ensure_active_team_member(conv.team_id, user_id)
+
     participant = await ImConversationParticipant.filter(
         conversation_id=conversation_id, user_id=user_id
     ).first()
     if not participant:
         return 0
 
-    target_seq = up_to_seq if up_to_seq is not None else conv.latest_seq
+    requested_seq = conv.latest_seq if up_to_seq is None else up_to_seq
+    target_seq = max(0, min(requested_seq, conv.latest_seq))
     if target_seq > participant.last_read_seq:
         participant.last_read_seq = target_seq
         await participant.save(update_fields=["last_read_seq", "updated_at"])
 
-    cleared = await im_redis.mark_conversation_read_in_cache(user_id, conversation_id)
+    # 已读游标单调递增：过期的 up_to_seq 不会把游标回退，剩余未读按实际游标计算
+    read_seq = participant.last_read_seq
+    if read_seq >= conv.latest_seq:
+        remaining_unread = 0
+    else:
+        remaining_unread = await _count_unread_messages(
+            conversation_id, user_id, read_seq
+        )
+
+    cleared = await im_redis.mark_conversation_read_in_cache(
+        user_id, conversation_id, remaining_unread
+    )
 
     # 广播给该用户其他端
     await im_redis.publish_im_event(
@@ -648,14 +859,14 @@ async def mark_conversation_read(
         "conversation_read",
         {
             "conversation_id": str(conversation_id),
-            "last_read_seq": target_seq,
+            "last_read_seq": read_seq,
         },
     )
     return cleared
 
 
 async def get_global_unread_count(user_id: UUID) -> int:
-    """获取用户所有团队下的全局消息未读总数（O(1) 缓存读取）。"""
+    """获取用户所有团队下的全局消息未读总数（O(1) 缓存读取，不含本人发送的消息）。"""
     cached_total, _ = await im_redis.get_user_unread_counts(user_id)
     if cached_total is not None:
         return cached_total
@@ -667,12 +878,12 @@ async def get_global_unread_count(user_id: UUID) -> int:
     )
 
     conv_map: dict[str, int] = {}
-    total = 0
     for p in participants:
-        unread = max(p.conversation.latest_seq - p.last_read_seq, 0)
-        conv_map[str(p.conversation.id)] = unread
-        total += unread
+        conv_map[str(p.conversation.id)] = await _count_unread_messages(
+            p.conversation.id, user_id, p.last_read_seq
+        )
 
+    total = sum(conv_map.values())
     await im_redis.rebuild_unread_cache(user_id, total, conv_map)
     return total
 

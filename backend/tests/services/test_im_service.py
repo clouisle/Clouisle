@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -10,6 +10,19 @@ from app.models.im import (
     ImMessage,
 )
 from app.services import im_service
+
+# Captured before the autouse fixture stubs the module attribute.
+_REAL_ENSURE_ACTIVE_TEAM_MEMBER = im_service._ensure_active_team_member
+
+
+@pytest.fixture(autouse=True)
+def _stub_team_membership_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Other branches are under test here; the live guard has its own coverage."""
+
+    async def _allow(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(im_service, "_ensure_active_team_member", _allow)
 
 
 def test_sort_user_pair() -> None:
@@ -58,9 +71,9 @@ async def test_send_direct_message_access_denied() -> None:
 
     conv = ImConversation(
         id=conv_id,
-        team_id=uuid4(),
         type=ImConversationType.DIRECT,
     )
+    conv.team_id = uuid4()
     conv.user1_id = sender_id
     conv.user2_id = user2_id
 
@@ -87,9 +100,9 @@ async def test_send_direct_message_idempotent() -> None:
 
     conv = ImConversation(
         id=conv_id,
-        team_id=uuid4(),
         type=ImConversationType.DIRECT,
     )
+    conv.team_id = uuid4()
     conv.user1_id = sender_id
     conv.user2_id = user2_id
 
@@ -129,3 +142,98 @@ async def test_send_direct_message_idempotent() -> None:
 async def test_search_messages_empty_query() -> None:
     res = await im_service.search_messages(uuid4(), uuid4(), "   ")
     assert res == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("plain text", "plain text"),
+        ("**bold** and __strong__", "bold and strong"),
+        ("*italic* _emphasis_ ~~gone~~", "italic emphasis gone"),
+        ("**unclosed", "unclosed"),
+        ("***", "*"),
+        ("a\n**b\nc**", "a b c"),
+        ("```py\ncode\n```", ""),
+        ("```unclosed", "```unclosed"),
+        ("`code`", "code"),
+        ("`unclosed", "`unclosed"),
+        ("``", "``"),
+        ("[text](https://x.test/a)", "text"),
+        ("![img](https://x.test/a)", "img"),
+        ("[text]", "[text]"),
+        ("[text] (url)", "[text] (url)"),
+        ("[](x)", "[](x)"),
+        ("[a](b", "[a](b"),
+        ("![](x)", ""),
+        ("# Heading\n> quote", "Heading quote"),
+        ("  multiple   spaces  ", "multiple spaces"),
+        ("**[link](u)**", "link"),
+        ("**a **b**", "a b"),
+        ("*a *b*", "a b*"),
+    ],
+)
+def test_strip_markdown_summary_shapes(text: str, expected: str) -> None:
+    assert im_service._strip_markdown_summary(text) == expected
+
+
+def test_strip_markdown_summary_truncates_to_limit() -> None:
+    assert im_service._strip_markdown_summary("x" * 250) == "x" * 200
+    assert im_service._strip_markdown_summary("y" * 50, max_length=10) == "y" * 10
+
+
+def test_ensure_same_asset_rejects_swapped_attachment() -> None:
+    existing = MagicMock(asset_id=uuid4())
+    with pytest.raises(BusinessError) as exc:
+        im_service._ensure_same_asset(existing, uuid4())
+    assert exc.value.msg_key == "im_attachment_mismatch"
+    im_service._ensure_same_asset(MagicMock(asset_id=None), None)
+
+
+@pytest.mark.asyncio
+async def test_ensure_active_team_member_allows_active_member() -> None:
+    query = MagicMock()
+    query.exists = AsyncMock(return_value=True)
+    with patch("app.services.im_service.TeamMember.filter", return_value=query):
+        await _REAL_ENSURE_ACTIVE_TEAM_MEMBER(uuid4(), uuid4())
+    query.exists.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ensure_active_team_member_rejects_removed_or_inactive_member() -> None:
+    query = MagicMock()
+    query.exists = AsyncMock(return_value=False)
+    with patch("app.services.im_service.TeamMember.filter", return_value=query):
+        with pytest.raises(BusinessError) as exc:
+            await _REAL_ENSURE_ACTIVE_TEAM_MEMBER(uuid4(), uuid4())
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_check_users_in_same_team_allows_both_members() -> None:
+    user_a, user_b = uuid4(), uuid4()
+    query = MagicMock()
+    query.values_list = AsyncMock(return_value=[user_a, user_b])
+    with patch("app.services.im_service.TeamMember.filter", return_value=query):
+        await im_service.check_users_in_same_team(uuid4(), user_a, user_b)
+
+
+@pytest.mark.asyncio
+async def test_get_messages_missing_conversation_returns_404() -> None:
+    with patch(
+        "app.models.im.ImConversation.filter",
+        return_value=AsyncMock(first=AsyncMock(return_value=None)),
+    ):
+        with pytest.raises(BusinessError) as exc:
+            await im_service.get_messages(uuid4(), uuid4())
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mark_conversation_read_missing_conversation_returns_404() -> None:
+    with patch(
+        "app.models.im.ImConversation.filter",
+        return_value=AsyncMock(first=AsyncMock(return_value=None)),
+    ):
+        with pytest.raises(BusinessError) as exc:
+            await im_service.mark_conversation_read(uuid4(), uuid4())
+    assert exc.value.status_code == 404

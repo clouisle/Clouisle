@@ -23,6 +23,16 @@ async def fake_tx():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _stub_team_membership_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests exercise other branches; the live membership guard is covered elsewhere."""
+
+    async def _allow(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(im_service, "_ensure_active_team_member", _allow)
+
+
 # ============================================================================
 # 1. im_redis.py 深入覆盖
 # ============================================================================
@@ -110,21 +120,21 @@ async def test_im_redis_helpers_and_error_branches() -> None:
         assert await im_redis.acquire_dedup_lock("dedup-key") is True
 
     # cache_message_result / get_cached_message_result
-    await im_redis.cache_message_result("", {})  # 空直接 return
-    assert await im_redis.get_cached_message_result("") is None
+    await im_redis.cache_message_result(conv_id, "", {})  # 空直接 return
+    assert await im_redis.get_cached_message_result(conv_id, "") is None
 
     fake_redis.setex = AsyncMock(side_effect=Exception("cache error"))
     with patch("app.services.im_redis.get_redis", return_value=fake_redis):
-        await im_redis.cache_message_result("key", {"a": 1})  # 不抛异常
+        await im_redis.cache_message_result(conv_id, "key", {"a": 1})  # 不抛异常
 
     fake_redis.get = AsyncMock(return_value=b'{"id": "msg-1"}')
     with patch("app.services.im_redis.get_redis", return_value=fake_redis):
-        data = await im_redis.get_cached_message_result("key")
+        data = await im_redis.get_cached_message_result(conv_id, "key")
         assert data == {"id": "msg-1"}
 
     fake_redis.get = AsyncMock(side_effect=Exception("get error"))
     with patch("app.services.im_redis.get_redis", return_value=fake_redis):
-        assert await im_redis.get_cached_message_result("key") is None
+        assert await im_redis.get_cached_message_result(conv_id, "key") is None
 
     # release_dedup_lock 空与异常
     await im_redis.release_dedup_lock("")
@@ -319,6 +329,7 @@ async def test_send_direct_message_error_and_success_branches() -> None:
         patch(
             "app.services.im_redis.publish_im_event", new_callable=AsyncMock
         ) as mock_pub,
+        patch("app.services.im_redis.get_user_unread_counts", return_value=(0, {})),
         patch("app.services.im_redis.cache_message_result", new_callable=AsyncMock),
     ):
         res = await im_service.send_direct_message(
@@ -459,6 +470,11 @@ async def test_get_global_unread_count_unmitigated_rebuild() -> None:
             ),
         ),
         patch(
+            "app.services.im_service._count_unread_messages",
+            new_callable=AsyncMock,
+            return_value=3,
+        ),
+        patch(
             "app.services.im_redis.rebuild_unread_cache", new_callable=AsyncMock
         ) as mock_rebuild,
     ):
@@ -596,7 +612,7 @@ async def test_sync_legacy_notifications_for_user_full() -> None:
         ),
         patch(
             "app.models.im.ImMessage.filter",
-            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
         ),
         patch(
             "app.models.notification.Notification.filter",
@@ -734,6 +750,7 @@ async def test_im_service_residual_branches() -> None:
                 ),  # 锁未获取到后二次命中
             ],
         ),
+        patch("app.services.im_redis.get_user_unread_counts", return_value=(0, {})),
         patch("app.services.im_redis.acquire_dedup_lock", return_value=False),
     ):
         res = await im_service.send_direct_message(
@@ -809,6 +826,11 @@ async def test_im_service_residual_branches() -> None:
             "app.services.im_redis.get_user_unread_counts", return_value=(None, None)
         ),  # 模拟未命中缓存
         patch(
+            "app.services.im_service._count_unread_messages",
+            new_callable=AsyncMock,
+            side_effect=[0, 2],
+        ),
+        patch(
             "app.models.user.User.filter",
             return_value=AsyncMock(all=AsyncMock(return_value=[mock_peer])),
         ),
@@ -867,10 +889,14 @@ async def test_im_service_residual_branches() -> None:
     notif_no_team.user_id = u1
     notif_no_team.team_id = None
     mock_tm = MagicMock(team_id=team_id)
+    member_query = MagicMock()
+    member_query.order_by = MagicMock(
+        return_value=MagicMock(first=AsyncMock(return_value=mock_tm))
+    )
     with (
         patch(
             "app.models.user.TeamMember.filter",
-            return_value=AsyncMock(first=AsyncMock(return_value=mock_tm)),
+            return_value=member_query,
         ),
         patch(
             "app.services.im_service.send_system_message", new_callable=AsyncMock
@@ -888,7 +914,7 @@ async def test_im_service_residual_branches() -> None:
         ),
         patch(
             "app.models.im.ImMessage.filter",
-            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
         ),
         patch(
             "app.models.notification.Notification.filter",
@@ -902,8 +928,17 @@ async def test_im_service_residual_branches() -> None:
                 )
             ),
         ),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch(
+            "app.models.im.ImMessage.create", new_callable=AsyncMock
+        ) as mock_msg_create,
     ):
         await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
+        # 没有历史通知时不写入任何消息
+        mock_msg_create.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -946,6 +981,7 @@ async def test_im_service_more_detailed_branches() -> None:
         ),
         patch("app.services.im_redis.generate_next_seq", return_value=2),
         patch("app.models.im.ImMessage.create", return_value=mock_msg),
+        patch("app.services.im_redis.get_user_unread_counts", return_value=(0, {})),
         patch(
             "app.services.im_redis.increment_user_unread", new_callable=AsyncMock
         ) as mock_incr,
@@ -1064,6 +1100,7 @@ async def test_im_service_more_detailed_branches() -> None:
     )
     n1.id = uuid4()
     part_all_read = MagicMock(last_read_seq=0, save=AsyncMock())
+    start_seq = conv.latest_seq
     with (
         patch("app.services.im_system_bridge.in_transaction", fake_tx),
         patch(
@@ -1072,7 +1109,7 @@ async def test_im_service_more_detailed_branches() -> None:
         ),
         patch(
             "app.models.im.ImMessage.filter",
-            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
         ),
         patch(
             "app.models.notification.Notification.filter",
@@ -1101,7 +1138,8 @@ async def test_im_service_more_detailed_branches() -> None:
     ):
         await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
         mock_incr_unread.assert_not_called()  # 全部已读，不增加未读数
-        assert part_all_read.last_read_seq == 1
+        # seq 从会话当前 latest_seq 续写，已读游标推进到新写入消息的 seq
+        assert part_all_read.last_read_seq == start_seq + 1
 
     # 7. bridge_notification_to_im 异常安全捕获
     with patch(
@@ -1211,7 +1249,7 @@ async def test_im_exact_branch_gap_closure() -> None:
         assert res[0]["conversation_type"] == "system"
         assert res[0]["peer"] is None
 
-    # 5. sync_legacy_notifications_for_user 中 conv 为 None，或二次检查时已存在
+    # 5. sync_legacy_notifications_for_user 中 conv 为 None，或没有可导入的新通知
     with patch(
         "app.models.im.ImConversation.filter",
         return_value=AsyncMock(first=AsyncMock(return_value=None)),
@@ -1227,15 +1265,31 @@ async def test_im_exact_branch_gap_closure() -> None:
         ),
         patch(
             "app.models.im.ImMessage.filter",
-            side_effect=[
-                AsyncMock(exists=AsyncMock(return_value=False)),  # 锁外查空
-                AsyncMock(
-                    exists=AsyncMock(return_value=True)
-                ),  # 锁内二次检查发现已存在
-            ],
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
         ),
+        patch(
+            "app.models.notification.Notification.filter",
+            return_value=MagicMock(
+                order_by=MagicMock(
+                    return_value=MagicMock(
+                        limit=MagicMock(
+                            return_value=AsyncMock(all=AsyncMock(return_value=[]))
+                        )
+                    )
+                )
+            ),
+        ),
+        patch(
+            "app.models.notification.NotificationRead.filter",
+            return_value=MagicMock(values_list=AsyncMock(return_value=[])),
+        ),
+        patch(
+            "app.models.im.ImMessage.create", new_callable=AsyncMock
+        ) as mock_msg_create,
     ):
+        # 已存在会话不再整体短路；没有新的历史通知时不写入任何消息
         await im_system_bridge.sync_legacy_notifications_for_user(team_id, u1)
+        mock_msg_create.assert_not_called()
 
     # 6. bridge_notification_to_im title 已经在 content 中，以及 team scope 成员为空
     notif_title_in = Notification(
@@ -1330,7 +1384,9 @@ async def test_final_branch_push() -> None:
 
     fake_redis.get = AsyncMock(return_value=None)
     with patch("app.services.im_redis.get_redis", return_value=fake_redis):
-        assert await im_redis.get_cached_message_result("empty_raw_key") is None
+        assert (
+            await im_redis.get_cached_message_result(uuid4(), "empty_raw_key") is None
+        )
 
     fake_pipe = AsyncMock()
     fake_redis.pipeline = MagicMock(return_value=fake_pipe)
@@ -1379,7 +1435,7 @@ async def test_final_branch_push() -> None:
         ),
         patch(
             "app.models.im.ImMessage.filter",
-            return_value=AsyncMock(exists=AsyncMock(return_value=False)),
+            return_value=AsyncMock(values_list=AsyncMock(return_value=[])),
         ),
         patch(
             "app.models.notification.Notification.filter",
