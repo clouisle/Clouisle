@@ -237,3 +237,36 @@ async def test_mark_conversation_read_missing_conversation_returns_404() -> None
         with pytest.raises(BusinessError) as exc:
             await im_service.mark_conversation_read(uuid4(), uuid4())
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rebuild_unread_cache_from_db_aggregates_conversations() -> None:
+    user_id = uuid4()
+    conv_a, conv_b = MagicMock(id=uuid4()), MagicMock(id=uuid4())
+    participant_a = MagicMock(conversation=conv_a, last_read_seq=1)
+    participant_b = MagicMock(conversation=conv_b, last_read_seq=0)
+    query = MagicMock()
+    query.prefetch_related = MagicMock(
+        return_value=AsyncMock(
+            all=AsyncMock(return_value=[participant_a, participant_b])
+        )
+    )
+
+    with (
+        patch(
+            "app.services.im_service.ImConversationParticipant.filter",
+            return_value=query,
+        ),
+        patch(
+            "app.services.im_service._count_unread_messages",
+            new_callable=AsyncMock,
+            side_effect=[3, 0],
+        ),
+        patch(
+            "app.services.im_redis.rebuild_unread_cache", new_callable=AsyncMock
+        ) as rebuild,
+    ):
+        result = await im_service._rebuild_unread_cache_from_db(user_id)
+
+    assert result == {str(conv_a.id): 3, str(conv_b.id): 0}
+    rebuild.assert_awaited_once_with(user_id, 3, result)
