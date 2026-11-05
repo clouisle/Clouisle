@@ -485,12 +485,21 @@ async def test_get_global_unread_count_unmitigated_rebuild() -> None:
             return_value=3,
         ),
         patch(
-            "app.services.im_redis.rebuild_unread_cache", new_callable=AsyncMock
+            "app.services.im_redis.get_unread_version",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+        patch(
+            "app.services.im_redis.rebuild_unread_cache",
+            new_callable=AsyncMock,
+            return_value=True,
         ) as mock_rebuild,
     ):
         total = await im_service.get_global_unread_count(user_id)
         assert total == 3
-        mock_rebuild.assert_called_once_with(user_id, 3, {str(part.conversation.id): 3})
+        mock_rebuild.assert_called_once_with(
+            user_id, 3, {str(part.conversation.id): 3}, expected_version=0
+        )
 
 
 @pytest.mark.asyncio
@@ -838,7 +847,17 @@ async def test_im_service_residual_branches() -> None:
         patch(
             "app.services.im_service._count_unread_messages",
             new_callable=AsyncMock,
-            side_effect=[0, 2],
+            side_effect=lambda *args: 2 if str(args[0]) == str(dir_conv.id) else 0,
+        ),
+        patch(
+            "app.services.im_redis.get_unread_version",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+        patch(
+            "app.services.im_redis.rebuild_unread_cache",
+            new_callable=AsyncMock,
+            return_value=True,
         ),
         patch(
             "app.models.user.User.filter",

@@ -7,12 +7,16 @@ let pathname = "/app";
 mock.module("next/navigation", () => ({ usePathname: () => pathname }));
 mock.module("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useLocale: () => "zh",
 }));
 const boundary = ({ children }: React.PropsWithChildren) => <>{children}</>;
 mock.module("@/components/layout/platform-header", () => ({
   PlatformHeader: () => <div data-testid="platform-header" />,
 }));
-mock.module("@/contexts/team-context", () => ({ TeamProvider: boundary }));
+mock.module("@/contexts/team-context", () => ({
+  TeamProvider: boundary,
+  useTeam: () => ({ currentTeam: null }),
+}));
 mock.module("@/components/password-expiration-banner", () => ({
   PasswordExpirationBanner: () => <div data-testid="password-banner" />,
 }));

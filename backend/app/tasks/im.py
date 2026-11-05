@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
+from uuid import UUID
 
 from tortoise.expressions import Subquery
 
@@ -23,6 +24,8 @@ from app.models.asset import Asset, AssetScopeRef, AssetScopeType
 from app.models.im import ImMessage
 
 logger = logging.getLogger(__name__)
+
+FANOUT_BATCH_SIZE = 200
 
 
 def _get_event_loop() -> asyncio.AbstractEventLoop:
@@ -143,4 +146,88 @@ def cleanup_orphan_im_assets_task() -> dict:
         return loop.run_until_complete(_cleanup_orphan_im_assets())
     except Exception as e:
         logger.error(f"Failed to clean up orphan IM assets: {e}", exc_info=True)
+        raise
+
+
+async def _fanout_global_notification(notification_id: UUID) -> dict:
+    """把一条 GLOBAL 通知扇出到所有活跃用户的系统通知会话。
+
+    走 Celery 而不是在创建通知的请求里同步执行，避免请求被 N 次写库拖住；
+    逐用户幂等键与实时桥接一致，任务重试不会产生重复消息。
+    """
+    from types import SimpleNamespace
+
+    from app.models.notification import Notification, NotificationScope
+    from app.models.user import User
+    from app.services import im_service
+    from app.services.im_system_bridge import (
+        _bridge_client_msg_id,
+        _build_notification_message,
+        _resolve_notification_team_id,
+    )
+
+    notification = await Notification.filter(
+        id=notification_id, scope=NotificationScope.GLOBAL
+    ).first()
+    if notification is None:
+        logger.info("Global notification %s no longer exists", notification_id)
+        return {"sent": 0, "skipped": 0}
+
+    content, msg_type, payload = _build_notification_message(notification)
+    sent = 0
+    skipped = 0
+    cursor: UUID | None = None
+
+    while True:
+        query = User.filter(is_active=True)
+        if cursor is not None:
+            query = query.filter(id__gt=cursor)
+        users = await query.order_by("id").limit(FANOUT_BATCH_SIZE).all()
+        if not users:
+            break
+        cursor = users[-1].id
+
+        for user in users:
+            team_id = await _resolve_notification_team_id(
+                SimpleNamespace(user_id=user.id, team_id=None)
+            )
+            if team_id is None:
+                skipped += 1
+                continue
+            try:
+                await im_service.send_system_message(
+                    team_id=team_id,
+                    recipient_user_id=user.id,
+                    content=content,
+                    msg_type=msg_type,
+                    payload=payload,
+                    client_msg_id=_bridge_client_msg_id(notification.id, user.id),
+                )
+            except Exception:
+                skipped += 1
+                logger.exception(
+                    "Failed to fan out global notification %s to user %s",
+                    notification.id,
+                    user.id,
+                )
+            else:
+                sent += 1
+
+    result = {"sent": sent, "skipped": skipped}
+    logger.info("Global notification %s fan-out complete: %s", notification_id, result)
+    return result
+
+
+@celery_app.task(
+    name="tasks.fanout_global_notification", ignore_result=True, queue="default"
+)
+def fanout_global_notification_task(notification_id: str) -> dict:
+    """把 GLOBAL 通知扇出到所有活跃用户（Celery 任务）。"""
+    loop = _get_event_loop()
+    try:
+        return loop.run_until_complete(
+            _fanout_global_notification(UUID(notification_id))
+        )
+    except Exception as e:
+        logger.error("Failed to fan out global notification: %s", e, exc_info=True)
         raise

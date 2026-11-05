@@ -18,11 +18,13 @@ DEDUP_RESULT_PREFIX = "im:msg_result:{}:{}"
 USER_TOTAL_UNREAD_PREFIX = "im:user:{}:total_unread"
 USER_CONV_UNREAD_PREFIX = "im:user:{}:conv_unread"
 USER_EVENT_CHANNEL_PREFIX = "im:channel:user:{}"
+USER_UNREAD_VERSION_PREFIX = "im:user:{}:unread_version"
 
 # Lua Script: 原子写入会话剩余未读数，并按差值调整总未读数，避免分布式竞态与负数
 _SET_CONV_UNREAD_LUA = """
 local conv_hash_key = KEYS[1]
 local total_key = KEYS[2]
+local version_key = KEYS[3]
 local conv_field = ARGV[1]
 local remaining = tonumber(ARGV[2]) or 0
 if remaining < 0 then remaining = 0 end
@@ -43,10 +45,35 @@ if remaining ~= current_val then
     end
 end
 
+redis.call('INCR', version_key)
 if current_val > remaining then
     return current_val - remaining
 end
 return 0
+"""
+
+# Lua Script: 版本化重建未读缓存。只有版本未变化时才写入，避免覆盖并发的
+# increment/read 更新；返回 1 表示写入成功，0 表示调用方应重试。
+_REBUILD_UNREAD_LUA = """
+local total_key = KEYS[1]
+local conv_hash_key = KEYS[2]
+local version_key = KEYS[3]
+local expected = tonumber(ARGV[1])
+local total = tonumber(ARGV[2]) or 0
+local current = tonumber(redis.call('GET', version_key)) or 0
+if expected ~= nil and current ~= expected then
+    return 0
+end
+redis.call('SET', total_key, math.max(total, 0), 'EX', 604800)
+redis.call('DEL', conv_hash_key)
+if #ARGV > 2 then
+    for i = 3, #ARGV, 2 do
+        redis.call('HSET', conv_hash_key, ARGV[i], ARGV[i + 1])
+    end
+    redis.call('EXPIRE', conv_hash_key, 604800)
+end
+redis.call('INCR', version_key)
+return 1
 """
 
 # Lua Script: 安全释放分布式锁（仅在持有者 token 匹配时才释放，防止误删别人续期的锁）
@@ -62,11 +89,13 @@ end
 _INCR_UNREAD_LUA = """
 local conv_hash_key = KEYS[1]
 local total_key = KEYS[2]
+local version_key = KEYS[3]
 local conv_field = ARGV[1]
 local amount = tonumber(ARGV[2]) or 1
 
 redis.call('HINCRBY', conv_hash_key, conv_field, amount)
 redis.call('INCRBY', total_key, amount)
+redis.call('INCR', version_key)
 return 1
 """
 
@@ -249,10 +278,19 @@ async def increment_user_unread(
     conv_str = str(conversation_id)
     total_key = USER_TOTAL_UNREAD_PREFIX.format(user_str)
     conv_hash_key = USER_CONV_UNREAD_PREFIX.format(user_str)
+    version_key = USER_UNREAD_VERSION_PREFIX.format(user_str)
 
     try:
         r = await get_redis()
-        await r.eval(_INCR_UNREAD_LUA, 2, conv_hash_key, total_key, conv_str, amount)
+        await r.eval(
+            _INCR_UNREAD_LUA,
+            3,
+            conv_hash_key,
+            total_key,
+            version_key,
+            conv_str,
+            amount,
+        )
     except Exception as exc:
         logger.warning(
             "Redis increment_user_unread failed for user %s: %s", user_str, exc
@@ -271,14 +309,16 @@ async def mark_conversation_read_in_cache(
     conv_str = str(conversation_id)
     total_key = USER_TOTAL_UNREAD_PREFIX.format(user_str)
     conv_hash_key = USER_CONV_UNREAD_PREFIX.format(user_str)
+    version_key = USER_UNREAD_VERSION_PREFIX.format(user_str)
 
     try:
         r = await get_redis()
         deducted = await r.eval(
             _SET_CONV_UNREAD_LUA,
-            2,
+            3,
             conv_hash_key,
             total_key,
+            version_key,
             conv_str,
             max(remaining_unread, 0),
         )
@@ -325,28 +365,60 @@ async def get_user_unread_counts(
         return None, None
 
 
+async def get_unread_version(user_id: UUID) -> int:
+    """读取用户未读缓存的版本号；Redis 不可用时返回 0（调用方退化为无条件重建）。"""
+    user_str = str(user_id)
+    version_key = USER_UNREAD_VERSION_PREFIX.format(user_str)
+    try:
+        r = await get_redis()
+        return int(await r.get(version_key) or 0)
+    except Exception as exc:
+        logger.warning("Redis get_unread_version failed for user %s: %s", user_str, exc)
+        return 0
+
+
 async def rebuild_unread_cache(
-    user_id: UUID, total_unread: int, conv_unread_map: dict[str, int]
-) -> None:
-    """从数据库查询结果全量重建用户的未读数缓存。"""
+    user_id: UUID,
+    total_unread: int,
+    conv_unread_map: dict[str, int],
+    *,
+    expected_version: int | None = None,
+) -> bool:
+    """从数据库查询结果全量重建用户的未读数缓存。
+
+    `expected_version` 非空时做 CAS：若期间有 increment/read 更新过版本号，
+    则不写入并返回 False，调用方应重新读取数据库后再试。
+    """
     user_str = str(user_id)
     total_key = USER_TOTAL_UNREAD_PREFIX.format(user_str)
     conv_hash_key = USER_CONV_UNREAD_PREFIX.format(user_str)
+    version_key = USER_UNREAD_VERSION_PREFIX.format(user_str)
+    clean_map = {k: max(int(v), 0) for k, v in conv_unread_map.items()}
 
     try:
         r = await get_redis()
+        if expected_version is not None:
+            args: list[object] = [expected_version, max(total_unread, 0)]
+            for key, value in clean_map.items():
+                args.extend([key, value])
+            result = await r.eval(
+                _REBUILD_UNREAD_LUA, 3, total_key, conv_hash_key, version_key, *args
+            )
+            return bool(int(result or 0))
+
         pipe = r.pipeline(transaction=True)
         pipe.set(total_key, max(total_unread, 0), ex=86400 * 7)
         pipe.delete(conv_hash_key)
-        if conv_unread_map:
-            clean_map = {k: max(int(v), 0) for k, v in conv_unread_map.items()}
+        if clean_map:
             pipe.hset(conv_hash_key, mapping=clean_map)
             pipe.expire(conv_hash_key, 86400 * 7)
         await pipe.execute()
+        return True
     except Exception as exc:
         logger.warning(
             "Redis rebuild_unread_cache failed for user %s: %s", user_str, exc
         )
+        return False
 
 
 async def publish_im_event(

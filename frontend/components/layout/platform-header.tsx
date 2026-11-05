@@ -158,6 +158,21 @@ export function PlatformHeader() {
     }
   }, [])
 
+  // 首次进入时触发一次历史通知回填（listConversations 会执行旧通知同步），
+  // 否则头部只统计部署后的 IM 消息，部署前的公告不会体现在红点里。
+  React.useEffect(() => {
+    if (!user?.id || !currentTeam?.id || typeof window === 'undefined') return
+    const marker = `im-legacy-synced:${user.id}:${currentTeam.id}`
+    if (window.sessionStorage?.getItem(marker)) return
+    imApi
+      .listConversations(currentTeam.id)
+      .then(() => {
+        window.sessionStorage?.setItem(marker, '1')
+        void fetchUnread()
+      })
+      .catch(() => {})
+  }, [user?.id, currentTeam?.id, fetchUnread])
+
   // 请求浏览器通知权限（在用户交互时调用）
   const requestNotificationPermission = React.useCallback(async () => {
     if ('Notification' in window && Notification.permission === 'default') {

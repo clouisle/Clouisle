@@ -94,3 +94,41 @@ async def test_get_and_rebuild_unread_cache() -> None:
             f"im:user:{user_id}:conv_unread"
         )
         fake_pipe_rebuild.hset.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rebuild_unread_cache_version_cas() -> None:
+    user_id = uuid4()
+    conv_id = uuid4()
+    fake_redis = AsyncMock()
+    fake_redis.eval = AsyncMock(return_value=1)
+
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        assert (
+            await im_redis.rebuild_unread_cache(
+                user_id, 2, {str(conv_id): 2}, expected_version=5
+            )
+            is True
+        )
+    assert fake_redis.eval.await_args.args[0] is im_redis._REBUILD_UNREAD_LUA
+    assert fake_redis.eval.await_args.args[1] == 3
+
+    fake_redis.eval = AsyncMock(return_value=0)
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        assert (
+            await im_redis.rebuild_unread_cache(user_id, 2, {}, expected_version=6)
+            is False
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_unread_version_reads_and_falls_back() -> None:
+    user_id = uuid4()
+    fake_redis = AsyncMock()
+    fake_redis.get = AsyncMock(return_value=b"4")
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        assert await im_redis.get_unread_version(user_id) == 4
+
+    fake_redis.get = AsyncMock(side_effect=RuntimeError("redis down"))
+    with patch("app.services.im_redis.get_redis", return_value=fake_redis):
+        assert await im_redis.get_unread_version(user_id) == 0

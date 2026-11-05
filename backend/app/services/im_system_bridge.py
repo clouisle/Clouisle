@@ -125,12 +125,21 @@ async def bridge_notification_to_im(notification: Notification) -> None:
                         content=content,
                         msg_type=msg_type,
                         payload=payload,
-                        client_msg_id=f"notif-bridge-{notification.id}-{uid}",
+                        client_msg_id=_bridge_client_msg_id(notification.id, uid),
                     )
                 except Exception as exc:
                     logger.warning(
                         "Failed to bridge notification to user %s: %s", uid, exc
                     )
+
+        elif notification.scope == NotificationScope.GLOBAL:
+            # 全局公告需要扇出到每个用户的系统会话：同步执行会让创建通知的请求
+            # 阻塞在 N 次写库上，交给 Celery 分批处理，幂等键与实时桥接一致。
+            from app.core.celery import celery_app
+
+            celery_app.send_task(
+                "tasks.fanout_global_notification", args=[str(notification.id)]
+            )
 
     except Exception as exc:
         logger.warning(

@@ -376,6 +376,30 @@ async def _count_unread_messages(
     )
 
 
+async def _rebuild_unread_cache_versioned(
+    user_id: UUID, snapshots: list[tuple[UUID, int]]
+) -> tuple[int, dict[str, int]]:
+    """按数据库快照重建缓存；版本变化（并发 increment/read）时重算重试。
+
+    单个游标/缓存无法表达并发增量，因此以 Redis 版本号做 CAS：只有快照期间
+    没有任何写入时才落盘，否则重新读取数据库后再试。
+    """
+    conv_map: dict[str, int] = {}
+    total = 0
+    for _ in range(3):
+        version = await im_redis.get_unread_version(user_id)
+        conv_map = {
+            str(conv_id): await _count_unread_messages(conv_id, user_id, last_read_seq)
+            for conv_id, last_read_seq in snapshots
+        }
+        total = sum(conv_map.values())
+        if await im_redis.rebuild_unread_cache(
+            user_id, total, conv_map, expected_version=version
+        ):
+            return total, conv_map
+    return total, conv_map
+
+
 async def _rebuild_unread_cache_from_db(user_id: UUID) -> dict[str, int]:
     """按数据库消息全量重算并写入用户未读缓存（排除本人发送的消息）。"""
     participants = (
@@ -384,13 +408,8 @@ async def _rebuild_unread_cache_from_db(user_id: UUID) -> dict[str, int]:
         .all()
     )
 
-    conv_unread: dict[str, int] = {}
-    for p in participants:
-        conv_unread[str(p.conversation.id)] = await _count_unread_messages(
-            p.conversation.id, user_id, p.last_read_seq
-        )
-
-    await im_redis.rebuild_unread_cache(user_id, sum(conv_unread.values()), conv_unread)
+    snapshots = [(p.conversation.id, p.last_read_seq) for p in participants]
+    _total, conv_unread = await _rebuild_unread_cache_versioned(user_id, snapshots)
     return conv_unread
 
 
@@ -717,8 +736,12 @@ async def list_conversations(team_id: UUID, user_id: UUID) -> list[dict[str, Any
         )
 
     if need_cache_rebuild:
-        total_unreads = sum(computed_unread_map.values())
-        await im_redis.rebuild_unread_cache(user_id, total_unreads, computed_unread_map)
+        snapshots = [
+            (p.conversation.id, p.last_read_seq)
+            for p in participants
+            if p.conversation is not None
+        ]
+        await _rebuild_unread_cache_versioned(user_id, snapshots)
 
     def sort_key(item: dict[str, Any]) -> tuple[int, str]:
         pinned_flag = 1 if item["is_pinned"] else 0
@@ -877,14 +900,8 @@ async def get_global_unread_count(user_id: UUID) -> int:
         .all()
     )
 
-    conv_map: dict[str, int] = {}
-    for p in participants:
-        conv_map[str(p.conversation.id)] = await _count_unread_messages(
-            p.conversation.id, user_id, p.last_read_seq
-        )
-
-    total = sum(conv_map.values())
-    await im_redis.rebuild_unread_cache(user_id, total, conv_map)
+    snapshots = [(p.conversation.id, p.last_read_seq) for p in participants]
+    total, _conv_map = await _rebuild_unread_cache_versioned(user_id, snapshots)
     return total
 
 

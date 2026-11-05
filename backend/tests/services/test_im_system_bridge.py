@@ -496,3 +496,24 @@ async def test_backfill_cursor_stops_before_an_unread_that_precedes_reads() -> N
     assert participant.last_read_seq == 5
     participant.save.assert_not_awaited()
     mock_unread.assert_awaited_once_with(user_id, conv.id, 2)
+
+
+@pytest.mark.asyncio
+async def test_bridge_global_notification_enqueues_fanout() -> None:
+    notif = _notification("notice", NotificationScope.GLOBAL)
+    with patch("app.core.celery.celery_app.send_task") as send_task:
+        await im_system_bridge.bridge_notification_to_im(notif)
+
+    send_task.assert_called_once_with(
+        "tasks.fanout_global_notification", args=[str(notif.id)]
+    )
+
+
+@pytest.mark.asyncio
+async def test_bridge_swallows_fanout_enqueue_failures() -> None:
+    notif = _notification("notice", NotificationScope.GLOBAL)
+    with patch(
+        "app.core.celery.celery_app.send_task",
+        side_effect=RuntimeError("broker down"),
+    ):
+        await im_system_bridge.bridge_notification_to_im(notif)

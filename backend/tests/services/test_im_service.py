@@ -263,10 +263,49 @@ async def test_rebuild_unread_cache_from_db_aggregates_conversations() -> None:
             side_effect=[3, 0],
         ),
         patch(
-            "app.services.im_redis.rebuild_unread_cache", new_callable=AsyncMock
+            "app.services.im_redis.get_unread_version",
+            new_callable=AsyncMock,
+            return_value=7,
+        ),
+        patch(
+            "app.services.im_redis.rebuild_unread_cache",
+            new_callable=AsyncMock,
+            return_value=True,
         ) as rebuild,
     ):
         result = await im_service._rebuild_unread_cache_from_db(user_id)
 
     assert result == {str(conv_a.id): 3, str(conv_b.id): 0}
-    rebuild.assert_awaited_once_with(user_id, 3, result)
+    rebuild.assert_awaited_once_with(user_id, 3, result, expected_version=7)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_unread_cache_retries_when_version_moves() -> None:
+    user_id = uuid4()
+    conversation_id = uuid4()
+
+    with (
+        patch(
+            "app.services.im_redis.get_unread_version",
+            new_callable=AsyncMock,
+            side_effect=[1, 2],
+        ),
+        patch(
+            "app.services.im_service._count_unread_messages",
+            new_callable=AsyncMock,
+            return_value=4,
+        ),
+        patch(
+            "app.services.im_redis.rebuild_unread_cache",
+            new_callable=AsyncMock,
+            side_effect=[False, True],
+        ) as rebuild,
+    ):
+        total, conv_map = await im_service._rebuild_unread_cache_versioned(
+            user_id, [(conversation_id, 0)]
+        )
+
+    assert total == 4
+    assert conv_map == {str(conversation_id): 4}
+    assert rebuild.await_count == 2
+    assert [c.kwargs["expected_version"] for c in rebuild.await_args_list] == [1, 2]
