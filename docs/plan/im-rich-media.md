@@ -57,8 +57,8 @@
     API-->>A: asset_id × 3
 
     A->>API: ① TEXT (content, client_msg_id=batch-0)
-    A->>API: ② IMAGE (asset_id=I1, client_msg_id=batch-1)
-    A->>API: ③ IMAGE (asset_id=I2, client_msg_id=batch-2)
+    A->>API: ② FILE (asset_id=I1, client_msg_id=batch-1)
+    A->>API: ③ FILE (asset_id=I2, client_msg_id=batch-2)
     A->>API: ④ FILE (asset_id=F1, client_msg_id=batch-3)
     Note over A,API: 串行 await，保证展示顺序与 seq 一致
     API->>Redis: 每条各自获取会话排他锁 / INCR seq
@@ -76,7 +76,7 @@
 | 一次提交的内容 | 拆出的消息 |
 | --- | --- |
 | 文本 T | 1 条 `text`（`content=T`，`asset_id=null`） |
-| 每张图片 Iₖ | 1 条 `image`（`content=""`，`asset_id=Iₖ`） |
+| 每张图片 Iₖ | 1 条 `file`（`content=""`，`asset_id=Iₖ`，`content_type=image/*`） |
 | 每个文件 Fₖ | 1 条 `file`（`content=""`，`asset_id=Fₖ`） |
 
 即每条消息恰好承载一个附件或一段纯文本，不存在 `mixed` 类型、不存在附件集合、不存在正文与附件交织排版。由此带来的简化：
@@ -118,7 +118,7 @@
 | **R7** | 孤儿回收任务与用户发送并发 | 刚上传、尚未发消息的资产被删 | `created_at < now - 24h` 且无消息引用；`DELETE ... WHERE NOT EXISTS` 原子判定 |
 | **R8** | 前端并发上传与会话切换竞态 | 进度乱序、上传中按 Enter、回调写错会话 | 上传队列绑定 `convId` 快照，回调比对 `currentConvIdRef.current`；上传中禁用发送；`client_msg_id` 用 `${batchId}-${index}` 固定 |
 | **R9** | 一次提交 N 个附件 → N 条消息 | N 次 seq 分配、N 次未读递增、N 次 SSE 广播；游标分页单页最多 100 条 | 每条消息只多一个轻量 `attachment` 对象；不存 base64；未读按游标计算，N 次递增不破坏正确性 |
-| **R10** | `content` 必填与纯附件消息冲突 | `min_length=1` 会 422 拒绝图片/文件消息 | `content` 放宽为可空；service 校验「`text` 必须非空 content 且无 asset_id；`image`/`file` 必须恰好一个 asset_id 且 content 为空」 |
+| **R10** | `content` 必填与纯附件消息冲突 | `min_length=1` 会 422 拒绝图片/文件消息 | `content` 放宽为可空；service 校验「`text` 必须非空 content 且无 asset_id；`file`（统一附件类型，图片按 `content_type` 渲染）必须恰好一个 asset_id 且 content 为空」 |
 | **R11** | 拆分发送的部分成功 | 第 k 条失败时前 k-1 条已送达；跨多条消息做分布式回滚不现实且与 seq 单调冲突 | 不做全量回滚：每条独立 `client_msg_id`，失败项可单独重试且天然幂等；UI 明确标注每条状态，保留未成功的草稿 |
 | **R12** | 拆分发送时 SSE 事件乱序/重复 | 接收方按到达顺序渲染，可能与发送序不一致 | 事件带 `seq`；前端按 `seq` 插入并用 `client_msg_id` 去重（现有去重逻辑扩展）；断线按 `after_seq` 补拉 |
 
@@ -139,12 +139,12 @@
 
 - **Files modified**: `backend/app/models/im.py`、`backend/app/models/asset.py`、`backend/app/models/__init__.py`、`backend/app/core/init_data.py`、`backend/app/main.py`（挂载迁移）
 - **Specific logic**:
-  - `ImMessageType` 增加 `IMAGE`、`FILE`（**无 `MIXED`**：一条消息只承载一个附件或一段文本）。
+  - `ImMessageType` 只增加 `FILE` 作为统一附件类型（**无 `IMAGE`、无 `MIXED`**）：图片与文档都是文件，渲染由 `Asset.content_type` 决定；一条消息只承载一个附件或一段文本。
   - `ImMessage` 增加 `asset_id: UUIDField(null=True)`（弱引用 `Asset`，避免跨表 FK 迁移复杂度）；**不在启动迁移里创建唯一索引**（见 R3b）。
   - `AssetScopeType` 增加 `IM_CONVERSATION`。
   - **不新建 `ImMessageAsset` 关联表**：拆分发送后消息与附件引用在同一行，天然原子。
   - 迁移：`init_data.py` 新增 `init_im_rich_media_columns()`，用 `execute_startup_migration_query` 执行 `ALTER TABLE im_messages ADD COLUMN IF NOT EXISTS asset_id UUID`，并挂到 lifespan 初始化链；沿用现有 `ADD COLUMN IF NOT EXISTS` 幂等模式（`asset_scope_refs.scope_type` 已是 `VARCHAR(20)`，可容纳 `im_conversation`，无需改列宽）。**不建索引**（见 R3b）。
-  - 旧行 `asset_id` 为 NULL，`msg_type` 不变，无需回填。
+  - 旧行 `asset_id` 为 NULL，`msg_type` 不变，无需回填；启动迁移把早期 `msg_type='image'` 的行归一为 `'file'`（幂等 `UPDATE`）。
 - **Validation**: 在现有 DB 上重复执行启动迁移不报错；查询历史文本消息渲染不变；`uv run pytest` 模型相关测试通过。
 
 ### Stage 2: IM 专用上传端点与资产授权
@@ -160,11 +160,11 @@
 
 - **Files modified**: `backend/app/services/im_service.py`、`backend/app/api/v1/endpoints/im.py`、`backend/app/schemas/im.py`
 - **Specific logic**:
-  - `SendMessageRequest`：`content` 放宽为可空字符串，增加 `asset_id: UUID | None`；`msg_type` 允许 `image`/`file`。
-  - 三态校验（R10）：`text` 必须 `content` 非空且 `asset_id` 为空；`image`/`file` 必须 `content` 为空且恰好一个 `asset_id`；其余组合一律 400。
+  - `SendMessageRequest`：`content` 放宽为可空字符串，增加 `asset_id: UUID | None`；`msg_type` 只新增 `file`（图片不单独设类型）。
+  - 两态校验（R10）：`text` 必须 `content` 非空且 `asset_id` 为空；`file` 必须 `content` 为空且恰好一个 `asset_id`；其余组合一律 400。
   - `send_direct_message` 在会话锁内：二次幂等检查（同 `client_msg_id` 但不同 `asset_id` → 显式拒绝，R3）→ 校验 `asset_id` 对应 `Asset.team_id == conv.team_id`、`status=AVAILABLE`、`AssetScopeRef(IM_CONVERSATION, conv_id)` 存在（R6b）→ `generate_next_seq` → **单行** `ImMessage.create(..., asset_id=...)` → 会话摘要 → Lua 增未读 → SSE 事件带轻量 `attachment`。**无 `in_transaction()`、无 `bulk_create`、无关联表**（拆分发送后 R1/R5 风险消失）。
   - `GET /messages` 与 SSE 事件按 `asset_id` 批量查 `Asset`（一次 `filter(id__in=...)`）组装 `attachment` 元信息，避免 N+1。
-  - 摘要：`_strip_markdown_summary` 对 `image`/`file` 返回 `[图片]` / `[文件]` 占位。
+  - 摘要：附件消息按 `Asset.content_type` 生成占位：`image/*` → `[图片]`，其余 → `[文件]`；文本仍走 `_strip_markdown_summary`。
   - 失败路径明确抛错，不静默返回成功（R3b）。
 - **Validation**: 纯文本消息行为与改动前一致（回归）；`seq` 连续无空洞；并发压测见「Testing Strategy」。
 
@@ -175,7 +175,7 @@
   - `ImMessageOut` 增加 `attachment`（asset_id、filename、size、content_type）；`GET /messages` 与 SSE 事件由后端批量查 Asset，避免 N+1。
   - 新增 `imApi.uploadAttachment`（FormData）与队列：绑定 `convId` 快照、并发上传、进度、失败重试（R8）；输入区增加「图片」「文件」两个入口。
   - **拆分发送**：一次提交的文本 + 附件列表转成消息数组（文本 1 条、每张图 1 条、每个文件 1 条），按固定顺序**串行 `await`** 逐条发送，`client_msg_id = ${batchId}-${index}`（R5 / R11）。上传中禁用发送。
-  - 渲染：`image` 走受保护文件路由按需加载图片，`file` 显示文件卡片 + 下载入口；无图文混排编辑器、无 `position` 排序。
+  - 渲染：统一 `file` 消息按 `attachment.content_type` 分流——`image/*` 走受保护文件路由按需加载预览，其余显示文件卡片 + 下载入口；无图文混排编辑器、无 `position` 排序。
   - SSE `new_message` 按 `seq` 插入并用 `client_msg_id` 去重（R12）；断线按 `after_seq` 补拉权威数据。
   - 会话列表摘要展示 `[图片]` / `[文件]` 占位，`stripMarkdown` 不破坏占位符。
   - 中英 i18n 键同步（上传中、失败重试、大小超限、类型不支持、部分发送失败）。
@@ -190,7 +190,7 @@
 ### Stage 6: 文档、开关与交付验证
 
 - **Files modified**: `docs/plan/im-rich-media.md`、`docs/IMPLEMENTATION_PLAN.md`、`docs/guide/`（消息中心使用说明）、`backend/app/core/config.py`（功能开关）
-- **Specific logic**: 增加 `IM_RICH_MEDIA_ENABLED` 开关，关闭时上传端点返回 404、发送端点拒绝 `asset_id` 与 `image`/`file` 类型，回退纯文本；文档同步中英。
+- **Specific logic**: 增加 `IM_RICH_MEDIA_ENABLED` 开关，关闭时上传端点返回 404、发送端点拒绝 `asset_id` 与 `file` 类型，回退纯文本；文档同步中英。
 - **Validation**: 开关关闭后现有纯文本 IM 全链路回归通过；`git diff --check`；pre-push 门禁（ruff / eslint / pytest / bun test / tsc / i18n-lint / coverage）。
 
 ---
@@ -213,7 +213,7 @@
 - Redis 不可用（锁降级 / seq 降级）→ 明确失败，无重复消息与孤儿资产。
 - 上传成功但发送失败、消息落库后广播前崩溃 → 回收任务清理孤儿、重连补拉一致。
 - 跨团队 asset_id 引用、被移出团队后发送、无 scope 的公开 URL 访问 → 全部拒绝。
-- 超 10MB、非法 content_type、图片/文件类型与 `msg_type` 不匹配、上传中按 Enter、会话切换中的过期回调。
+- 超 10MB、附件消息缺少 `asset_id`、文本消息携带 `asset_id`、上传中按 Enter、会话切换中的过期回调。
 
 ### Regression scope
 

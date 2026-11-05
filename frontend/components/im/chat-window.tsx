@@ -71,17 +71,12 @@ function formatFileSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-function AttachmentBubble({
-  attachment,
-  kind,
-}: {
-  attachment: ImAttachment
-  kind: ImMessageType
-}) {
+function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
   const t = useTranslations('notifications.im')
   const { src, loading, error } = useAuthenticatedAssetUrl(attachment.url)
+  const isImage = attachment.content_type.startsWith('image/')
 
-  if (kind === 'image') {
+  if (isImage) {
     return (
       <div className="max-w-[75%] overflow-hidden rounded-2xl border bg-muted/30">
         {loading ? (
@@ -156,9 +151,7 @@ export function ChatWindow({
   const shouldScrollToUnreadRef = React.useRef(false)
   const currentConvIdRef = React.useRef<string | null>(null)
   const [unreadWatermark, setUnreadWatermark] = React.useState<number | null>(null)
-  const [pendingAttachments, setPendingAttachments] = React.useState<
-    Array<{ attachment: ImAttachment; kind: 'image' | 'file' }>
-  >([])
+  const [pendingAttachments, setPendingAttachments] = React.useState<ImAttachment[]>([])
   const [uploading, setUploading] = React.useState(false)
   const [uploadFailed, setUploadFailed] = React.useState(false)
   const draftBatchIdRef = React.useRef<string | null>(null)
@@ -380,17 +373,16 @@ export function ChatWindow({
   }
 
   const handleFilesSelected = React.useCallback(
-    async (kind: 'image' | 'file', files: FileList | null) => {
+    async (files: FileList | null) => {
       if (!files || files.length === 0 || !convId) return
       const snapshotConvId = convId
       setUploading(true)
       setUploadFailed(false)
       try {
         const uploaded = await Promise.all(
-          Array.from(files).map(async (file) => ({
-            attachment: await imApi.uploadAttachment(snapshotConvId, file),
-            kind,
-          }))
+          Array.from(files).map((file) =>
+            imApi.uploadAttachment(snapshotConvId, file)
+          )
         )
         if (currentConvIdRef.current !== snapshotConvId) return
         setPendingAttachments((prev) => [...prev, ...uploaded])
@@ -416,12 +408,12 @@ export function ChatWindow({
       dedupeKey: string
     }> = []
     if (text) items.push({ content: text, msg_type: 'text', dedupeKey: 'text' })
-    for (const item of pendingAttachments) {
+    for (const attachment of pendingAttachments) {
       items.push({
         content: '',
-        msg_type: item.kind,
-        asset_id: item.attachment.asset_id,
-        dedupeKey: item.attachment.asset_id.slice(0, 8),
+        msg_type: 'file',
+        asset_id: attachment.asset_id,
+        dedupeKey: attachment.asset_id.slice(0, 8),
       })
     }
     if (items.length === 0) return
@@ -658,7 +650,7 @@ export function ChatWindow({
                     </div>
                   </div>
                 ) : msg.attachment ? (
-                  <AttachmentBubble attachment={msg.attachment} kind={msg.msg_type} />
+                  <AttachmentBubble attachment={msg.attachment} />
                 ) : (
                   <div
                     className={cn(
@@ -704,24 +696,24 @@ export function ChatWindow({
           )}
           {pendingAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
-              {pendingAttachments.map((item) => (
+              {pendingAttachments.map((attachment) => (
                 <span
-                  key={item.attachment.asset_id}
+                  key={attachment.asset_id}
                   className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-1 text-[11px]"
                 >
-                  {item.kind === 'image' ? (
+                  {attachment.content_type.startsWith('image/') ? (
                     <ImageIcon className="size-3" />
                   ) : (
                     <Paperclip className="size-3" />
                   )}
-                  <span className="max-w-32 truncate">{item.attachment.filename}</span>
+                  <span className="max-w-32 truncate">{attachment.filename}</span>
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground"
                     title={t('removeAttachment')}
                     onClick={() =>
                       setPendingAttachments((prev) =>
-                        prev.filter((p) => p.attachment.asset_id !== item.attachment.asset_id)
+                        prev.filter((p) => p.asset_id !== attachment.asset_id)
                       )
                     }
                   >
@@ -739,7 +731,7 @@ export function ChatWindow({
               multiple
               className="hidden"
               onChange={(e) => {
-                void handleFilesSelected('image', e.target.files)
+                void handleFilesSelected(e.target.files)
                 e.target.value = ''
               }}
             />
@@ -749,7 +741,7 @@ export function ChatWindow({
               multiple
               className="hidden"
               onChange={(e) => {
-                void handleFilesSelected('file', e.target.files)
+                void handleFilesSelected(e.target.files)
                 e.target.value = ''
               }}
             />

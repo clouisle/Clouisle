@@ -530,7 +530,7 @@ test('ChatWindow splits text, image and file into ordered separate messages', as
 
   expect(sent.length).toBe(3)
   expect(sent[0]).toMatchObject({ content: 'hello', msg_type: 'text' })
-  expect(sent[1]).toMatchObject({ content: '', msg_type: 'image', asset_id: 'asset-a.png' })
+  expect(sent[1]).toMatchObject({ content: '', msg_type: 'file', asset_id: 'asset-a.png' })
   expect(sent[2]).toMatchObject({ content: '', msg_type: 'file', asset_id: 'asset-b.pdf' })
   expect(String(sent[0].client_msg_id).endsWith('-text')).toBe(true)
   expect(String(sent[1].client_msg_id).endsWith('-asset-a.')).toBe(true)
@@ -563,7 +563,7 @@ test('ChatWindow retries a failed draft with stable client message ids', async (
     url: `/api/v1/upload/files/${file.name}`,
   }))
   imApi.sendMessage = mock(async (_convId: string, payload: Record<string, unknown>) => {
-    if (payload.msg_type === 'image') {
+    if (payload.msg_type === 'file' && payload.content === '') {
       imageIds.push(String(payload.client_msg_id))
       if (failImage) {
         failImage = false

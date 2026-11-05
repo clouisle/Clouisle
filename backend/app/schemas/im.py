@@ -28,12 +28,9 @@ class SendMessageRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_attachment(self) -> SendMessageRequest:
-        is_attachment = self.msg_type in (ImMessageType.IMAGE, ImMessageType.FILE)
-        if is_attachment:
+        if self.msg_type == ImMessageType.FILE:
             if self.asset_id is None or self.content.strip():
-                raise ValueError(
-                    "image/file messages require an asset_id and empty content"
-                )
+                raise ValueError("file messages require an asset_id and empty content")
         elif self.asset_id is not None or not self.content.strip():
             raise ValueError("text messages require non-empty content and no asset_id")
         return self

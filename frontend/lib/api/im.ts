@@ -1,7 +1,7 @@
 import { api } from './client'
 
 export type ImConversationType = 'direct' | 'system'
-export type ImMessageType = 'text' | 'markdown' | 'card' | 'system_notice' | 'image' | 'file'
+export type ImMessageType = 'text' | 'markdown' | 'card' | 'system_notice' | 'file'
 
 export interface ImPeer {
   id: string

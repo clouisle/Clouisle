@@ -21,7 +21,7 @@ class ImMessageType(str, Enum):
     MARKDOWN = "markdown"
     CARD = "card"
     SYSTEM_NOTICE = "system_notice"
-    IMAGE = "image"
+    # Any attachment (image or document); the client renders by content_type.
     FILE = "file"
 
 

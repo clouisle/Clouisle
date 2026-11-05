@@ -71,14 +71,6 @@ async def _resolve_im_attachment(
             msg_key="file_not_found",
             status_code=404,
         )
-    if msg_type == ImMessageType.IMAGE and not (asset.content_type or "").startswith(
-        "image/"
-    ):
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="file_not_found",
-            status_code=400,
-        )
     bound = await AssetScopeRef.filter(
         asset_id=asset_id,
         scope_type=AssetScopeType.IM_CONVERSATION,
@@ -320,10 +312,12 @@ async def send_direct_message(
         )
 
         # 5. 更新会话摘要
-        if msg_type == ImMessageType.IMAGE:
-            summary = "[图片]"
-        elif msg_type == ImMessageType.FILE:
-            summary = "[文件]"
+        if msg_type == ImMessageType.FILE:
+            summary = (
+                "[图片]"
+                if (asset.content_type or "").startswith("image/")
+                else "[文件]"
+            )
         else:
             summary = _strip_markdown_summary(content, 200)
         conv.last_message_content = summary

@@ -48,13 +48,11 @@ def test_text_message_requires_content_and_no_asset() -> None:
 
 def test_attachment_message_requires_asset_and_empty_content() -> None:
     asset_id = uuid4()
-    image = SendMessageRequest(msg_type=ImMessageType.IMAGE, asset_id=asset_id)
-    assert image.content == "" and image.asset_id == asset_id
     file_msg = SendMessageRequest(msg_type=ImMessageType.FILE, asset_id=asset_id)
-    assert file_msg.msg_type == ImMessageType.FILE
+    assert file_msg.content == "" and file_msg.asset_id == asset_id
 
     with pytest.raises(ValidationError):
-        SendMessageRequest(msg_type=ImMessageType.IMAGE)
+        SendMessageRequest(msg_type=ImMessageType.FILE)
     with pytest.raises(ValidationError):
         SendMessageRequest(
             msg_type=ImMessageType.FILE, content="caption", asset_id=asset_id
@@ -103,7 +101,7 @@ async def test_send_message_endpoint_passes_asset_id(fake_user: User) -> None:
         sender_id=fake_user.id,
         client_msg_id="client-uuid",
         seq=3,
-        msg_type=MagicMock(value="image"),
+        msg_type=MagicMock(value="file"),
         content="",
         payload=None,
         asset_id=asset_id,
@@ -111,7 +109,7 @@ async def test_send_message_endpoint_passes_asset_id(fake_user: User) -> None:
         created_at=MagicMock(isoformat=lambda: "2026-11-04T00:00:00Z"),
     )
     payload = SendMessageRequest(
-        msg_type=ImMessageType.IMAGE, asset_id=asset_id, client_msg_id="client-uuid"
+        msg_type=ImMessageType.FILE, asset_id=asset_id, client_msg_id="client-uuid"
     )
     with (
         patch(
@@ -282,7 +280,7 @@ async def test_resolve_im_attachment_validates_team_type_and_scope() -> None:
         patch("app.models.asset.AssetScopeRef.filter", return_value=scope_qs),
     ):
         resolved = await im_service._resolve_im_attachment(
-            conv, asset_id, ImMessageType.IMAGE
+            conv, asset_id, ImMessageType.FILE
         )
     assert resolved is asset
 
@@ -293,15 +291,6 @@ async def test_resolve_im_attachment_validates_team_type_and_scope() -> None:
         with pytest.raises(BusinessError) as exc:
             await im_service._resolve_im_attachment(conv, asset_id, ImMessageType.FILE)
     assert exc.value.status_code == 404
-
-    # 图片类型必须是 image/*
-    non_image = MagicMock(content_type="application/pdf")
-    non_image_qs = MagicMock()
-    non_image_qs.first = AsyncMock(return_value=non_image)
-    with patch("app.models.asset.Asset.filter", return_value=non_image_qs):
-        with pytest.raises(BusinessError) as exc:
-            await im_service._resolve_im_attachment(conv, asset_id, ImMessageType.IMAGE)
-    assert exc.value.status_code == 400
 
     # 未绑定会话作用域
     unbound_scope = MagicMock()
@@ -374,7 +363,12 @@ async def test_init_im_rich_media_columns_is_additive() -> None:
         ) as run,
     ):
         await init_data.init_im_rich_media_columns()
-    assert "ADD COLUMN IF NOT EXISTS asset_id" in run.call_args.args[1]
+    statements = [call.args[1] for call in run.call_args_list]
+    assert any("ADD COLUMN IF NOT EXISTS asset_id" in sql for sql in statements)
+    assert any(
+        "UPDATE im_messages SET msg_type = 'file' WHERE msg_type = 'image'" in sql
+        for sql in statements
+    )
 
 
 # --- 发送路径：附件消息落在单行且 SSE 载荷带附件元数据 ---
@@ -382,11 +376,11 @@ async def test_init_im_rich_media_columns_is_additive() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("msg_type", "summary"),
-    [(ImMessageType.IMAGE, "[图片]"), (ImMessageType.FILE, "[文件]")],
+    ("content_type", "summary"),
+    [("image/png", "[图片]"), ("application/pdf", "[文件]")],
 )
 async def test_send_direct_message_with_attachment(
-    msg_type: ImMessageType, summary: str
+    content_type: str, summary: str
 ) -> None:
     sender_id, receiver_id, conv_id, asset_id = uuid4(), uuid4(), uuid4(), uuid4()
     conv = MagicMock(
@@ -400,7 +394,7 @@ async def test_send_direct_message_with_attachment(
         id=asset_id,
         display_filename="a.bin",
         size=7,
-        content_type="application/octet-stream",
+        content_type=content_type,
         storage_key="im/2026/11/a.bin",
     )
     msg = MagicMock(
@@ -408,7 +402,7 @@ async def test_send_direct_message_with_attachment(
         conversation_id=conv_id,
         sender_id=sender_id,
         seq=5,
-        msg_type=msg_type,
+        msg_type=ImMessageType.FILE,
         content="",
         payload=None,
         asset_id=asset_id,
@@ -439,11 +433,11 @@ async def test_send_direct_message_with_attachment(
         ) as publish,
     ):
         result = await im_service.send_direct_message(
-            conv_id, sender_id, "", msg_type=msg_type, asset_id=asset_id
+            conv_id, sender_id, "", msg_type=ImMessageType.FILE, asset_id=asset_id
         )
 
     assert result is msg
-    assert resolve.await_args.args == (conv, asset_id, msg_type)
+    assert resolve.await_args.args == (conv, asset_id, ImMessageType.FILE)
     assert create.await_args.kwargs["asset_id"] == asset_id
     assert conv.last_message_content == summary
     unread.assert_awaited_once_with(receiver_id, conv_id, 1)

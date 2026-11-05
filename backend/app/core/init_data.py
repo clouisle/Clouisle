@@ -1382,10 +1382,12 @@ async def init_assets_tables() -> None:
 
 
 async def init_im_rich_media_columns() -> None:
-    """Add the IM attachment reference column.
+    """Add the IM attachment reference column and normalize message types.
 
     Must run after Tortoise.generate_schemas() so im_messages exists on fresh
-    databases; generate_schemas does not ALTER existing tables.
+    databases; generate_schemas does not ALTER existing tables. Legacy rows
+    written while images had their own message type are folded into the single
+    attachment type, since rendering now follows Asset.content_type.
     """
     conn = Tortoise.get_connection("default")
     await execute_startup_migration_query(
@@ -1393,6 +1395,12 @@ async def init_im_rich_media_columns() -> None:
         """
         ALTER TABLE im_messages
             ADD COLUMN IF NOT EXISTS asset_id UUID
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        UPDATE im_messages SET msg_type = 'file' WHERE msg_type = 'image'
         """,
     )
     logger.info("IM rich-media columns initialization complete")
