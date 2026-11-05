@@ -165,7 +165,10 @@ const MessageRow = React.memo(function MessageRow({
   return (
     <React.Fragment>
       {showDateDivider && (
-        <div className="relative my-4 flex select-none items-center justify-center">
+        <div
+          data-testid="im-date-divider"
+          className="relative my-4 flex select-none items-center justify-center"
+        >
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t border-border/50" />
           </div>

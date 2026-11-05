@@ -311,9 +311,8 @@ test('ChatWindow renders date divider when messages span across different days',
     await Promise.resolve()
   })
 
-  // 查找带有 border-border 的日期分割线容器
   const dividers = renderer.root.findAll(
-    (node) => node.props.className?.includes('relative flex items-center justify-center my-4')
+    (node) => node.props['data-testid'] === 'im-date-divider'
   )
   expect(dividers.length).toBe(2) // 第一天一个分割线，跨天后第二天一个分割线
 
@@ -520,9 +519,7 @@ test('ChatWindow splits text, image and file into ordered separate messages', as
   })
 
   const sendButton = renderer.root.findAll(
-    (node) =>
-      node.type === 'button' &&
-      String(node.props.className ?? '').includes('size-10 shrink-0 cursor-pointer')
+    (node) => node.type === 'button' && node.props.children === 'send'
   )[0]
   await act(async () => {
     await sendButton.props.onClick()
@@ -604,9 +601,7 @@ test('ChatWindow retries a failed draft with stable client message ids', async (
 
   const sendButton = () =>
     renderer.root.findAll(
-      (node) =>
-        node.type === 'button' &&
-        String(node.props.className ?? '').includes('size-10 shrink-0 cursor-pointer')
+      (node) => node.type === 'button' && node.props.children === 'send'
     )[0]
 
   await act(async () => {
