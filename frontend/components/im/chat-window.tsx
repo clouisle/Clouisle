@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { imApi, type ImAttachment, type ImConversation, type ImMessage, type ImMessageType } from '@/lib/api'
 import { Streamdown } from 'streamdown'
+import { toast } from 'sonner'
 import { PauseRequestActions } from '@/components/chat/pause-request-actions'
 import {
   downloadAuthenticatedAsset,
@@ -153,7 +154,6 @@ export function ChatWindow({
   const [unreadWatermark, setUnreadWatermark] = React.useState<number | null>(null)
   const [pendingAttachments, setPendingAttachments] = React.useState<ImAttachment[]>([])
   const [uploading, setUploading] = React.useState(false)
-  const [uploadFailed, setUploadFailed] = React.useState(false)
   const draftBatchIdRef = React.useRef<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   // 换行自适应增高，设置最大高度限制 (160px，约 6 行文本)
@@ -220,7 +220,6 @@ export function ChatWindow({
       setMessages([])
       setUnreadWatermark(null)
       setPendingAttachments([])
-      setUploadFailed(false)
       draftBatchIdRef.current = null
       currentConvIdRef.current = null
       return
@@ -228,7 +227,6 @@ export function ChatWindow({
 
     currentConvIdRef.current = convId
     setPendingAttachments([])
-    setUploadFailed(false)
     draftBatchIdRef.current = null
 
     if (targetSeq) {
@@ -376,7 +374,6 @@ export function ChatWindow({
       if (!files || files.length === 0 || !convId) return
       const snapshotConvId = convId
       setUploading(true)
-      setUploadFailed(false)
       try {
         const uploaded = await Promise.all(
           Array.from(files).map((file) =>
@@ -387,12 +384,12 @@ export function ChatWindow({
         setPendingAttachments((prev) => [...prev, ...uploaded])
       } catch (err) {
         console.error('Failed to upload attachment:', err)
-        if (currentConvIdRef.current === snapshotConvId) setUploadFailed(true)
+        toast.error(t('uploadFailed'))
       } finally {
         setUploading(false)
       }
     },
-    [convId]
+    [convId, t]
   )
 
   // 发送：文本与每个附件拆成独立消息，串行 await 保证顺序与 seq 一致
@@ -690,9 +687,6 @@ export function ChatWindow({
         </div>
       ) : (
         <div className="p-3 border-t bg-background">
-          {uploadFailed && (
-            <div className="mb-2 text-xs text-destructive">{t('uploadFailed')}</div>
-          )}
           {pendingAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {pendingAttachments.map((attachment) => (
