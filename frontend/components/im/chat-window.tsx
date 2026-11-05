@@ -122,7 +122,7 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
   return (
     <button
       type="button"
-      className="flex w-full max-w-[320px] cursor-pointer items-start gap-3 rounded-xl bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
+      className="flex w-full max-w-[320px] cursor-pointer items-start gap-3 rounded-xl bg-[#EEEEF0] p-3 text-left transition-colors hover:bg-[#E4E4E8] dark:bg-muted/50 dark:hover:bg-muted"
       title={t('download')}
       onClick={() => void downloadAuthenticatedAsset(attachment.url, attachment.filename)}
     >
