@@ -80,7 +80,9 @@ export function ChatWindow({
   const scrollContainerRef = React.useRef<HTMLDivElement>(null)
   const pendingScrollAnchorRef = React.useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
   const shouldScrollToBottomRef = React.useRef(false)
-
+  const shouldScrollToUnreadRef = React.useRef(false)
+  const currentConvIdRef = React.useRef<string | null>(null)
+  const [unreadWatermark, setUnreadWatermark] = React.useState<number | null>(null)
   // 换行自适应增高，设置最大高度限制 (160px，约 6 行文本)
   const adjustTextareaHeight = React.useCallback(() => {
     const textarea = textareaRef.current
@@ -100,37 +102,84 @@ export function ChatWindow({
   const convId = conversation?.id
   const isSystem = conversation?.type === 'system'
 
-  // 加载会话最新消息
-  const loadInitialMessages = React.useCallback(async (id: string, seqTarget?: number | null) => {
-    setLoading(true)
-    try {
-      const params = seqTarget ? { around_seq: seqTarget, limit: 40 } : { limit: 40 }
-      const resp = await imApi.getMessages(id, params)
-      setMessages(resp.messages)
-      setHasMore(resp.has_more)
-      if (!seqTarget) {
-        shouldScrollToBottomRef.current = true
+  // 加载会话最新消息（支持未读消息位置探测与加载）
+  const loadInitialMessages = React.useCallback(
+    async (
+      id: string,
+      seqTarget?: number | null,
+      watermark?: number | null,
+      unreadCount?: number
+    ) => {
+      setLoading(true)
+      try {
+        let params: { around_seq?: number; limit?: number } = { limit: 40 }
+        if (seqTarget) {
+          params = { around_seq: seqTarget, limit: 40 }
+        } else if (unreadCount && unreadCount > 30) {
+          params = { limit: Math.min(100, unreadCount + 10) }
+        }
+
+        const resp = await imApi.getMessages(id, params)
+        setMessages(resp.messages)
+        setHasMore(resp.has_more)
+
+        if (watermark !== null && watermark !== undefined) {
+          shouldScrollToUnreadRef.current = true
+          shouldScrollToBottomRef.current = false
+        } else if (!seqTarget) {
+          shouldScrollToUnreadRef.current = false
+          shouldScrollToBottomRef.current = true
+        }
+
+        // 进入会话自动标记已读
+        await imApi.markRead(id)
+      } catch (err) {
+        console.error('Failed to load messages:', err)
+      } finally {
+        setLoading(false)
       }
-      // 进入会话自动标记已读
-      await imApi.markRead(id)
-    } catch (err) {
-      console.error('Failed to load messages:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    []
+  )
 
   React.useEffect(() => {
-    if (!convId) {
+    if (!convId || !conversation) {
       setMessages([])
+      setUnreadWatermark(null)
+      currentConvIdRef.current = null
       return
     }
-    loadInitialMessages(convId, targetSeq)
+
+    currentConvIdRef.current = convId
+
+    if (targetSeq) {
+      setUnreadWatermark(null)
+      loadInitialMessages(convId, targetSeq)
+      return
+    }
+
+    const hasUnread =
+      conversation.unread_count > 0 &&
+      conversation.latest_seq > conversation.last_read_seq
+    const watermark = hasUnread ? conversation.last_read_seq : null
+    setUnreadWatermark(watermark)
+
+    loadInitialMessages(convId, null, watermark, conversation.unread_count)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId, targetSeq, loadInitialMessages])
 
+  // 切换至可回复会话时自动聚焦输入框
+  React.useEffect(() => {
+    if (!isSystem && convId) {
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [convId, isSystem])
   // 搜索目标消息居中视口滚动
   React.useEffect(() => {
-    if (!targetMessageId || loading) return
+    if (!targetMessageId || loading || typeof document === 'undefined') return
     const timer = setTimeout(() => {
       const el = document.getElementById(`im-msg-${targetMessageId}`)
       if (el) {
@@ -169,7 +218,7 @@ export function ChatWindow({
     }
   }, [incomingMessage, convId])
 
-  // 精准视口位置锚定与滚底调度
+  // 精准视口位置锚定与滚底调度（优先处理未读分割线定位）
   React.useEffect(() => {
     if (loading) return
 
@@ -181,6 +230,30 @@ export function ChatWindow({
       const delta = container.scrollHeight - anchor.scrollHeight
       container.scrollTop = anchor.scrollTop + delta
       pendingScrollAnchorRef.current = null
+      return
+    }
+
+    if (shouldScrollToUnreadRef.current) {
+      const divider =
+        typeof document !== 'undefined'
+          ? document.getElementById('im-unread-divider')
+          : null
+      if (divider && container) {
+        const containerRect = container.getBoundingClientRect()
+        const dividerRect = divider.getBoundingClientRect()
+        if (containerRect.height > 0) {
+          const relativeTop = dividerRect.top - containerRect.top + container.scrollTop
+          container.scrollTop = Math.max(0, relativeTop - 16)
+        } else {
+          divider.scrollIntoView?.({ behavior: 'auto', block: 'start' })
+        }
+        shouldScrollToUnreadRef.current = false
+        return
+      }
+      if (shouldScrollToBottomRef.current && messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView?.({ behavior: 'auto' })
+        shouldScrollToBottomRef.current = false
+      }
       return
     }
 
@@ -231,17 +304,20 @@ export function ChatWindow({
         client_msg_id: clientMsgId,
       })
       shouldScrollToBottomRef.current = true
+      shouldScrollToUnreadRef.current = false
       setMessages((prev) => [...prev, newMsg])
       setInputText('')
       if (textareaRef.current) {
         textareaRef.current.style.height = '44px'
         textareaRef.current.style.overflowY = 'hidden'
+        textareaRef.current.focus()
       }
       onMessageSent?.()
     } catch (err) {
       console.error('Failed to send message:', err)
     } finally {
       setSending(false)
+      textareaRef.current?.focus()
     }
   }
 
@@ -262,6 +338,7 @@ export function ChatWindow({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+      textareaRef.current?.focus()
     }
   }
 
@@ -349,12 +426,19 @@ export function ChatWindow({
             {t('noMessagesInConversation')}
           </div>
         ) : (
-          messages.map((msg, idx) => {
-            const currentDate = new Date(msg.created_at)
-            const prevDate = idx > 0 ? new Date(messages[idx - 1].created_at) : null
-            const showDateDivider = isDifferentDay(currentDate, prevDate)
-            const isMe = msg.sender_id === currentUserId
-            const isCard = msg.msg_type === 'card'
+          (() => {
+            const firstUnreadIndex =
+              unreadWatermark !== null
+                ? messages.findIndex((m) => m.seq > unreadWatermark)
+                : -1
+
+            return messages.map((msg, idx) => {
+              const currentDate = new Date(msg.created_at)
+              const prevDate = idx > 0 ? new Date(messages[idx - 1].created_at) : null
+              const showDateDivider = isDifferentDay(currentDate, prevDate)
+              const showUnreadDivider = idx === firstUnreadIndex
+              const isMe = msg.sender_id === currentUserId
+              const isCard = msg.msg_type === 'card'
             const pauseData =
               msg.payload && typeof msg.payload === 'object'
                 ? (msg.payload.data as Record<string, unknown> | undefined) ||
@@ -391,6 +475,19 @@ export function ChatWindow({
                     </span>
                   </div>
                 )}
+                  {showUnreadDivider && (
+                    <div
+                      id="im-unread-divider"
+                      className="relative flex items-center justify-center my-4 select-none"
+                    >
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t border-primary/40 dark:border-primary/50" />
+                      </div>
+                      <span className="relative bg-background px-3 text-[11px] font-medium text-primary rounded-full border border-primary/30 py-0.5 shadow-2xs">
+                        {t('unreadMessagesDivider')}
+                      </span>
+                    </div>
+                  )}
                 <div
                   id={`im-msg-${msg.id}`}
                   className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}
@@ -444,7 +541,8 @@ export function ChatWindow({
               </div>
               </React.Fragment>
             )
-          })
+            })
+          })()
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -466,12 +564,13 @@ export function ChatWindow({
             placeholder={t('inputPlaceholder')}
             className="min-h-[44px] max-h-40 resize-none text-sm leading-normal py-2.5 transition-[height] duration-75"
             rows={1}
-            disabled={sending}
+            disabled={isSystem}
           />
           <Button
             size="icon"
             className="size-10 shrink-0 cursor-pointer"
             onClick={handleSend}
+            onMouseDown={(e) => e.preventDefault()}
             disabled={!inputText.trim() || sending}
           >
             {sending ? (

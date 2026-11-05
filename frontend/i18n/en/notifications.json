@@ -155,6 +155,8 @@
       "sectionMessages": "Messages"
       ,
       "earliestMessageNotice": "This is the beginning of the message history"
+      ,
+      "unreadMessagesDivider": "New messages below"
     }
   }
 }

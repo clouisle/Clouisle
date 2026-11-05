@@ -334,3 +334,108 @@ test('MessageCenterDialog renders and mounts correctly when open', async () => {
 
   expect(renderer.root).toBeTruthy()
 })
+
+test('ChatWindow renders unread divider before first unread message', async () => {
+  const convWithUnread: ImConversation = {
+    id: 'conv-with-unread',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 1, // 已读到 seq 1
+    latest_seq: 3,    // 最新到 seq 3
+    unread_count: 2,  // 有 2 条未读 (seq 2, 3)
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+
+  const { imApi } = await import('@/lib/api')
+  imApi.getMessages = mock(async () => ({
+    messages: [
+      {
+        id: 'msg-read-1',
+        conversation_id: 'conv-with-unread',
+        seq: 1,
+        content: 'Read message',
+        msg_type: 'text',
+        status: 'normal',
+        created_at: '2026-11-04T10:00:00Z',
+      },
+      {
+        id: 'msg-unread-2',
+        conversation_id: 'conv-with-unread',
+        seq: 2,
+        content: 'Unread message 1',
+        msg_type: 'text',
+        status: 'normal',
+        created_at: '2026-11-04T10:05:00Z',
+      },
+      {
+        id: 'msg-unread-3',
+        conversation_id: 'conv-with-unread',
+        seq: 3,
+        content: 'Unread message 2',
+        msg_type: 'text',
+        status: 'normal',
+        created_at: '2026-11-04T10:10:00Z',
+      },
+    ],
+    has_more: false,
+  }))
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={convWithUnread} currentUserId="user-alice" />)
+    await Promise.resolve()
+  })
+
+  // 检查是否渲染了未读分割线
+  const unreadDividers = renderer.root.findAll(
+    (node) => node.props.id === 'im-unread-divider'
+  )
+  expect(unreadDividers.length).toBe(1)
+})
+
+test('ChatWindow preserves textarea focus and enabled state while sending', async () => {
+  const conv: ImConversation = {
+    id: 'conv-focus',
+    type: 'direct',
+    team_id: 'team-1',
+    is_pinned: false,
+    is_muted: false,
+    last_read_seq: 1,
+    latest_seq: 1,
+    unread_count: 0,
+    peer: { id: 'user-bob', username: 'bob', full_name: 'Bob' },
+    created_at: '2026-11-04T00:00:00Z',
+    updated_at: '2026-11-04T00:00:00Z',
+  }
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<ChatWindow conversation={conv} currentUserId="user-alice" />)
+    await Promise.resolve()
+  })
+
+  const textarea = renderer.root.findByType('textarea')
+  expect(textarea.props.disabled).toBe(false)
+
+  act(() => {
+    textarea.props.onChange({ target: { value: 'New message to send' } })
+  })
+
+  const preventDefault = mock()
+  await act(async () => {
+    await textarea.props.onKeyDown({
+      key: 'Enter',
+      shiftKey: false,
+      keyCode: 13,
+      nativeEvent: { isComposing: false },
+      preventDefault,
+    })
+  })
+
+  expect(preventDefault).toHaveBeenCalledTimes(1)
+  expect(textarea.props.disabled).toBe(false)
+})

@@ -154,6 +154,7 @@ export type NotificationsMessages = {
       sectionConversations: string
       sectionMessages: string
       earliestMessageNotice: string
+      unreadMessagesDivider: string
     }
   }
 }

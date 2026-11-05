@@ -155,6 +155,8 @@
       "sectionMessages": "聊天记录"
       ,
       "earliestMessageNotice": "以上为最早的消息"
+      ,
+      "unreadMessagesDivider": "以下为未读消息"
     }
   }
 }
