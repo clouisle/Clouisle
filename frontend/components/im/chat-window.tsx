@@ -15,6 +15,7 @@ import { imApi, type ImAttachment, type ImConversation, type ImMessage, type ImM
 import { Streamdown } from 'streamdown'
 import { toast } from 'sonner'
 import { PauseRequestActions } from '@/components/chat/pause-request-actions'
+import { FileTypeIcon } from '@/components/file-type-icon'
 import {
   downloadAuthenticatedAsset,
   useAuthenticatedAssetUrl,
@@ -69,28 +70,6 @@ function formatFileSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-function fileBadge(filename: string): { label: string; className: string } {
-  const extension = filename.includes('.')
-    ? filename.split('.').pop()!.toUpperCase()
-    : ''
-  const label = extension.slice(0, 4) || 'FILE'
-  const palette: Record<string, string> = {
-    PDF: 'bg-red-600',
-    DOC: 'bg-blue-600',
-    DOCX: 'bg-blue-600',
-    XLS: 'bg-green-600',
-    XLSX: 'bg-green-600',
-    CSV: 'bg-green-600',
-    PPT: 'bg-red-500',
-    PPTX: 'bg-red-500',
-    ZIP: 'bg-amber-600',
-    RAR: 'bg-amber-600',
-    TXT: 'bg-slate-500',
-    MD: 'bg-slate-500',
-  }
-  return { label, className: palette[label] ?? 'bg-slate-500' }
-}
-
 function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
   const t = useTranslations('notifications.im')
   const { src, loading, error } = useAuthenticatedAssetUrl(attachment.url)
@@ -117,8 +96,6 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
     )
   }
 
-  const badge = fileBadge(attachment.filename)
-
   return (
     <button
       type="button"
@@ -134,11 +111,11 @@ function AttachmentBubble({ attachment }: { attachment: ImAttachment }) {
           {formatFileSize(attachment.size)}
         </div>
       </div>
-      <div
-        className={`flex size-14 shrink-0 items-center justify-center rounded-lg text-white ${badge.className}`}
-      >
-        <span className="text-base font-semibold leading-none">{badge.label}</span>
-      </div>
+      <FileTypeIcon
+        filename={attachment.filename}
+        mimeType={attachment.content_type}
+        className="size-10 shrink-0"
+      />
     </button>
   )
 }
