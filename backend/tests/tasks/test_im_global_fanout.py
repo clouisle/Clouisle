@@ -53,7 +53,10 @@ async def test_fanout_sends_once_per_user_with_team_and_skips_unresolved() -> No
     kwargs = send.await_args.kwargs
     assert kwargs["team_id"] == "team-1"
     assert kwargs["recipient_user_id"] == first.id
-    assert kwargs["client_msg_id"] == f"notif-bridge-{notification.id}-{first.id}"
+    from app.services.im_system_bridge import _bridge_client_msg_id
+
+    assert kwargs["client_msg_id"] == _bridge_client_msg_id(notification.id, first.id)
+    assert len(kwargs["client_msg_id"]) <= 64
 
 
 @pytest.mark.asyncio

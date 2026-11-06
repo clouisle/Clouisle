@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 from uuid import UUID
@@ -28,8 +29,9 @@ LEGACY_NOTIF_BATCH_SIZE = 200
 
 
 def _bridge_client_msg_id(notification_id: UUID, user_id: UUID) -> str:
-    """实时桥接使用的幂等键。"""
-    return f"notif-bridge-{notification_id}-{user_id}"
+    """实时桥接使用的幂等键（固定长度，适配 ImMessage.client_msg_id 的 64 字符上限）。"""
+    digest = hashlib.sha256(f"{notification_id}:{user_id}".encode()).hexdigest()[:32]
+    return f"notif-bridge-{digest}"
 
 
 def _legacy_client_msg_id(notification_id: UUID) -> str:
