@@ -15,6 +15,7 @@ import { MessageCenterDialog } from './message-center-dialog'
 export function MessageCenterLauncher() {
   const t = useTranslations('notifications')
   const { currentTeam } = useTeam()
+  const teamId = currentTeam?.id
   const [user, setUser] = React.useState<User | null>(null)
   const [open, setOpen] = React.useState(false)
   const [unread, setUnread] = React.useState(0)
@@ -26,14 +27,24 @@ export function MessageCenterLauncher() {
       .catch(() => {})
   }, [])
 
+  const lastLegacySyncRef = React.useRef(0)
   const fetchUnread = React.useCallback(async () => {
+    const now = Date.now()
+    if (user?.id && teamId && now - lastLegacySyncRef.current > 60_000) {
+      lastLegacySyncRef.current = now
+      try {
+        await imApi.listConversations(teamId)
+      } catch {
+        lastLegacySyncRef.current = 0
+      }
+    }
     try {
       const data = await imApi.getUnreadCount({ silent: true, skipAuthRedirect: true })
       setUnread(data.total)
     } catch {
       // 忽略读取失败
     }
-  }, [])
+  }, [user?.id, teamId])
 
   React.useEffect(() => {
     if (!user?.id) return
@@ -44,20 +55,6 @@ export function MessageCenterLauncher() {
     })
     return () => unsubscribe()
   }, [user?.id, fetchUnread])
-
-  // 首次挂载时触发一次历史通知回填，避免只显示部署后的 IM 未读数
-  React.useEffect(() => {
-    if (!user?.id || !currentTeam?.id || typeof window === 'undefined') return
-    const marker = `im-legacy-synced:${user.id}:${currentTeam.id}`
-    if (window.sessionStorage?.getItem(marker)) return
-    imApi
-      .listConversations(currentTeam.id)
-      .then(() => {
-        window.sessionStorage?.setItem(marker, '1')
-        void fetchUnread()
-      })
-      .catch(() => {})
-  }, [user?.id, currentTeam?.id, fetchUnread])
 
   if (!user?.id) return null
 

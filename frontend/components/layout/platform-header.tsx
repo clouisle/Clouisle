@@ -118,6 +118,7 @@ export function PlatformHeader() {
   const { platformHeaderVariant, mounted } = useSettings()
   const { canAccessDashboard, hasAnyPermission, hasPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const currentTeamId = currentTeam?.id
   const onboarding = useOptionalOnboarding()
 
   // 没有团队时隐藏导航
@@ -149,29 +150,30 @@ export function PlatformHeader() {
 
   const [prevUnreadCount, setPrevUnreadCount] = React.useState(0)
 
+  // 每分钟最多触发一次历史通知回填：listConversations 会把尚未桥接的
+  // 旧通知（含 GLOBAL 公告）导入系统会话并累加未读，保证导航红点最终一致。
+  const lastLegacySyncRef = React.useRef(0)
   const fetchUnread = React.useCallback(async () => {
+    const now = Date.now()
+    if (
+      user?.id &&
+      currentTeamId &&
+      now - lastLegacySyncRef.current > 60_000
+    ) {
+      lastLegacySyncRef.current = now
+      try {
+        await imApi.listConversations(currentTeamId)
+      } catch {
+        lastLegacySyncRef.current = 0
+      }
+    }
     try {
       const data = await imApi.getUnreadCount({ silent: true, skipAuthRedirect: true })
       setUnreadCount(data.total)
     } catch {
       // 忽略读取失败
     }
-  }, [])
-
-  // 首次进入时触发一次历史通知回填（listConversations 会执行旧通知同步），
-  // 否则头部只统计部署后的 IM 消息，部署前的公告不会体现在红点里。
-  React.useEffect(() => {
-    if (!user?.id || !currentTeam?.id || typeof window === 'undefined') return
-    const marker = `im-legacy-synced:${user.id}:${currentTeam.id}`
-    if (window.sessionStorage?.getItem(marker)) return
-    imApi
-      .listConversations(currentTeam.id)
-      .then(() => {
-        window.sessionStorage?.setItem(marker, '1')
-        void fetchUnread()
-      })
-      .catch(() => {})
-  }, [user?.id, currentTeam?.id, fetchUnread])
+  }, [user?.id, currentTeamId])
 
   // 请求浏览器通知权限（在用户交互时调用）
   const requestNotificationPermission = React.useCallback(async () => {
