@@ -1050,6 +1050,15 @@ msgstr "{failed_count}/{total_chunks} chunks failed to embed: {error}"
 msgid "chunks_still_failed_after_retry"
 msgstr "{failed_count}/{total_chunks} chunks still failed: {error}"
 
+msgid "conversation_access_denied"
+msgstr "You are not a participant in this conversation"
+
+msgid "invalid_conversation_type"
+msgstr "Attachments are only supported in direct conversations"
+
+msgid "im_attachment_mismatch"
+msgstr "The retried message references a different attachment"
+
 msgid "conversation_created"
 msgstr "Conversation created successfully"
 

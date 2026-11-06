@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { Window } from 'happy-dom'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -28,6 +28,22 @@ Object.assign(globalThis, {
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const roots: Root[] = []
+const originalApiUrl = process.env.NEXT_PUBLIC_API_URL
+
+// Other test files run in the same process and may set this env var; the
+// same-origin assertions below must not depend on file execution order.
+beforeAll(() => {
+  delete process.env.NEXT_PUBLIC_API_URL
+})
+
+afterAll(() => {
+  if (originalApiUrl === undefined) {
+    delete process.env.NEXT_PUBLIC_API_URL
+  } else {
+    process.env.NEXT_PUBLIC_API_URL = originalApiUrl
+  }
+})
+
 
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount())

@@ -1,7 +1,7 @@
 {
   "notifications": {
-    "title": "Notifications",
-    "description": "Manage and view all system notifications",
+    "title": "Message Center",
+    "description": "Manage system notifications and direct peer messages within teams",
     "searchPlaceholder": "Search notifications...",
     "unreadOnly": "Unread only",
     "markAllRead": "Mark all read",
@@ -129,6 +129,41 @@
       "channelEmail": "Email",
       "channelWebhook": "Webhook",
       "channelFeishu": "Feishu"
+    }
+    ,
+    "im": {
+      "systemNotifications": "System Notifications",
+      "systemNoticeBadge": "Official",
+      "systemNoticeReadOnly": "System notices are platform-triggered and cannot be replied to directly",
+      "searchConversationsPlaceholder": "Search conversations...",
+      "newChat": "New Direct Message",
+      "newChatTitle": "New Direct Message",
+      "searchCandidatesPlaceholder": "Search team members...",
+      "noCandidatesFound": "No matching team members found",
+      "noConversations": "No conversations yet",
+      "noMessagesYet": "No messages yet",
+      "unknownUser": "Unknown User",
+      "selectConversationTitle": "Select a Conversation",
+      "selectConversationDesc": "Choose a conversation from the left to view messages, or start a new direct chat",
+      "loadEarlierMessages": "Load earlier messages",
+      "noMessagesInConversation": "No messages in this conversation",
+      "approvalCardTitle": "Pending Approval",
+      "inputPlaceholder": "Type a message... (Enter to send, Shift+Enter for new line)"
+      ,
+      "messagesMatched": "matched message(s)",
+      "sectionConversations": "Conversations",
+      "sectionMessages": "Messages"
+      ,
+      "earliestMessageNotice": "This is the beginning of the message history"
+      ,
+      "unreadMessagesDivider": "New messages below",
+      "attachFile": "Attach file",
+      "send": "Send",
+      "composerMessageTooLong": "Message is too long (max 10,000 characters)",
+      "noSearchResults": "No matching results",
+      "uploadFailed": "Attachment upload failed, please retry",
+      "download": "Download",
+      "removeAttachment": "Remove attachment"
     }
   }
 }

@@ -8,6 +8,7 @@ import {
   formatTime,
   isRecord,
   isValidEmail,
+  stripMarkdown,
 } from './utils'
 
 describe('utility helpers', () => {
@@ -113,5 +114,11 @@ describe('utility helpers', () => {
     expect(isRecord(null)).toBe(false)
     expect(isRecord('value')).toBe(false)
     expect(isRecord(1)).toBe(false)
+  })
+
+  test('strips markdown links and images with balanced parentheses in URLs', () => {
+    expect(stripMarkdown('[plain](https://example.com/path)')).toBe('plain')
+    expect(stripMarkdown('see [docs](https://x/a(b)) ok')).toBe('see docs ok')
+    expect(stripMarkdown('![logo](https://x/img(1).png)')).toBe('logo')
   })
 })

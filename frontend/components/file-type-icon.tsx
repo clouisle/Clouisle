@@ -52,6 +52,9 @@ export function FileTypeIcon({ filename, mimeType, className }: FileTypeIconProp
       return renderIcon(FileType, 'text-orange-500')
     case 'csv':
       return renderIcon(FileType, 'text-green-500')
+    case 'ppt':
+    case 'pptx':
+      return renderIcon(FileType, 'text-orange-500')
     case 'xlsx':
     case 'xls':
       return renderIcon(FileType, 'text-green-600')
@@ -68,6 +71,13 @@ export function FileTypeIcon({ filename, mimeType, className }: FileTypeIconProp
   if (normalizedMimeType.startsWith('video/')) return renderIcon(FileVideo)
   if (normalizedMimeType.startsWith('audio/')) return renderIcon(FileAudio)
   if (normalizedMimeType === 'application/pdf') return renderIcon(FileType, 'text-red-500')
+  if (
+    normalizedMimeType === 'application/vnd.ms-powerpoint'
+    || normalizedMimeType
+      === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ) {
+    return renderIcon(FileType, 'text-orange-500')
+  }
   if (normalizedMimeType === 'text/html') return renderIcon(FileType, 'text-orange-500')
   if (
     normalizedMimeType.startsWith('text/')

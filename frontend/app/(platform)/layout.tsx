@@ -7,9 +7,9 @@ import { PasswordExpirationBanner } from '@/components/password-expiration-banne
 import { AuthGuard } from '@/components/auth-guard'
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
 import { OnboardingTour, allTourIds } from '@/components/onboarding/onboarding-tour'
-import { ProminentNotificationDialog } from '@/components/layout/prominent-notification-dialog'
 import { OAuthResultToast } from '@/components/tools/oauth-result-toast'
 import { GlobalWatermark } from '@/components/watermark/global-watermark'
+import { MessageCenterLauncher } from '@/components/im/message-center-launcher'
 
 export default function PlatformLayout({
   children,
@@ -40,9 +40,11 @@ export default function PlatformLayout({
             <div className="h-screen flex flex-col overflow-hidden">
               <main className="flex-1 relative overflow-hidden">
                 {children}
+                <div className="absolute right-4 top-4 z-30">
+                  <MessageCenterLauncher />
+                </div>
               </main>
               <OAuthResultToast />
-              <ProminentNotificationDialog />
               <GlobalWatermark />
               {renderTours()}
             </div>
@@ -63,7 +65,6 @@ export default function PlatformLayout({
               {children}
             </main>
             <OAuthResultToast />
-            <ProminentNotificationDialog />
             <GlobalWatermark />
             {renderTours()}
           </div>

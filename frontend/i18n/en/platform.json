@@ -6,7 +6,7 @@
       "kb": "Knowledge Bases",
       "capabilities": "Capabilities",
       "models": "Models",
-      "notifications": "Notifications",
+      "notifications": "Messages",
       "memories": "My Memories"
     },
     "profile": {
@@ -17,7 +17,7 @@
     "admin": "Admin Panel",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",
-    "newNotifications": "You have {count} new notification(s)",
+    "newNotifications": "You have {count} new message(s)",
     "about": "About",
     "aboutDescription": "All-in-one AI application development platform",
     "aboutVersion": "Version",

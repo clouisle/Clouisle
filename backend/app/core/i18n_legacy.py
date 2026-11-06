@@ -946,6 +946,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Please clear or shorten the conversation history, then try again.",
         "zh": "请清理或缩短会话历史后重试。",
     },
+    "conversation_access_denied": {
+        "en": "You are not a participant in this conversation",
+        "zh": "你不是该会话的参与者",
+    },
     "conversation_created": {
         "en": "Conversation created successfully",
         "zh": "对话创建成功",
@@ -1524,6 +1528,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "HTTP URL is missing values for template fields: {fields}",
         "zh": "HTTP URL 缺少模板字段的值：{fields}",
     },
+    "im_attachment_mismatch": {
+        "en": "The retried message references a different attachment",
+        "zh": "重试消息引用的附件与首次发送不一致",
+    },
     "image_generation_exceeds_agent_limit": {
         "en": "Image generation request exceeds the agent limit ({max_images})",
         "zh": "图片生成请求超出当前智能体限制（{max_images}）",
@@ -1617,6 +1625,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "invalid_api_key_format": {
         "en": "Invalid API key format. Must start with 'clou_'",
         "zh": "无效的 API 密钥格式。必须以 'clou_' 开头",
+    },
+    "invalid_conversation_type": {
+        "en": "Attachments are only supported in direct conversations",
+        "zh": "仅单聊会话支持附件",
     },
     "invalid_credentials": {"en": "Invalid credentials", "zh": "凭证无效"},
     "invalid_dashscope_api_key": {

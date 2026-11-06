@@ -35,6 +35,7 @@ class AssetStatus(str, Enum):
 class AssetScopeType(str, Enum):
     CONVERSATION = "conversation"
     WORKFLOW_RUN = "workflow_run"
+    IM_CONVERSATION = "im_conversation"
 
 
 class Asset(models.Model):
@@ -122,7 +123,7 @@ class AssetScopeRef(models.Model):
     """Compact model-facing reference unique inside one execution scope."""
 
     id = fields.UUIDField(primary_key=True)
-    scope_type = fields.CharEnumField(AssetScopeType)
+    scope_type = fields.CharEnumField(AssetScopeType, max_length=32)
     scope_id = fields.UUIDField()
     asset: fields.ForeignKeyRelation[Asset] = fields.ForeignKeyField(
         "models.Asset",

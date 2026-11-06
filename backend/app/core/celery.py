@@ -64,6 +64,7 @@ celery_app = Celery(
         "app.tasks.memory",
         "app.tasks.tool_approval",
         "app.tasks.tool_oauth",
+        "app.tasks.im",
     ],
 )
 
@@ -116,6 +117,7 @@ celery_app.conf.task_routes = {
     "app.tasks.memory.*": {"queue": "default"},
     "app.tasks.tool_approval.*": {"queue": "default"},
     "app.tasks.tool_oauth.*": {"queue": "default"},
+    "app.tasks.im.*": {"queue": "default"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
     "tasks.sweep_lost_agent_runs": {"queue": "default"},
     "tasks.expire_tool_approvals": {"queue": "default"},
@@ -174,6 +176,12 @@ celery_app.conf.beat_schedule = {
     "cleanup-expired-tool-oauth-flows": {
         "task": "tasks.cleanup_expired_tool_oauth_flows",
         "schedule": crontab(minute="*/30"),
+        "options": {"queue": "default"},
+    },
+    # Reclaim IM attachments uploaded but never referenced by a message.
+    "cleanup-orphan-im-assets": {
+        "task": "tasks.cleanup_orphan_im_assets",
+        "schedule": crontab(minute=17),
         "options": {"queue": "default"},
     },
 }

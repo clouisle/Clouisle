@@ -2,6 +2,23 @@
 
 ## Active
 
+- **message-center-im** — Completed; verification via backend pytest/ruff and frontend bun test/tsc/i18n-lint. See `docs/plan/message-center-im.md`.
+  - [x] 1. Backend models, database schemas, and Redis concurrency infrastructure
+  - [x] 2. High-concurrency IM core service layer and sequence/dedup logic
+  - [x] 3. FastAPI endpoints, team-level authorization, and contract schemas
+  - [x] 4. System notification bridge and workflow approval integration
+  - [x] 5. Frontend MessageCenterDialog modal and IM stream components
+  - [x] 6. Deprecate legacy notifications page and adapt navigation/i18n
+  - [x] 7. Automated tests, regression verification, and lint/type checks
+
+- **im-rich-media** — In progress: stages 1-5 delivered (file attachments incl. images, split sends, team-scoped assets, orphan reclamation); stage 6 pending. Distributed concurrency and team-scoped asset authorization are the core constraints. See `docs/plan/im-rich-media.md`.
+  - [x] 1. Backend models and backward-compatible migration
+  - [x] 2. IM-scoped upload endpoint and asset authorization
+  - [x] 3. Send path: single-row write, idempotency, attachment metadata
+  - [x] 4. Read contract, frontend upload queue and rendering
+  - [x] 5. Orphan-asset reclamation and concurrency regression
+  - [ ] 6. Feature flag, documentation and delivery verification
+
 - **global-watermark** — Completed; verification via backend/frontend suites and typecheck/lint (no server or browser run). See `docs/plan/global-watermark.md`.
   - [x] 1. Backend settings definition, public contract, validation
   - [x] 2. Frontend contract and rendering primitives

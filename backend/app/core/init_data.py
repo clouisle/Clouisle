@@ -1365,7 +1365,7 @@ async def init_assets_tables() -> None:
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS asset_scope_refs (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            scope_type VARCHAR(20) NOT NULL,
+            scope_type VARCHAR(32) NOT NULL,
             scope_id UUID NOT NULL,
             asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
             ref VARCHAR(4) NOT NULL CHECK (ref ~ '^[0-9a-f]{4}$'),
@@ -1378,7 +1378,56 @@ async def init_assets_tables() -> None:
         CREATE INDEX IF NOT EXISTS idx_asset_scope_refs_scope
         ON asset_scope_refs(scope_type, scope_id)
     """)
+    # The column was sized from the longest enum value at table-creation time
+    # ("workflow_run" = 12). Widening is metadata-only in PostgreSQL, so adding
+    # enum members never needs a manual migration. Only issue the ALTER when
+    # the column is still narrow: it takes ACCESS EXCLUSIVE and runs on every
+    # startup otherwise.
+    _, col_info = await execute_startup_migration_query(
+        conn,
+        """
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_name = 'asset_scope_refs'
+          AND table_schema = 'public'
+          AND column_name = 'scope_type'
+        """,
+    )
+    scope_type_width = col_info[0]["character_maximum_length"] if col_info else None
+    if scope_type_width is not None and scope_type_width < 32:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE asset_scope_refs
+                ALTER COLUMN scope_type TYPE VARCHAR(32)
+            """,
+        )
     logger.info("Asset table initialization complete")
+
+
+async def init_im_rich_media_columns() -> None:
+    """Add the IM attachment reference column and normalize message types.
+
+    Must run after Tortoise.generate_schemas() so im_messages exists on fresh
+    databases; generate_schemas does not ALTER existing tables. Legacy rows
+    written while images had their own message type are folded into the single
+    attachment type, since rendering now follows Asset.content_type.
+    """
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE im_messages
+            ADD COLUMN IF NOT EXISTS asset_id UUID
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
+        UPDATE im_messages SET msg_type = 'file' WHERE msg_type = 'image'
+        """,
+    )
+    logger.info("IM rich-media columns initialization complete")
 
 
 async def init_permission_is_system_field():

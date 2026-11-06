@@ -132,5 +132,36 @@ export type NotificationsMessages = {
       channelWebhook: string
       channelFeishu: string
     }
+    im: {
+      systemNotifications: string
+      systemNoticeBadge: string
+      systemNoticeReadOnly: string
+      searchConversationsPlaceholder: string
+      newChat: string
+      newChatTitle: string
+      searchCandidatesPlaceholder: string
+      noCandidatesFound: string
+      noConversations: string
+      noMessagesYet: string
+      unknownUser: string
+      selectConversationTitle: string
+      selectConversationDesc: string
+      loadEarlierMessages: string
+      noMessagesInConversation: string
+      approvalCardTitle: string
+      inputPlaceholder: string
+      messagesMatched: string
+      sectionConversations: string
+      sectionMessages: string
+      earliestMessageNotice: string
+      unreadMessagesDivider: string
+      attachFile: string
+      send: string
+      composerMessageTooLong: string
+      noSearchResults: string
+      uploadFailed: string
+      download: string
+      removeAttachment: string
+    }
   }
 }

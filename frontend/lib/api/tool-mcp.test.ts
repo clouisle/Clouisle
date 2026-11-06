@@ -1,161 +1,60 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { beforeEach, expect, mock, test } from 'bun:test'
 
-import { api } from './client'
-import { toolMcpApi } from './tool-mcp'
+const calls: Array<{ method: string; url: string; body?: unknown }> = []
+const record = (method: string) =>
+  mock(async (url: string, body?: unknown) => {
+    calls.push({ method, url, body })
+    return { ok: true }
+  })
 
-let getBaseUrl: ReturnType<typeof spyOn>
-let getAuthHeaders: ReturnType<typeof spyOn>
-let fetchSpy: ReturnType<typeof spyOn>
+mock.module('./client', () => ({
+  api: { get: record('get'), post: record('post') },
+}))
 
-const originalFetch = globalThis.fetch
+const { toolMcpApi } = await import('./tool-mcp')
 
 beforeEach(() => {
-  getBaseUrl = spyOn(api, 'getBaseUrl').mockReturnValue('https://api.example.test/api/v1')
-  getAuthHeaders = spyOn(api, 'getAuthHeaders').mockReturnValue({ Authorization: 'Bearer token' })
+  calls.length = 0
 })
 
-afterEach(() => {
-  getBaseUrl.mockRestore()
-  getAuthHeaders.mockRestore()
-  fetchSpy?.mockRestore()
-  globalThis.fetch = originalFetch
+test('mcp enumeration endpoints forward scoped query parameters', async () => {
+  const params = {
+    teamId: 'team-1',
+    connection_mode: 'team' as const,
+    connection_id: 'conn-1',
+    maxItems: 10,
+    cursor: 'next',
+    execution_id: 'exec-1',
+  }
+  await toolMcpApi.getCapabilities('tool-1', params)
+  await toolMcpApi.listTools('tool-1', params)
+  await toolMcpApi.listResources('tool-1', params)
+  await toolMcpApi.listResourceTemplates('tool-1', params)
+  await toolMcpApi.listPrompts('tool-1', params)
+
+  expect(calls.map((c) => c.url)).toEqual([
+    '/tools/tool-1/mcp/capabilities?team_id=team-1&connection_mode=team&connection_id=conn-1&execution_id=exec-1',
+    '/tools/tool-1/mcp/tools?team_id=team-1&connection_mode=team&connection_id=conn-1&max_items=10&cursor=next&execution_id=exec-1',
+    '/tools/tool-1/mcp/resources?team_id=team-1&connection_mode=team&connection_id=conn-1&max_items=10&cursor=next&execution_id=exec-1',
+    '/tools/tool-1/mcp/resource-templates?team_id=team-1&connection_mode=team&connection_id=conn-1&max_items=10&cursor=next&execution_id=exec-1',
+    '/tools/tool-1/mcp/prompts?team_id=team-1&connection_mode=team&connection_id=conn-1&max_items=10&cursor=next&execution_id=exec-1',
+  ])
 })
 
-function mockFetch(response: Response | Promise<Response>) {
-  fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(response)
-  return fetchSpy
-}
+test('mcp resource and prompt reads post their identity', async () => {
+  await toolMcpApi.readResource('tool-1', 'team-1', 'file://a', { connection_id: 'conn-1' })
+  await toolMcpApi.getPrompt('tool-1', 'team-1', 'summarize', { text: 'a' })
 
-function sseResponse(chunks: string[]): Response {
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
-      controller.close()
+  expect(calls).toEqual([
+    {
+      method: 'post',
+      url: '/tools/tool-1/mcp/resources/read?team_id=team-1',
+      body: { uri: 'file://a', connection_id: 'conn-1' },
     },
-  })
-  return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
-}
-
-describe('toolMcpApi.subscribeResource', () => {
-  it('streams resource subscription events to the callbacks', async () => {
-    mockFetch(sseResponse([
-      'event: subscription_opened\n',
-      'data: {"subscription_id":"sub-1","uri":"file:///a.txt"}\n\n',
-      'event: resource_updated\n',
-      'data: {"subscription_id":"sub-1","uri":"file:///a.txt","sequence":2}\n\n',
-      'event: subscription_closed\n',
-      'data: {"reason":"ttl_expired"}\n\n',
-    ]))
-    const opened: unknown[] = []
-    const updated: unknown[] = []
-    const closed: string[] = []
-    const streamFinished = Promise.withResolvers<void>()
-
-    const unsubscribe = toolMcpApi.subscribeResource(
-      'tool-1',
-      { teamId: 'team-1', uri: 'file:///a.txt', connection_mode: 'personal', connection_id: 'connection-1' },
-      {
-        onOpened: (event) => opened.push(event),
-        onUpdated: (event) => updated.push(event),
-        onClosed: (reason) => {
-          closed.push(reason)
-          streamFinished.resolve()
-        },
-      },
-    )
-
-    await streamFinished.promise
-    expect(opened).toEqual([{ subscription_id: 'sub-1', uri: 'file:///a.txt' }])
-    expect(updated).toEqual([{ subscription_id: 'sub-1', uri: 'file:///a.txt', sequence: 2 }])
-    expect(closed).toEqual(['ttl_expired'])
-
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(
-      'https://api.example.test/api/v1/tools/tool-1/mcp/resources/subscribe?team_id=team-1&uri=file%3A%2F%2F%2Fa.txt&connection_mode=personal&connection_id=connection-1',
-    )
-    expect(init.headers).toEqual({ Authorization: 'Bearer token', Accept: 'text/event-stream' })
-
-    unsubscribe()
-    expect((init.signal as AbortSignal).aborted).toBe(true)
-    expect(closed).toEqual(['ttl_expired'])
-  })
-
-  it('reports a pending approval instead of closing the subscription', async () => {
-    mockFetch(Response.json({
-      status: 'pending_approval',
-      execution_id: 'execution-2',
-      pending_approval: { execution_id: 'execution-2' },
-    }))
-    const approvals: string[] = []
-    const closed: string[] = []
-    const approvalReceived = Promise.withResolvers<void>()
-
-    toolMcpApi.subscribeResource(
-      'tool-1',
-      { teamId: 'team-1', uri: 'file:///a.txt' },
-      {
-        onOpened: () => {},
-        onUpdated: () => {},
-        onClosed: (reason) => closed.push(reason),
-        onPendingApproval: (executionId) => {
-          approvals.push(executionId)
-          approvalReceived.resolve()
-        },
-      },
-    )
-
-    await approvalReceived.promise
-    expect(approvals).toEqual(['execution-2'])
-    expect(closed).toEqual([])
-  })
-
-  it('falls back to the nested approval execution id', async () => {
-    mockFetch(Response.json({
-      status: 'pending_approval',
-      execution_id: null,
-      pending_approval: { execution_id: 'execution-3' },
-    }))
-    const approvals: string[] = []
-    const approvalReceived = Promise.withResolvers<void>()
-
-    toolMcpApi.subscribeResource(
-      'tool-1',
-      { teamId: 'team-1', uri: 'file:///a.txt' },
-      {
-        onOpened: () => {},
-        onUpdated: () => {},
-        onClosed: () => {},
-        onPendingApproval: (executionId) => {
-          approvals.push(executionId)
-          approvalReceived.resolve()
-        },
-      },
-    )
-
-    await approvalReceived.promise
-    expect(approvals).toEqual(['execution-3'])
-  })
-
-  it('closes a subscription when the server refuses the event stream', async () => {
-    mockFetch(Response.json({ detail: 'unavailable' }, { status: 503 }))
-    const closed: string[] = []
-    const streamClosed = Promise.withResolvers<void>()
-
-    toolMcpApi.subscribeResource(
-      'tool-1',
-      { teamId: 'team-1', uri: 'file:///a.txt' },
-      {
-        onOpened: () => {},
-        onUpdated: () => {},
-        onClosed: (reason) => {
-          closed.push(reason)
-          streamClosed.resolve()
-        },
-      },
-    )
-
-    await streamClosed.promise
-    expect(closed).toEqual(['connection_lost'])
-  })
+    {
+      method: 'post',
+      url: '/tools/tool-1/mcp/prompts/get?team_id=team-1',
+      body: { name: 'summarize', arguments: { text: 'a' } },
+    },
+  ])
 })

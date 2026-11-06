@@ -29,6 +29,20 @@ from app.schemas.team import TeamMemberRole
 from app.services.notification import create_notification_audit, create_notification
 
 logger = logging.getLogger(__name__)
+
+
+async def _bridge_to_im(notification: Notification) -> None:
+    """把新建通知实时桥接到 IM 系统会话；失败不影响通知创建。"""
+    try:
+        from app.services.im_system_bridge import bridge_notification_to_im
+
+        await bridge_notification_to_im(notification)
+    except Exception as exc:
+        logger.warning(
+            "Failed to bridge notification %s to IM: %s", notification.id, exc
+        )
+
+
 router = APIRouter()
 admin_router = APIRouter()  # kept for backward compatibility; mounted via admin router
 
@@ -431,6 +445,7 @@ async def admin_create_notification(
                 await create_notification(
                     notification, actor=current_user, meta={"source": "admin"}
                 )
+                await _bridge_to_im(notification)
                 notifications.append(notification)
 
             # 返回第一个通知作为示例
@@ -528,6 +543,7 @@ async def admin_create_notification(
     await create_notification(
         notification, actor=current_user, meta={"source": "admin"}
     )
+    await _bridge_to_im(notification)
 
     # 根据选择的渠道发送外部通知
     deliveries = []

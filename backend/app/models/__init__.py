@@ -151,6 +151,14 @@ from .observability_payload import (
     ObservabilityToolPayload,
     ObservabilityTrajectoryEntry,
 )
+from .im import (
+    ImConversation,
+    ImConversationParticipant,
+    ImConversationType,
+    ImMessage,
+    ImMessageStatus,
+    ImMessageType,
+)
 
 __all__ = [
     "Asset",
@@ -284,4 +292,10 @@ __all__ = [
     "ObservabilityAlertEvent",
     "ObservabilityToolPayload",
     "ObservabilityTrajectoryEntry",
+    "ImConversation",
+    "ImConversationParticipant",
+    "ImConversationType",
+    "ImMessage",
+    "ImMessageStatus",
+    "ImMessageType",
 ]

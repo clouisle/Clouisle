@@ -87,6 +87,12 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert sweep["task"] == "tasks.sweep_lost_agent_runs"
     assert sweep["options"] == {"queue": "default"}
     assert app.conf.task_routes["tasks.sweep_lost_agent_runs"] == {"queue": "default"}
+    # Orphan IM attachments must be reclaimed by a registered worker module and
+    # scheduled job, otherwise abandoned uploads accumulate forever.
+    assert "app.tasks.im" in without_password.Celery.call_args.kwargs["include"]
+    reclaim = app.conf.beat_schedule["cleanup-orphan-im-assets"]
+    assert reclaim["task"] == "tasks.cleanup_orphan_im_assets"
+    assert reclaim["options"] == {"queue": "default"}
 
     with_password, _ = _load_celery_module(monkeypatch, password="password")
     assert with_password.REDIS_URL == "redis://:password@redis.test:6380"

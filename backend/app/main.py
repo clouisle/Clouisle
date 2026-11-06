@@ -112,6 +112,7 @@ async def lifespan(app: FastAPI):
         init_conversation_context_summary_columns,
         init_conversation_memory_watermark_column,
         init_assets_tables,
+        init_im_rich_media_columns,
         init_agent_run_fields,
         init_observability_run_error_index,
         init_observability_tool_payload_table,
@@ -385,6 +386,11 @@ async def lifespan(app: FastAPI):
     await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    try:
+        await init_im_rich_media_columns()
+    except Exception as e:
+        logger.warning(f"IM rich-media columns migration failed: {e}")
 
     # Retired designated-user/team-role approval gates can never become caller
     # confirmation or an implicit allow. Preserve every policy and historical

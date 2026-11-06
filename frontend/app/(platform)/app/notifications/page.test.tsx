@@ -1,16 +1,19 @@
 import { expect, mock, test } from "bun:test";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import * as React from "react";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-mock.module("./_components/notifications-client", () => ({
-  NotificationsClient: () => <div data-testid="notifications-client" />,
+const replace = mock(() => {});
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ replace }),
 }));
 
 const { default: NotificationsPage } = await import("./page");
 
-test("provides the scrollable inbox container", () => {
-  const html = renderToStaticMarkup(<NotificationsPage />);
-
-  expect(html).toContain("height:calc(100vh - 64px)");
-  expect(html).toContain('data-testid="notifications-client"');
+test("redirects legacy notifications route to /app", () => {
+  let renderer!: ReactTestRenderer;
+  act(() => {
+    renderer = create(<NotificationsPage />);
+  });
+  expect(renderer.toJSON()).toBeNull();
+  expect(replace).toHaveBeenCalledWith("/app");
 });

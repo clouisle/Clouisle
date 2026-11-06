@@ -323,3 +323,17 @@ export {
   type NotificationReadRequest,
   type NotificationUnreadCount,
 } from './notifications'
+
+export {
+  imApi,
+  type ImConversation,
+  type ImConversationType,
+  type ImMessage,
+  type ImAttachment,
+  type ImMessageType,
+  type ImMessageListResponse,
+  type ImPeer,
+  type ImTeamChatCandidate,
+  type ImEventCallbacks,
+  type ImSearchResult,
+} from './im'

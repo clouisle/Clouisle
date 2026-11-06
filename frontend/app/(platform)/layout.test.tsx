@@ -7,12 +7,16 @@ let pathname = "/app";
 mock.module("next/navigation", () => ({ usePathname: () => pathname }));
 mock.module("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useLocale: () => "zh",
 }));
 const boundary = ({ children }: React.PropsWithChildren) => <>{children}</>;
 mock.module("@/components/layout/platform-header", () => ({
   PlatformHeader: () => <div data-testid="platform-header" />,
 }));
-mock.module("@/contexts/team-context", () => ({ TeamProvider: boundary }));
+mock.module("@/contexts/team-context", () => ({
+  TeamProvider: boundary,
+  useTeam: () => ({ currentTeam: null }),
+}));
 mock.module("@/components/password-expiration-banner", () => ({
   PasswordExpirationBanner: () => <div data-testid="password-banner" />,
 }));
@@ -21,9 +25,6 @@ mock.module("@/components/onboarding/onboarding-provider", () => ({ OnboardingPr
 mock.module("@/components/onboarding/onboarding-tour", () => ({
   allTourIds: ["welcome"],
   OnboardingTour: ({ tourId }: { tourId: string }) => <div data-tour={tourId} />,
-}));
-mock.module("@/components/layout/prominent-notification-dialog", () => ({
-  ProminentNotificationDialog: () => <div data-testid="notifications" />,
 }));
 mock.module("@/components/watermark/global-watermark", () => ({
   GlobalWatermark: () => <div data-testid="watermark" />,
@@ -46,5 +47,5 @@ test("hides the header and locks scrolling in a workflow editor", () => {
 
   expect(html).not.toContain('data-testid="platform-header"');
   expect(html).toContain("relative overflow-hidden");
-  expect(html).toContain('data-testid="notifications"');
+  expect(html).toContain('data-tour="welcome"');
 });
