@@ -1063,6 +1063,19 @@ test('MessageCenterDialog loads conversations, applies live events and search ju
   expect(nodeText(renderer.root)).toContain('systemNotifications')
   expect(imApi.listConversations).toHaveBeenCalledWith('team-1')
 
+  // 当前选中的系统通知会话：实时消息应直接出现在消息流里
+  act(() => {
+    handlers!.onNewMessage({
+      id: 'system-live-1',
+      conversation_id: systemConv.id,
+      seq: 4,
+      content: 'system live notice',
+      msg_type: 'system_notice',
+      created_at: '2026-11-05T08:30:00Z',
+    })
+  })
+  expect(nodeText(renderer.root)).toContain('system live notice')
+
   // 非当前会话的实时消息：更新预览、未读数并触发回调
   act(() => {
     handlers!.onNewMessage({
