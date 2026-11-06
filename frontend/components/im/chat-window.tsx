@@ -199,10 +199,7 @@ const MessageRow = React.memo(function MessageRow({
       )}
       <div
         id={`im-msg-${msg.id}`}
-        className={cn(
-          'flex flex-col [content-visibility:auto] [contain-intrinsic-size:auto_96px]',
-          isMe ? 'items-end' : 'items-start'
-        )}
+        className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}
       >
         {msg.msg_type === 'card' && pauseReqId && workflowId && runId ? (
           <div className="w-full max-w-2xl space-y-3 rounded-xl border bg-card p-4 shadow-xs">
@@ -518,14 +515,14 @@ export function ChatWindow({
         return
       }
       if (shouldScrollToBottomRef.current && messagesEndRef.current) {
-        messagesEndRef.current.scrollIntoView?.({ behavior: 'auto' })
+        messagesEndRef.current.scrollIntoView?.({ behavior: 'auto', block: 'end' })
         shouldScrollToBottomRef.current = false
       }
       return
     }
 
     if (shouldScrollToBottomRef.current && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'auto' })
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
       shouldScrollToBottomRef.current = false
     }
   }, [messages, loading])
