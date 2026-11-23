@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP `tools/call`, `resources/read` and `prompts/get` complete modern multi-round-trip requests: a server that answers `input_required` now receives the answers on retry instead of failing the operation. The parked requests and the opaque `request_state` are returned to the caller, each answer declares the request method it answers and is validated against the matching result type, a resumed request must pin an explicit `connection_id` so both legs run under the same account, and `request_state` plus `input_responses` are bound into the approval digest.
 - Added an administrator-configurable global watermark for signed-in pages (`/site-settings/watermark`, off by default). The overlay renders a per-user template (`{username}`, `{email}`, `{site_name}`, `{date}`, `{time}`) with configurable opacity, font size, rotation, tile spacing and color, delivered through the public site-settings endpoint and mounted only in the dashboard, platform and chat route groups — never on sign-in or embedded surfaces.
+
+### Changed
+
+- MCP resource subscriptions follow the negotiated protocol version: a session that advertises `resources.subscribe` keeps the subscribe/unsubscribe path, a 2026-07-28 session opens a `subscriptions/listen` stream, and a session offering neither fails closed with the capability error. Capabilities are read from the subscribed session itself instead of a separate probe connection, so a subscription can no longer be granted on one server instance and opened on another.
 
 ## [0.3.0] - 2026-11-01
 

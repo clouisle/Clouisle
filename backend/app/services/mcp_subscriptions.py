@@ -1,21 +1,30 @@
 """Request-scoped live MCP resource subscriptions.
 
-MCP resource subscriptions are session-scoped: a server only emits
-``notifications/resources/updated`` while the JSON-RPC session that called
-``resources/subscribe`` stays open. This module therefore ties a subscription
-to the lifetime of one streaming API request:
+MCP resource subscriptions are session-scoped: updates only arrive while the
+JSON-RPC session that asked for them stays open. This module therefore ties a
+subscription to the lifetime of one streaming API request:
 
-1. the request opens one live ``McpClient`` session;
-2. the negotiated ``resources.subscribe`` capability is required before the
-   subscribe call (fail closed, never a fabricated success);
-3. update notifications are queued in memory for the owning request only;
+1. the request opens one negotiated ``McpClient`` session;
+2. the negotiated session is checked before anything is subscribed (fail
+   closed, never a fabricated success), using whichever mechanism the protocol
+   version offers:
+
+   * ``resources/subscribe`` on servers that advertise it (up to 2025-11-25);
+   * ``subscriptions/listen`` on 2026-07-28 servers, which removed
+     ``resources/subscribe``;
+
+3. updates are queued in memory for the owning request only;
 4. the request's TTL or client disconnect closes the session and performs a
-   best-effort ``unsubscribe_resource``.
+   best-effort ``unsubscribe`` (legacy path only; ``listen`` ends with its
+   stream).
+
+Both paths filter on the exact subscribed URI, so the SSE contract does not
+depend on the negotiated version.
 
 There is deliberately no background listener, registry, daemon or durable
 subscription: process death ends the stream, and reconnecting creates a new
-subscription. Unsubscribe is a read-side cleanup and is never routed through
-the tool approval/outcome machinery.
+subscription. Cleanup is read-side and never routed through the tool
+approval/outcome machinery.
 """
 
 from __future__ import annotations
@@ -31,6 +40,13 @@ from uuid import UUID, uuid4
 
 import mcp.types as types
 
+try:  # mcp >= 2: the 2026-07-28 subscription stream.
+    from mcp.client.subscriptions import listen as _listen
+    from mcp.client.subscriptions import ResourceUpdated as _ResourceUpdated
+except ImportError:  # pragma: no cover - mcp 1.x has no listen at all
+    _listen = None
+    _ResourceUpdated = None
+
 from app.core.config import settings
 from app.core.timezone import now_utc
 from app.llm.tools.mcp_client import (
@@ -38,6 +54,7 @@ from app.llm.tools.mcp_client import (
     McpCallbackPolicy,
     McpCapabilityUnavailable,
     McpClient,
+    read_session_capabilities,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +62,9 @@ logger = logging.getLogger(__name__)
 MAX_QUEUED_UPDATES = 100
 HEARTBEAT_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 15.0
+# First protocol version that removes ``resources/subscribe`` in favour of
+# ``subscriptions/listen``. Versions are ISO dates, so they compare as strings.
+LISTEN_MIN_PROTOCOL_VERSION = "2026-07-28"
 
 
 def subscription_ttl_seconds() -> float:
@@ -97,6 +117,27 @@ class SubscriptionHandle:
             "expires_at": self.expires_at.isoformat(),
         }
 
+    def _offer(self, item: dict[str, Any] | None) -> None:
+        """Queue one item, dropping the oldest when a slow client fills us.
+
+        Nothing in this queue path awaits, so a drop always frees the slot the
+        second ``put_nowait`` needs; the warning is a backstop that cannot fire
+        while offers stay single-task.
+        """
+        try:
+            self._queue.put_nowait(item)
+            return
+        except asyncio.QueueFull:
+            pass
+        try:
+            self._queue.get_nowait()
+        except asyncio.QueueEmpty:  # pragma: no cover - defensive
+            pass
+        try:
+            self._queue.put_nowait(item)
+        except asyncio.QueueFull:  # pragma: no cover - defensive
+            logger.warning("Dropping MCP subscription event for %s", self.id)
+
     def enqueue_update(self, uri: str) -> None:
         self._sequence += 1
         event = {
@@ -105,19 +146,13 @@ class SubscriptionHandle:
             "sequence": self._sequence,
             "received_at": now_utc().isoformat(),
         }
-        try:
-            self._queue.put_nowait(event)
-        except asyncio.QueueFull:
-            # Bounded queue: drop the oldest pending update, never block the
-            # SDK read loop for a slow HTTP client.
-            try:
-                self._queue.get_nowait()
-            except asyncio.QueueEmpty:  # pragma: no cover - defensive
-                pass
-            try:
-                self._queue.put_nowait(event)
-            except asyncio.QueueFull:  # pragma: no cover - defensive
-                logger.warning("Dropping MCP resource update for %s", self.uri)
+        # Bounded queue: drop the oldest pending update rather than block the
+        # SDK read loop for a slow HTTP client.
+        self._offer(event)
+
+    def enqueue_close(self) -> None:
+        """End the consumer's stream after the server stopped delivering."""
+        self._offer(None)
 
     async def events(self) -> AsyncIterator[dict[str, Any] | None]:
         """Yield queued updates; ``None`` is a heartbeat tick.
@@ -175,6 +210,41 @@ class _NotificationCollector:
         self.handle.enqueue_update(uri)
 
 
+def _listen_factory(protocol_version: str | None) -> Any | None:
+    """Return the ``listen`` entry point for this negotiated version, if any."""
+    if _listen is None:
+        return None
+    if not isinstance(protocol_version, str):
+        return None
+    if protocol_version < LISTEN_MIN_PROTOCOL_VERSION:
+        return None
+    return _listen
+
+
+async def _pump_listen(subscription: Any, handle: SubscriptionHandle) -> None:
+    """Forward one ``listen`` event stream into the handle's queue.
+
+    The stream is filtered to the exact subscribed URI so a modern session
+    delivers the same events a legacy ``resources/subscribe`` session would.
+    """
+    try:
+        async for event in subscription:
+            uri = getattr(event, "uri", None)
+            if _ResourceUpdated is not None and not isinstance(event, _ResourceUpdated):
+                continue
+            if isinstance(uri, str) and uri == handle.uri:
+                handle.enqueue_update(uri)
+    except asyncio.CancelledError:  # pragma: no cover - normal teardown
+        raise
+    except Exception:
+        logger.warning(
+            "MCP listen stream ended for tool %s", handle.tool_id, exc_info=True
+        )
+        handle.close_reason = SubscriptionClosed.CONNECTION_LOST
+    finally:
+        handle.enqueue_close()
+
+
 @asynccontextmanager
 async def open_subscription(
     *,
@@ -188,7 +258,7 @@ async def open_subscription(
     account_label: str | None = None,
     ttl_seconds: float | None = None,
 ) -> AsyncIterator[SubscriptionHandle]:
-    """Open one negotiated session, require subscribe support, then subscribe."""
+    """Open one negotiated session and subscribe by the server's own mechanism."""
     ttl = max(5.0, float(ttl_seconds or subscription_ttl_seconds()))
     handle = SubscriptionHandle(
         id=uuid4(),
@@ -207,16 +277,27 @@ async def open_subscription(
     )
     client = McpClient(dict(config), callbacks=callbacks)
 
-    capabilities = await client.get_capabilities(
-        timeout=min(CONNECT_TIMEOUT_SECONDS, ttl)
-    )
-    if not capabilities.resources_subscribe:
-        raise McpCapabilityUnavailable("resources.subscribe")
-
     async with AsyncExitStack() as stack:
         session = await stack.enter_async_context(
             client.connect(timeout=min(CONNECT_TIMEOUT_SECONDS, ttl))
         )
+        # Capabilities come from the session we actually subscribe on: a probe
+        # on a second connection could answer for a different server instance.
+        capabilities = read_session_capabilities(session)
+        listen = _listen_factory(capabilities.protocol_version)
+        use_listen = not capabilities.resources_subscribe and listen is not None
+        if not capabilities.resources_subscribe and not use_listen:
+            raise McpCapabilityUnavailable("resources.subscribe")
+
+        if use_listen:
+            subscription = await stack.enter_async_context(
+                listen(session, resource_subscriptions=(uri,))
+            )
+            pump = asyncio.create_task(_pump_listen(subscription, handle))
+            stack.push_async_callback(_stop_pump, pump)
+            yield handle
+            return
+
         try:
             await session.subscribe_resource(uri)
         except Exception:
@@ -237,7 +318,13 @@ async def open_subscription(
                 )
 
 
+async def _stop_pump(pump: asyncio.Task[None]) -> None:
+    pump.cancel()
+    await asyncio.gather(pump, return_exceptions=True)
+
+
 __all__ = [
+    "LISTEN_MIN_PROTOCOL_VERSION",
     "MAX_QUEUED_UPDATES",
     "SubscriptionClosed",
     "SubscriptionHandle",

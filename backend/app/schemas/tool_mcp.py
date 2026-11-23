@@ -23,6 +23,9 @@ T = TypeVar("T")
 McpConnectionMode = Literal["personal", "team"]
 McpCompletionKind = Literal["prompt", "resource_template"]
 McpOperationStatus = Literal["completed", "pending_approval"]
+McpInputResponseMethod = Literal[
+    "elicitation/create", "sampling/createMessage", "roots/list"
+]
 
 # Approval operation keys are namespaced (``tool:<name>`` / ``prompt:<name>``)
 # and the approval service rejects keys longer than 200 characters, so leaf
@@ -30,6 +33,7 @@ McpOperationStatus = Literal["completed", "pending_approval"]
 MAX_MCP_TOOL_NAME_LENGTH = 190
 MAX_MCP_PROMPT_NAME_LENGTH = 190
 MAX_MCP_RESOURCE_URI_LENGTH = 8192
+MAX_MCP_REQUEST_STATE_LENGTH = 8192
 
 
 # ============ Requests ============
@@ -75,7 +79,58 @@ class McpOperationIn(McpIdentityIn):
     )
 
 
-class McpToolCallIn(McpOperationIn):
+class McpInputResponseIn(BaseModel):
+    """One MRTR answer, keyed in ``input_responses`` by request key.
+
+    ``method`` names the server request being answered so the backend can
+    validate ``result`` against the matching result type instead of guessing
+    from its shape.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: McpInputResponseMethod
+    result: dict[str, Any] = Field(default_factory=dict)
+
+
+class McpRoundTripIn(McpOperationIn):
+    """Operation that may resume a request parked as ``input_required``.
+
+    A modern server can answer ``tools/call`` / ``resources/read`` /
+    ``prompts/get`` with ``input_required`` instead of a result. Resending the
+    same request with the server's ``request_state`` plus answers completes the
+    round trip; sending answers without that state, or state without answers,
+    can only replay an already-answered question.
+    """
+
+    request_state: str | None = Field(
+        default=None,
+        max_length=MAX_MCP_REQUEST_STATE_LENGTH,
+        description="Opaque state echoed from a prior input_required result",
+    )
+    input_responses: dict[str, McpInputResponseIn] | None = Field(
+        default=None,
+        description=(
+            "Answers to the requests carried by a prior input_required result, "
+            "keyed by request key. Requires an explicit connection_id so both "
+            "legs of the round trip run under the same account."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_round_trip(self) -> "McpRoundTripIn":
+        if not self.input_responses:
+            if self.input_responses is not None:
+                raise ValueError("mcp_input_responses_empty")
+            if self.request_state is not None:
+                raise ValueError("mcp_input_responses_required_with_request_state")
+            return self
+        if self.connection_id is None:
+            raise ValueError("mcp_input_responses_require_connection")
+        return self
+
+
+class McpToolCallIn(McpRoundTripIn):
     """Call one tool advertised by the saved MCP server."""
 
     name: str = Field(
@@ -86,7 +141,7 @@ class McpToolCallIn(McpOperationIn):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
-class McpResourceReadIn(McpOperationIn):
+class McpResourceReadIn(McpRoundTripIn):
     """Read one resource by URI; the URI is forwarded verbatim to the server."""
 
     uri: str = Field(
@@ -96,7 +151,7 @@ class McpResourceReadIn(McpOperationIn):
     )
 
 
-class McpPromptGetIn(McpOperationIn):
+class McpPromptGetIn(McpRoundTripIn):
     """Render one prompt advertised by the server."""
 
     name: str = Field(min_length=1, max_length=MAX_MCP_PROMPT_NAME_LENGTH)
@@ -298,6 +353,7 @@ __all__ = [
     "McpCompletionReferenceIn",
     "McpEnumerationOut",
     "McpIdentityIn",
+    "McpInputResponseIn",
     "McpOperationIn",
     "McpOperationOut",
     "McpPendingApprovalOut",
@@ -310,6 +366,7 @@ __all__ = [
     "McpResourceOut",
     "McpResourceReadIn",
     "McpResourceTemplateOut",
+    "McpRoundTripIn",
     "McpToolCallIn",
     "McpToolOut",
     "McpToolResultOut",

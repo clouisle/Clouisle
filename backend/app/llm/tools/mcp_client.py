@@ -118,8 +118,10 @@ __all__ = [
     "execute_mcp_tool",
     "get_mcp_prompt",
     "list_mcp_tools",
+    "parse_input_responses",
     "probe_mcp_capabilities",
     "read_mcp_resource",
+    "read_session_capabilities",
     "translate_mcp_error",
 ]
 
@@ -140,6 +142,11 @@ _LIST_RESOURCES = "resources/list"
 _LIST_RESOURCE_TEMPLATES = "resources/templates/list"
 _LIST_PROMPTS = "prompts/list"
 _COMPLETE = "completion/complete"
+# Server-initiated request methods a modern ``input_required`` result can ask
+# the client to answer before the parked request is retried.
+_ELICITATION_REQUEST = "elicitation/create"
+_SAMPLING_REQUEST = "sampling/createMessage"
+_ROOTS_REQUEST = "roots/list"
 
 _SENSITIVE_ELICITATION_FIELD = re.compile(
     r"(password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|"
@@ -959,6 +966,18 @@ _READ_RESOURCE_ALLOWS_INPUT_REQUIRED = _accepts_keyword(
 _GET_PROMPT_ALLOWS_INPUT_REQUIRED = _accepts_keyword(
     ClientSession.get_prompt, "allow_input_required"
 )
+_CALL_TOOL_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
+    ClientSession.call_tool, "input_responses"
+)
+_READ_RESOURCE_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
+    ClientSession.read_resource, "input_responses"
+)
+_GET_PROMPT_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
+    ClientSession.get_prompt, "input_responses"
+)
+# Sampling answers that carry tool use need the tool-enabled result type, which
+# only exists from mcp 2 onward.
+_SAMPLING_TOOL_RESULT = getattr(types, "CreateMessageResultWithTools", None)
 _SSE_ACCEPTS_AUTH = _accepts_keyword(sse_client, "auth")
 _SSE_ACCEPTS_SESSION_OBSERVER = _accepts_keyword(sse_client, "on_session_created")
 
@@ -1313,6 +1332,16 @@ def _require_capability(capabilities: McpServerCapabilities, capability: str) ->
         raise McpCapabilityUnavailable(capability)
 
 
+def read_session_capabilities(session: ClientSession) -> McpServerCapabilities:
+    """Read a live session's negotiated capabilities without reconnecting.
+
+    Long-lived callers (resource subscriptions) need the capabilities of the
+    very session they keep open; probing them on a second connection could
+    answer for a different server instance.
+    """
+    return _read_negotiated(session, None)
+
+
 # ---------------------------------------------------------------------------
 # Result conversion
 # ---------------------------------------------------------------------------
@@ -1497,6 +1526,97 @@ def _input_required_info(method: str, result: Any) -> McpInputRequiredInfo | Non
         requests=requests,
         request_state=request_state if isinstance(request_state, str) else None,
     )
+
+
+def parse_input_responses(
+    raw: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Validate wire-shaped MRTR answers and build SDK result models.
+
+    ``InputRequiredResult.input_requests`` maps a request key to the server's
+    request, and the client answers each key with the matching result type.
+    Every answer therefore names the request method it answers
+    (``{"method": ..., "result": {...}}``). That declared method selects the
+    model to validate against: inferring the type from the payload shape would
+    let an elicitation answer be smuggled into a sampling slot.
+
+    Raises:
+        McpInvalidRequest: the payload is not answerable as declared.
+    """
+    if not raw:
+        return None
+    parsed: dict[str, Any] = {}
+    for key, entry in raw.items():
+        if not isinstance(key, str) or not key:
+            raise McpInvalidRequest("Input response keys must be non-empty strings")
+        if not isinstance(entry, Mapping):
+            raise McpInvalidRequest(
+                f"Input response {key!r} must be an object carrying method and result"
+            )
+        method = entry.get("method")
+        payload = entry.get("result")
+        if not isinstance(method, str) or not isinstance(payload, Mapping):
+            raise McpInvalidRequest(
+                f"Input response {key!r} must carry a method and a result object"
+            )
+        parsed[key] = _input_response(method, payload, key)
+    return parsed
+
+
+def _input_response(method: str, payload: Mapping[str, Any], key: str) -> Any:
+    if method == _ELICITATION_REQUEST:
+        return _validated_response(types.ElicitResult, payload, key)
+    if method == _ROOTS_REQUEST:
+        return _validated_response(types.ListRootsResult, payload, key)
+    if method == _SAMPLING_REQUEST:
+        # The tool-enabled result is a superset of the plain one: validate
+        # against the narrow type first so a plain answer keeps its shape.
+        try:
+            return _validated_response(types.CreateMessageResult, payload, key)
+        except McpInvalidRequest:
+            if _SAMPLING_TOOL_RESULT is None:  # pragma: no cover - mcp 1.x
+                raise
+            return _validated_response(_SAMPLING_TOOL_RESULT, payload, key)
+    raise McpInvalidRequest(
+        f"Input response {key!r} answers unsupported method {method!r}"
+    )
+
+
+def _validated_response(model: Any, payload: Mapping[str, Any], key: str) -> Any:
+    try:
+        return model.model_validate(dict(payload))
+    except Exception as exc:
+        raise McpInvalidRequest(
+            f"Input response {key!r} is not a valid {model.__name__}"
+        ) from exc
+
+
+def _round_trip_kwargs(
+    input_responses: Mapping[str, Any] | None,
+    request_state: str | None,
+    *,
+    accepts_responses: bool,
+    accepts_input_required: bool,
+) -> dict[str, Any]:
+    """Build the per-request kwargs, MRTR answers included.
+
+    A session that cannot carry answers fails loudly: silently retrying
+    without ``input_responses`` would ask the server the same question again
+    and loop on ``input_required``.
+    """
+    kwargs: dict[str, Any] = {}
+    if accepts_input_required:
+        kwargs["allow_input_required"] = True
+    if input_responses:
+        if not accepts_responses:
+            raise McpInvalidRequest(
+                "The installed MCP SDK cannot resume an input_required request",
+                reason="configuration",
+            )
+        kwargs["input_responses"] = dict(input_responses)
+        if request_state is not None:
+            kwargs["request_state"] = request_state
+    return kwargs
 
 
 def _enforce_content_limits(
@@ -2087,11 +2207,14 @@ class McpClient:
         *,
         timeout: float | None = None,
         limits: McpContentLimits | None = None,
+        input_responses: Mapping[str, Any] | None = None,
+        request_state: str | None = None,
     ) -> list[McpResourceContents]:
         """Read a resource URI.
 
         The URI is forwarded verbatim to the MCP server; this adapter performs
-        no local downloads or URI rewriting.
+        no local downloads or URI rewriting. ``input_responses`` /
+        ``request_state`` resume a read the server parked as ``input_required``.
         """
         if not isinstance(uri, str) or not uri.strip():
             raise McpInvalidRequest(
@@ -2108,9 +2231,12 @@ class McpClient:
             timeout if timeout is not None else self.timeouts.request,
             _READ_RESOURCE,
         )
-        kwargs: dict[str, Any] = {}
-        if _READ_RESOURCE_ALLOWS_INPUT_REQUIRED:
-            kwargs["allow_input_required"] = True
+        kwargs = _round_trip_kwargs(
+            input_responses,
+            request_state,
+            accepts_responses=_READ_RESOURCE_ACCEPTS_INPUT_RESPONSES,
+            accepts_input_required=_READ_RESOURCE_ALLOWS_INPUT_REQUIRED,
+        )
 
         async with self._open(deadline) as (session, capabilities):
             _require_capability(capabilities, "resources")
@@ -2146,11 +2272,15 @@ class McpClient:
         *,
         timeout: float | None = None,
         limits: McpContentLimits | None = None,
+        input_responses: Mapping[str, Any] | None = None,
+        request_state: str | None = None,
     ) -> McpPromptResult:
         """Fetch and render a prompt template.
 
         Returned messages are untrusted server content and must be previewed
-        before being applied to a conversation.
+        before being applied to a conversation. ``input_responses`` /
+        ``request_state`` resume a fetch the server parked as
+        ``input_required``.
         """
         if not isinstance(name, str) or not name.strip():
             raise McpInvalidRequest("Prompt name is required")
@@ -2159,9 +2289,12 @@ class McpClient:
             timeout if timeout is not None else self.timeouts.request,
             _GET_PROMPT,
         )
-        kwargs: dict[str, Any] = {}
-        if _GET_PROMPT_ALLOWS_INPUT_REQUIRED:
-            kwargs["allow_input_required"] = True
+        kwargs = _round_trip_kwargs(
+            input_responses,
+            request_state,
+            accepts_responses=_GET_PROMPT_ACCEPTS_INPUT_RESPONSES,
+            accepts_input_required=_GET_PROMPT_ALLOWS_INPUT_REQUIRED,
+        )
 
         async with self._open(deadline) as (session, capabilities):
             _require_capability(capabilities, "prompts")
@@ -2258,6 +2391,9 @@ class McpClient:
         tool_name: str,
         arguments: dict[str, Any],
         timeout: float = 60.0,
+        *,
+        input_responses: Mapping[str, Any] | None = None,
+        request_state: str | None = None,
     ) -> McpToolResult:
         """Execute a tool on the MCP server.
 
@@ -2265,14 +2401,22 @@ class McpClient:
             tool_name: Name of the tool to execute
             arguments: Tool arguments
             timeout: Overall connect + call budget in seconds
+            input_responses: Answers to a prior ``input_required`` result, as
+                built by :func:`parse_input_responses`. Supplying them retries
+                the parked call instead of parking it again.
+            request_state: Opaque state echoed from that ``input_required``
+                result; only meaningful together with ``input_responses``.
 
         Returns:
             McpToolResult with success status and result/error
         """
         deadline = _Deadline(timeout, f"{_CALL} {tool_name}")
-        kwargs: dict[str, Any] = {}
-        if _CALL_TOOL_ALLOWS_INPUT_REQUIRED:
-            kwargs["allow_input_required"] = True
+        kwargs = _round_trip_kwargs(
+            input_responses,
+            request_state,
+            accepts_responses=_CALL_TOOL_ACCEPTS_INPUT_RESPONSES,
+            accepts_input_required=_CALL_TOOL_ALLOWS_INPUT_REQUIRED,
+        )
 
         try:
             async with self._open(deadline) as (session, capabilities):
@@ -2443,6 +2587,8 @@ async def execute_mcp_tool(
     arguments: dict[str, Any],
     timeout: float = 60.0,
     *,
+    input_responses: Mapping[str, Any] | None = None,
+    request_state: str | None = None,
     headers: Mapping[str, str] | None = None,
     auth: Any | None = None,
     callbacks: McpCallbacks | None = None,
@@ -2458,6 +2604,9 @@ async def execute_mcp_tool(
         tool_name: Name of the tool to execute
         arguments: Tool arguments
         timeout: Execution timeout in seconds
+        input_responses: Answers to a prior ``input_required`` result, as built
+            by :func:`parse_input_responses`.
+        request_state: Opaque state echoed from that ``input_required`` result.
         headers: Runtime-injected connection headers (for example a bearer
             token resolved for the current identity).
         auth: Optional transport auth object forwarded to HTTP transports.
@@ -2474,7 +2623,13 @@ async def execute_mcp_tool(
         callbacks=callbacks,
         timeouts=timeouts,
     )
-    return await client.execute_tool(tool_name, arguments, timeout)
+    return await client.execute_tool(
+        tool_name,
+        arguments,
+        timeout,
+        input_responses=input_responses,
+        request_state=request_state,
+    )
 
 
 async def list_mcp_tools(
@@ -2642,6 +2797,8 @@ async def read_mcp_resource(
     *,
     timeout: float | None = None,
     limits: McpContentLimits | None = None,
+    input_responses: Mapping[str, Any] | None = None,
+    request_state: str | None = None,
     headers: Mapping[str, str] | None = None,
     auth: Any | None = None,
     callbacks: McpCallbacks | None = None,
@@ -2655,7 +2812,13 @@ async def read_mcp_resource(
         callbacks=callbacks,
         timeouts=timeouts,
     )
-    return await client.read_resource(uri, timeout=timeout, limits=limits)
+    return await client.read_resource(
+        uri,
+        timeout=timeout,
+        limits=limits,
+        input_responses=input_responses,
+        request_state=request_state,
+    )
 
 
 async def get_mcp_prompt(
@@ -2665,6 +2828,8 @@ async def get_mcp_prompt(
     *,
     timeout: float | None = None,
     limits: McpContentLimits | None = None,
+    input_responses: Mapping[str, Any] | None = None,
+    request_state: str | None = None,
     headers: Mapping[str, str] | None = None,
     auth: Any | None = None,
     callbacks: McpCallbacks | None = None,
@@ -2678,7 +2843,14 @@ async def get_mcp_prompt(
         callbacks=callbacks,
         timeouts=timeouts,
     )
-    return await client.get_prompt(name, arguments, timeout=timeout, limits=limits)
+    return await client.get_prompt(
+        name,
+        arguments,
+        timeout=timeout,
+        limits=limits,
+        input_responses=input_responses,
+        request_state=request_state,
+    )
 
 
 async def complete_mcp_argument(

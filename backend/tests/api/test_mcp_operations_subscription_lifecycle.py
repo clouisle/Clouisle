@@ -653,6 +653,9 @@ async def test_notification_collector_unwraps_root_and_mappings():
 class _FakeSession:
     def __init__(self, client: "_FakeClient") -> None:
         self.client = client
+        # Capabilities are read from the subscribed session itself.
+        self.protocol_version = "2025-11-25"
+        self.server_capabilities = {"resources": {"subscribe": True}}
 
     async def subscribe_resource(self, uri: str) -> None:
         self.client.subscribed.append(uri)
