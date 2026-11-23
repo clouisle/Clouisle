@@ -277,8 +277,8 @@ def _sandbox_worker_container_env() -> dict[str, str]:
         env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = _map_local_url_to_host_gateway(
             artifact_upload_base_url
         )
-    else:
-        env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = env["API_INTERNAL_BASE_URL"]
+    elif api_base_url:
+        env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = env["API_BASE_URL"]
 
     env["UPLOAD_STORAGE_MODE"] = "remote"
     return env

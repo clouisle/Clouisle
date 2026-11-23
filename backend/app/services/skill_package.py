@@ -10,9 +10,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.models.skill import SkillCategory
+from app.services.sandbox.models import SandboxArtifactSpec, SandboxLimits
 
 DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -39,10 +40,6 @@ IGNORED_DIR_NAMES = {
 
 NESTED_ARCHIVE_SUFFIXES = {".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar"}
 _SAFE_PACKAGE_NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
-# Agent Skills specification limits.
-MAX_NAME_LENGTH = 64
-MAX_DESCRIPTION_LENGTH = 1024
-_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def resolve_child_path(root: Path, relative_path: str | PurePosixPath) -> Path | None:
@@ -154,16 +151,8 @@ class SkillPackageService:
 
         if not parsed.name:
             parsed.errors.append("skill_name_required")
-        else:
-            parsed.errors.extend(
-                SkillPackageService._validate_name(
-                    parsed.name, directory_name=skill_root.name
-                )
-            )
         if not parsed.description:
             parsed.errors.append("skill_description_required")
-        elif len(parsed.description) > MAX_DESCRIPTION_LENGTH:
-            parsed.errors.append("skill_description_too_long")
 
         clouisle = frontmatter.get("x-clouisle")
         if clouisle is not None and not isinstance(clouisle, dict):
@@ -177,11 +166,18 @@ class SkillPackageService:
         else:
             parsed.errors.append("skill_invalid_input_schema")
 
-        # Standard Skills declare no execution contract: bundled scripts are run
-        # by the agent with its own sandbox tools. The former Clouisle extension
-        # is ignored so old packages keep importing, but it must not look active.
-        if "execution" in clouisle:
-            parsed.warnings.append("skill_execution_extension_deprecated")
+        execution = clouisle.get("execution", {})
+        if execution is None:
+            execution = {}
+        if not isinstance(execution, dict):
+            parsed.errors.append("skill_execution_invalid")
+            execution = {}
+
+        execution_config, execution_errors = (
+            SkillPackageService._normalize_execution_config(execution, skill_root)
+        )
+        parsed.execution_config = execution_config
+        parsed.errors.extend(execution_errors)
 
         manifest, package_hash, manifest_errors = SkillPackageService.build_manifest(
             skill_root
@@ -192,21 +188,136 @@ class SkillPackageService:
         return parsed
 
     @staticmethod
-    def _validate_name(name: str, *, directory_name: str) -> list[str]:
-        """Validate ``name`` against the Agent Skills specification.
-
-        The spec requires lowercase alphanumerics and single hyphens, and the
-        containing directory must carry the same name. A directory mismatch only
-        warns: packages re-packed by users commonly keep an older folder name.
-        """
+    def _normalize_execution_config(
+        execution: dict[str, Any], skill_root: Path
+    ) -> tuple[dict[str, Any], list[str]]:
         errors: list[str] = []
-        if len(name) > MAX_NAME_LENGTH:
-            errors.append("skill_name_too_long")
-        if not _NAME_PATTERN.match(name):
-            errors.append("skill_name_invalid")
-        elif directory_name and directory_name != name:
-            errors.append("skill_name_directory_mismatch")
-        return errors
+        if not execution:
+            return {}, errors
+
+        config: dict[str, Any] = dict(execution)
+        raw_mode = execution.get("mode", "instructions")
+        if not isinstance(raw_mode, str):
+            errors.append("skill_execution_mode_invalid")
+            return config, errors
+
+        mode = raw_mode.strip().lower() or "instructions"
+        if mode not in {"instructions", "script"}:
+            errors.append("skill_execution_mode_invalid")
+            return config, errors
+        config["mode"] = mode
+
+        if mode == "instructions":
+            return {"mode": "instructions"}, errors
+
+        runtime = str(execution.get("runtime") or "").strip().lower()
+        script_value = execution.get("script")
+        script = script_value if isinstance(script_value, str) else None
+        has_script = bool(script and script.strip())
+
+        if not runtime:
+            errors.append("skill_script_runtime_required")
+        elif runtime not in {"python", "node", "javascript"}:
+            errors.append("skill_script_runtime_invalid")
+        else:
+            config["runtime"] = "node" if runtime == "javascript" else runtime
+
+        if not has_script:
+            errors.append("skill_script_required")
+        elif script is not None:
+            script_path = PurePosixPath(script.strip())
+            normalized_script = script_path.as_posix()
+            if not SkillPackageService._is_safe_relative_path(normalized_script):
+                errors.append("skill_script_path_invalid")
+            else:
+                script_file = resolve_child_path(skill_root, normalized_script)
+                if script_file is None or not script_file.is_file():
+                    errors.append("skill_script_not_found")
+                else:
+                    config["script"] = normalized_script
+
+        limits, limits_error = SkillPackageService._normalize_execution_limits(
+            execution.get("limits")
+        )
+        if limits_error:
+            errors.append(limits_error)
+        else:
+            config["limits"] = limits
+
+        artifacts, artifacts_errors = (
+            SkillPackageService._normalize_execution_artifacts(
+                execution.get("artifacts", [])
+            )
+        )
+        config["artifacts"] = artifacts
+        errors.extend(artifacts_errors)
+        return config, errors
+
+    @staticmethod
+    def _normalize_execution_limits(value: Any) -> tuple[dict[str, Any], str | None]:
+        if value is None:
+            return SandboxLimits().model_dump(), None
+        if not isinstance(value, dict):
+            return SandboxLimits().model_dump(), "skill_execution_limits_invalid"
+        try:
+            return SandboxLimits.model_validate(value).model_dump(), None
+        except ValidationError:
+            return SandboxLimits().model_dump(), "skill_execution_limits_invalid"
+
+    @staticmethod
+    def _normalize_execution_artifacts(
+        value: Any,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        if value is None:
+            return [], []
+        if not isinstance(value, list):
+            return [], ["skill_execution_artifacts_invalid"]
+
+        artifacts: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                raw = {"path": item}
+            elif isinstance(item, dict):
+                raw = dict(item)
+            else:
+                errors.append("skill_execution_artifacts_invalid")
+                continue
+
+            path = raw.get("path")
+            if not isinstance(path, str) or not path.strip():
+                errors.append("skill_execution_artifact_path_invalid")
+                continue
+            normalized_path = SkillPackageService._normalize_workspace_path(path)
+            if normalized_path is None:
+                errors.append("skill_execution_artifact_path_invalid")
+                continue
+            raw["path"] = normalized_path
+            try:
+                artifact = SandboxArtifactSpec.model_validate(raw)
+            except ValidationError:
+                errors.append("skill_execution_artifacts_invalid")
+                continue
+            artifacts.append(artifact.model_dump(exclude_none=True))
+        return artifacts, errors
+
+    @staticmethod
+    def _normalize_workspace_path(value: str) -> str | None:
+        raw = value.strip()
+        path = PurePosixPath(raw)
+        if path.is_absolute() and not raw.startswith("/workspace"):
+            return None
+        workspace_relative = (
+            raw.removeprefix("/workspace/") if raw != "/workspace" else ""
+        )
+        relative_path = PurePosixPath(workspace_relative)
+        if ".." in relative_path.parts:
+            return None
+        if raw == "/workspace":
+            return "/workspace"
+        if raw.startswith("/workspace/"):
+            return PurePosixPath("/workspace", relative_path).as_posix()
+        return PurePosixPath("/workspace", path).as_posix()
 
     @staticmethod
     def parse_skill_md(skill_md: str) -> tuple[dict[str, Any], str, list[str]]:

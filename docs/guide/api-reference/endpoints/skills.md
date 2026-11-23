@@ -73,7 +73,7 @@ Skill detail responses extend the object above with the package contents:
 | `instructions` | `string` | Instructions extracted from the package |
 | `frontmatter` | `object` | Parsed `SKILL.md` frontmatter |
 | `package_manifest` | `object` | Package manifest |
-| `execution_config` | `object` | Reserved; always empty for standard Skills (the `x-clouisle.execution` extension is deprecated) |
+| `execution_config` | `object` | Execution configuration |
 | `config_schema` | `object` | JSON Schema of the skill configuration |
 
 ---
@@ -487,7 +487,7 @@ Authorization: Bearer <token>
 
 ## Test Skill
 
-Stages the Skill package into a throwaway sandbox session and returns what the Agent receives: the `SKILL.md` instructions, the bundled file inventory under `/workspace/skills/<name>/`, and `allowed-tools`. No script is executed on the caller's behalf. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
+Executes the skill once in the code sandbox with the supplied arguments. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
 
 ```http
 POST /api/v1/skills/a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d/test HTTP/1.1

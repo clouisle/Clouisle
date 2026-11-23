@@ -694,10 +694,8 @@ async def test_feishu_placeholder_email_uses_sqlite_probe_and_skips_missing_user
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("super_admin_created", [True, False])
 async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
-    super_admin_created: bool,
 ) -> None:
     """init_db happy path: newly created roles, permission seeding, tail steps."""
     optional_migrations = [
@@ -742,20 +740,16 @@ async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
 
     created_roles: list[str] = []
     all_permission = SimpleNamespace(code="*")
-    super_admin_add = AsyncMock()
 
     async def get_or_create_role(*, name: str, defaults: dict):
         created_roles.append(name)
         role = SimpleNamespace(
             id=name,
             permissions=SimpleNamespace(
-                add=super_admin_add
-                if name == init_data.SUPER_ADMIN_ROLE
-                else AsyncMock(),
-                all=AsyncMock(return_value=[]),
+                add=AsyncMock(), all=AsyncMock(return_value=[])
             ),
         )
-        return role, super_admin_created if name == init_data.SUPER_ADMIN_ROLE else True
+        return role, True
 
     monkeypatch.setattr(init_data.Role, "get_or_create", get_or_create_role)
 
@@ -802,7 +796,6 @@ async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
 
     await init_data.init_db()
 
-    super_admin_add.assert_awaited_once_with(all_permission)
     assert created_roles == [
         init_data.SUPER_ADMIN_ROLE,
         "Admin",

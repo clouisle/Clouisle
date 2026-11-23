@@ -1,17 +1,5 @@
 # Agent Skills Design Document
 
-## Standard alignment (supersedes the execution extension)
-
-Skills follow the open [Agent Skills specification](https://agentskills.io/specification), so a package written for any compatible agent works here unchanged. Consequences that override the earlier stages below:
-
-- Frontmatter is `name` (required, lowercase single-hyphen, ≤64, matches the directory), `description` (required, ≤1024), plus optional `license`, `compatibility`, `metadata`, and `allowed-tools` (space-separated, experimental).
-- **No execution declaration.** The former `x-clouisle.execution` block is ignored and reported as `skill_execution_extension_deprecated`; the code branch that parsed it is gone.
-- Bundled scripts are executed by the model with the sandbox tools it already has (`bash`, `read`, `write`, `artifact`). Clouisle adds no second execution semantics.
-- `x-clouisle.input_schema` remains an optional Clouisle extension for structured tool arguments; packages without it get the generic `prompt` schema.
-- Packages are delivered to the worker node through the sandbox job payload at session creation (`SkillWorkspaceSync`), never read from shared or distributed storage. The sync state is bound to the workspace `generation`, so a reset re-pushes automatically.
-
-Stages 5 and 6 below describe the previous instruction/script model and the `Test Skill` UI; treat the bullets above as the current contract.
-
 ## Background & Goals
 
 Clouisle Agents need to call Skills, but the initial implementation exposed low-level sandbox JSON (`input_schema`, `skill_spec`, `command_template`) to users. That is the wrong product model. A Skill should be imported from a package root containing `SKILL.md`; common sources are a zip bundle containing multiple Skill directories or a Git repository containing multiple Skill directories.

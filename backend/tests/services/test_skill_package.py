@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from app.services.skill_package import SkillPackageService
 
 
@@ -15,51 +13,24 @@ def write_skill(root: Path, skill_md: str, script: str | None = None) -> Path:
     return root
 
 
-def test_parse_skill_accepts_spec_frontmatter(tmp_path: Path):
+def test_parse_script_skill_normalizes_execution_config(tmp_path: Path):
     skill_root = write_skill(
-        tmp_path / "pdf-tools",
+        tmp_path / "echo-skill",
         """---
-name: pdf-tools
-description: Extract text from PDFs. Use when the user mentions PDFs.
-license: Apache-2.0
-compatibility: Requires Python 3.11
-metadata:
-  author: example-org
-allowed-tools: Bash Read
----
-Run scripts/extract.py.
-""",
-        "scripts/extract.py",
-    )
-
-    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
-
-    assert parsed.valid is True
-    assert parsed.name == "pdf-tools"
-    assert parsed.frontmatter["license"] == "Apache-2.0"
-    assert parsed.frontmatter["compatibility"] == "Requires Python 3.11"
-    assert parsed.frontmatter["metadata"] == {"author": "example-org"}
-    assert parsed.frontmatter["allowed-tools"] == "Bash Read"
-    assert parsed.package_manifest["file_count"] == 2
-    assert {item["path"] for item in parsed.package_manifest["files"]} == {
-        "SKILL.md",
-        "scripts/extract.py",
-    }
-
-
-def test_parse_skill_treats_execution_extension_as_deprecated(tmp_path: Path):
-    skill_root = write_skill(
-        tmp_path / "legacy-skill",
-        """---
-name: legacy-skill
-description: Written before Clouisle dropped the execution extension.
+name: echo-skill
+description: Echo input.
 x-clouisle:
   execution:
     mode: script
     runtime: python
     script: scripts/run.py
+    limits:
+      timeout_seconds: 10
+    artifacts:
+      - path: output/result.json
+        optional: true
 ---
-Run it.
+Run the script.
 """,
         "scripts/run.py",
     )
@@ -67,59 +38,45 @@ Run it.
     parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
 
     assert parsed.valid is True
-    assert parsed.execution_config == {}
-    assert "skill_execution_extension_deprecated" in parsed.warnings
+    assert parsed.execution_config["mode"] == "script"
+    assert parsed.execution_config["runtime"] == "python"
+    assert parsed.execution_config["script"] == "scripts/run.py"
+    assert parsed.execution_config["limits"]["timeout_seconds"] == 10
+    assert parsed.execution_config["artifacts"] == [
+        {
+            "path": "/workspace/output/result.json",
+            "optional": True,
+        }
+    ]
 
 
-@pytest.mark.parametrize(
-    ("name", "expected_errors"),
-    [
-        ("PDF-Tools", ["skill_name_invalid"]),
-        ("pdf--tools", ["skill_name_invalid"]),
-        ("-pdf", ["skill_name_invalid"]),
-        ("pdf_tools", ["skill_name_invalid"]),
-        ("a" * 65, ["skill_name_too_long", "skill_name_directory_mismatch"]),
-    ],
-)
-def test_parse_skill_rejects_non_spec_names(tmp_path: Path, name, expected_errors):
+def test_parse_markdown_skill_has_no_runtime_or_script(tmp_path: Path):
     skill_root = write_skill(
-        tmp_path / "pdf-tools",
-        f"""---
-name: {name}
-description: Extract text from PDFs.
----
-Run it.
-""",
-    )
-
-    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
-
-    assert parsed.valid is False
-    assert parsed.errors == expected_errors
-
-
-def test_parse_skill_reports_directory_name_mismatch(tmp_path: Path):
-    skill_root = write_skill(
-        tmp_path / "some-folder",
+        tmp_path / "markdown-skill",
         """---
-name: pdf-tools
-description: Extract text from PDFs.
+name: markdown-skill
+description: Markdown only.
 ---
-Run it.
+Read this file for instructions.
 """,
     )
 
     parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
 
-    assert parsed.errors == ["skill_name_directory_mismatch"]
+    assert parsed.valid is True
+    assert parsed.instructions == "Read this file for instructions.\n"
+    assert parsed.execution_config == {}
 
 
-def test_parse_skill_rejects_overlong_description(tmp_path: Path):
+def test_parse_skill_rejects_invalid_execution_mode(tmp_path: Path):
     skill_root = write_skill(
-        tmp_path / "long-skill",
-        f"""---
-name: long-skill
-description: {"d" * 1025}
+        tmp_path / "bad-mode",
+        """---
+name: bad-mode
+description: Bad mode.
+x-clouisle:
+  execution:
+    mode: docker
 ---
 Run it.
 """,
@@ -127,4 +84,74 @@ Run it.
 
     parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
 
-    assert parsed.errors == ["skill_description_too_long"]
+    assert "skill_execution_mode_invalid" in parsed.errors
+
+
+def test_parse_script_skill_rejects_invalid_runtime(tmp_path: Path):
+    skill_root = write_skill(
+        tmp_path / "bad-runtime",
+        """---
+name: bad-runtime
+description: Bad runtime.
+x-clouisle:
+  execution:
+    mode: script
+    runtime: bash
+    script: run.py
+---
+Run the script.
+""",
+        "run.py",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
+
+    assert "skill_script_runtime_invalid" in parsed.errors
+
+
+def test_parse_script_skill_rejects_unsafe_artifact_path(tmp_path: Path):
+    skill_root = write_skill(
+        tmp_path / "bad-artifact",
+        """---
+name: bad-artifact
+description: Bad artifact.
+x-clouisle:
+  execution:
+    mode: script
+    runtime: python
+    script: run.py
+    artifacts:
+      - path: /tmp/result.json
+---
+Run the script.
+""",
+        "run.py",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
+
+    assert "skill_execution_artifact_path_invalid" in parsed.errors
+
+
+def test_parse_script_skill_rejects_invalid_limits(tmp_path: Path):
+    skill_root = write_skill(
+        tmp_path / "bad-limits",
+        """---
+name: bad-limits
+description: Bad limits.
+x-clouisle:
+  execution:
+    mode: script
+    runtime: python
+    script: run.py
+    limits:
+      timeout_seconds: 9999
+---
+Run the script.
+""",
+        "run.py",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
+
+    assert "skill_execution_limits_invalid" in parsed.errors

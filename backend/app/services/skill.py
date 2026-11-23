@@ -190,7 +190,6 @@ class SkillService:
                 if agent is not None and agent.team_id
                 else None,
                 session_id=session_id,
-                agent_id=str(getattr(agent, "id", "")) or None,
             )
             return skill_result.to_chat_payload()
 
@@ -315,23 +314,14 @@ class SkillService:
 
     @staticmethod
     def parse_allowed_tools(skill: Skill) -> list[str] | None:
-        """Parse ``allowed-tools`` from an Agent Skill frontmatter.
-
-        The Agent Skills specification defines the field as a space-separated
-        string (``allowed-tools: Bash Read``); a YAML list is still accepted for
-        packages written before the spec settled on the string form.
-        """
+        """从 skill.frontmatter 或 skill_md 解析 allowed-tools"""
+        # 优先从 frontmatter 获取
         frontmatter = skill.frontmatter or {}
         allowed = frontmatter.get("allowed-tools")
-        if isinstance(allowed, str):
-            tokens = allowed.replace(",", " ").split()
-            if tokens:
-                return tokens
-        elif isinstance(allowed, list):
-            tokens = [str(item).strip() for item in allowed if str(item).strip()]
-            if tokens:
-                return tokens
+        if allowed and isinstance(allowed, list):
+            return [str(a) for a in allowed]
 
+        # 尝试从 skill_md 解析 (Markdown 格式)
         skill_md = skill.skill_md or ""
         match = re.search(
             r"^allowed-tools:\s*$((?:\s*-\s*.+\n?)+)", skill_md, re.MULTILINE
@@ -344,14 +334,6 @@ class SkillService:
                     tools.append(line[1:].strip())
             if tools:
                 return tools
-
-        match = re.search(
-            r"^allowed-tools:[ \t]*(?![ \t]*$)(.+)$", skill_md, re.MULTILINE
-        )
-        if match:
-            tokens = match.group(1).replace(",", " ").split()
-            if tokens:
-                return tokens
 
         return None
 
