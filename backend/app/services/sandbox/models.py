@@ -424,20 +424,6 @@ class SandboxSkillSpec(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SandboxSkillSyncState(BaseModel):
-    """Skill packages already pushed into one session workspace.
-
-    Keyed by session and bound to the workspace ``generation``: a reset or
-    recovery produces a new generation, which invalidates every entry and
-    forces the next caller to push the packages again.
-    """
-
-    generation: int | None = Field(default=None)
-    skills: dict[str, str] = Field(
-        default_factory=dict, description="Skill ID to installed package hash"
-    )
-
-
 class SandboxSession(BaseModel):
     """沙箱会话，用于对话级别的持久化工作空间"""
 

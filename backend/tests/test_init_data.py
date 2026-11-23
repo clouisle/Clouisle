@@ -8,11 +8,6 @@ from app.models.model import Model
 from app.models.site_setting import SiteSetting
 
 
-def test_permission_definitions_include_super_admin_wildcard() -> None:
-    definitions = init_data.SystemPermissions.get_all_definitions()
-    assert sum(permission["code"] == "*" for permission in definitions) == 1
-
-
 @pytest.mark.asyncio
 async def test_model_endpoint_allowlist_seeds_existing_origins_once(
     monkeypatch,
@@ -444,7 +439,6 @@ async def test_init_db_continues_after_optional_migration_failures(
 
     monkeypatch.setattr(init_data.SystemPermissions, "get_all_definitions", lambda: [])
     monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
-    monkeypatch.setattr(init_data.Permission, "get", AsyncMock(return_value=object()))
     from app.core import integration_migration
 
     monkeypatch.setattr(

@@ -1080,12 +1080,8 @@ Examples of when to search:
                     append_openai_tool(
                         SkillService.to_tool_info(skill).to_openai_schema()
                     )
-                    from app.api.v1.endpoints.chat_helpers.tool_utils import (
-                        SKILL_SANDBOX_TOOLS,
-                    )
-
                     for sandbox_tool in tool_registry.to_openai_sandbox_tools(
-                        SKILL_SANDBOX_TOOLS
+                        ["read", "edit", "write", "bash"]
                     ):
                         append_openai_tool(sandbox_tool)
                 except Exception as e:

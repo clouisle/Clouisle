@@ -177,11 +177,6 @@ class SystemPermissions:
             List of permission definitions with code, scope, and description
         """
         return [
-            {
-                "code": "*",
-                "scope": "admin",
-                "description": "Full system access",
-            },
             # Admin Dashboard
             {
                 "code": cls.ADMIN_DASHBOARD_ACCESS,
