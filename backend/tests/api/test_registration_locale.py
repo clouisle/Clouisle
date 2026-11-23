@@ -55,10 +55,12 @@ class _FakeAllQuery:
         return 0
 
 
-@pytest.mark.asyncio
-async def test_register_persists_submitted_locale(
+async def _run_register(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    *,
+    locale: str | None,
+    default_language: str = "en",
+) -> dict[str, object]:
     created_kwargs: dict[str, object] = {}
     created_user = _FakeUser()
 
@@ -66,7 +68,7 @@ async def test_register_persists_submitted_locale(
         values = {
             "require_approval": False,
             "email_verification": False,
-            "default_language": "en",
+            "default_language": default_language,
             "force_password_change_first_login": False,
         }
         return values.get(key, default)
@@ -135,8 +137,28 @@ async def test_register_persists_submitted_locale(
             username="alice",
             email="alice@example.com",
             password="StrongPass123!",
-            locale="zh-CN",
+            locale=locale,
         ),
+    )
+    return created_kwargs
+
+
+@pytest.mark.asyncio
+async def test_register_persists_submitted_locale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_kwargs = await _run_register(monkeypatch, locale="zh-CN")
+
+    assert created_kwargs["locale"] == "zh"
+
+
+@pytest.mark.asyncio
+async def test_register_without_locale_uses_the_site_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``users.locale`` is NOT NULL, so omitting it must not fail the insert."""
+    created_kwargs = await _run_register(
+        monkeypatch, locale=None, default_language="zh"
     )
 
     assert created_kwargs["locale"] == "zh"
