@@ -2901,6 +2901,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Skill description is required",
         "zh": "Skill 描述不能为空",
     },
+    "skill_description_too_long": {
+        "en": "Skill description must be at most 1024 characters",
+        "zh": "Skill 描述不能超过 1024 个字符",
+    },
     "skill_disabled": {"en": "Skill is disabled", "zh": "技能已禁用"},
     "skill_duplicate_name_in_source": {
         "en": "Duplicate Skill name found in the same source",
@@ -2917,6 +2921,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "skill_execution_config_invalid": {
         "en": "Skill execution config is invalid",
         "zh": "Skill 执行配置无效",
+    },
+    "skill_execution_extension_deprecated": {
+        "en": "x-clouisle.execution is ignored: bundled scripts run through the sandbox tools",
+        "zh": "已忽略 x-clouisle.execution：捆绑脚本由沙箱工具执行",
     },
     "skill_execution_failed": {"en": "Skill execution failed", "zh": "技能执行失败"},
     "skill_execution_invalid": {
@@ -2994,11 +3002,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "A Skill with this name already exists",
         "zh": "已存在同名 Skill",
     },
+    "skill_name_directory_mismatch": {
+        "en": "Skill name does not match its directory name",
+        "zh": "Skill 名称与所在目录名不一致",
+    },
     "skill_name_exists": {
         "en": "Skill with this name already exists",
         "zh": "该技能名称已存在",
     },
+    "skill_name_invalid": {
+        "en": "Skill name must use lowercase letters, digits, and single hyphens",
+        "zh": "Skill 名称只能使用小写字母、数字和单个连字符",
+    },
     "skill_name_required": {"en": "Skill name is required", "zh": "Skill 名称不能为空"},
+    "skill_name_too_long": {
+        "en": "Skill name must be at most 64 characters",
+        "zh": "Skill 名称不能超过 64 个字符",
+    },
     "skill_not_configured_for_agent": {
         "en": "Skill is not configured for this agent",
         "zh": "该技能未配置到此智能体",
@@ -3028,6 +3048,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "skill_package_symlink_not_allowed": {
         "en": "Symlinks are not allowed in Skill packages",
         "zh": "Skill 包内不允许符号链接",
+    },
+    "skill_package_sync_failed": {
+        "en": "The Skill package could not be delivered to the sandbox workspace",
+        "zh": "Skill 包未能同步到沙箱工作区",
+    },
+    "skill_package_sync_too_large": {
+        "en": "The Skill package is too large to deliver to the sandbox workspace",
+        "zh": "Skill 包体积过大，无法同步到沙箱工作区",
     },
     "skill_referenced_by_agent": {
         "en": "This skill is still used by an agent",
