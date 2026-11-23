@@ -69,41 +69,6 @@ from app.services.sandbox.gateway import sandbox_gateway
 logger = logging.getLogger(__name__)
 
 
-async def _sync_agent_skill_packages(sandbox_session_id: str, agent: Agent) -> None:
-    """Push the agent's Skill packages into the freshly created workspace.
-
-    Standard Skills are files the model runs with its sandbox tools, so the
-    session workspace has to hold them before the first tool call. Delivery goes
-    through the job payload; the node never reads shared storage. A failure here
-    stays best-effort: the Skill tool call re-runs the sync and surfaces the
-    error to the model instead of failing the whole run up front.
-    """
-    from app.services.sandbox.skill_sync import SkillWorkspaceSync
-    from app.services.skill import SkillService
-
-    try:
-        skills = [
-            skill
-            for skill, _config in await SkillService.get_agent_skills(
-                agent, enabled_only=True
-            )
-        ]
-        if not skills:
-            return
-        await SkillWorkspaceSync.ensure_skills(
-            session_id=sandbox_session_id,
-            skills=skills,
-            team_id=str(agent.team_id) if agent.team_id else None,
-            agent_id=str(agent.id),
-        )
-    except Exception:
-        logger.warning(
-            "Skill package sync failed for sandbox session %s",
-            sandbox_session_id,
-            exc_info=True,
-        )
-
-
 def _payload_api_key_id(payload: dict[str, Any]) -> UUID | None:
     """Lenient api-key id from a worker payload (legacy payloads lack it)."""
     value = payload.get("api_key_id")
@@ -1380,7 +1345,6 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 ttl_seconds=deadline_seconds
                 + settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
             )
-            await _sync_agent_skill_packages(sandbox_session_id, agent)
         if run.canonical_message_id:
             canonical = await Message.get_or_none(id=run.canonical_message_id)
         else:

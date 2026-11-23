@@ -1,26 +1,26 @@
-"""Static Skill execution helpers.
-
-Standard Skills are instructions plus bundled files. The executor stages the
-package into the session workspace (see ``sandbox.skill_sync``) and hands the
-model the SKILL.md body with a file inventory; the model then runs scripts and
-reads references with the sandbox tools it already has.
-"""
+"""Sandboxed Skill execution."""
 
 from __future__ import annotations
 
 import json
+import re
+from pathlib import PurePosixPath
 from typing import Any
 
+from app.utils.tool_output import ToolExecutionResult
 from app.models.skill import Skill
 from app.schemas.response import BusinessError, ResponseCode
+from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxArtifact,
+    SandboxInputFileSpec,
+    SandboxJob,
+    SandboxJobSource,
+    SandboxResult,
     SandboxTaskStatus,
 )
-from app.services.sandbox.skill_sync import SkillWorkspaceSync
-from app.utils.tool_output import ToolExecutionResult
 
-_MAX_LISTED_FILES = 200
+_SAFE_SKILL_DIR_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 class SkillExecutionResult:
@@ -70,9 +70,7 @@ class SkillExecutionResult:
                 "result": {
                     "type": "skill_instructions",
                     "skill": display_skill,
-                    "skill_root": self.result.get("skill_root"),
-                    "file_count": self.result.get("file_count", 0),
-                    "files_staged": self.result.get("files_staged", False),
+                    "workspace_root": self.result.get("workspace_root"),
                     "status": self.result.get("status") or "loaded",
                 },
                 "error": self.error,
@@ -130,7 +128,7 @@ class SkillExecutionResult:
 
 
 class SkillExecutor:
-    """Stages Skill packages for the model and renders their instructions."""
+    """Loads Skills for the model and stages their package resources."""
 
     @staticmethod
     def validate_arguments(skill: Skill, arguments: dict[str, Any]) -> None:
@@ -197,26 +195,27 @@ class SkillExecutor:
         config: dict[str, Any] | None = None,
         tenant_id: str | None = None,
         session_id: str | None = None,
-        agent_id: str | None = None,
     ) -> SkillExecutionResult:
         SkillExecutor.validate_arguments(skill, arguments)
         merged_config = dict(skill.default_config or {})
         merged_config.update(config or {})
 
+        workspace_root = SkillExecutor.skill_workspace_root(skill)
         if session_id:
-            await SkillWorkspaceSync.ensure_skills(
+            staging_result = await SkillExecutor.stage_package_resources(
+                skill=skill,
+                workspace_root=workspace_root,
+                tenant_id=tenant_id,
                 session_id=session_id,
-                skills=[skill],
-                team_id=tenant_id,
-                agent_id=agent_id,
             )
+            if staging_result is not None and not staging_result.success:
+                return SkillExecutor.from_sandbox_result(staging_result)
 
         return SkillExecutor.build_instruction_result(
             skill=skill,
             arguments=arguments,
             config=merged_config,
-            skill_root=SkillWorkspaceSync.skill_root(skill),
-            staged=bool(session_id),
+            workspace_root=workspace_root,
         )
 
     @staticmethod
@@ -225,8 +224,7 @@ class SkillExecutor:
         skill: Skill,
         arguments: dict[str, Any],
         config: dict[str, Any],
-        skill_root: str,
-        staged: bool = True,
+        workspace_root: str,
     ) -> SkillExecutionResult:
         instructions = skill.instructions or skill.skill_md or ""
         return SkillExecutionResult(
@@ -245,11 +243,10 @@ class SkillExecutor:
                 "instructions": instructions,
                 "arguments": arguments,
                 "config": config,
-                "skill_root": skill_root,
-                "files": SkillExecutor.listed_files(skill),
-                "file_count": (skill.package_manifest or {}).get("file_count", 0),
-                "files_staged": staged,
-                "allowed_tools": SkillExecutor.allowed_tools(skill),
+                "manifest": {
+                    "file_count": (skill.package_manifest or {}).get("file_count", 0),
+                    "package_hash": skill.package_hash,
+                },
                 "artifact_guidance": (
                     "If this Skill creates user-facing files, keep them under /workspace/output. "
                     "When writing Python or Node scripts, prefer relative output paths such as "
@@ -258,32 +255,120 @@ class SkillExecutor:
                     "commands such as ls/find/file, then call the artifact tool to generate Markdown "
                     "download links. Include those Markdown links directly in your final answer."
                 ),
+                "workspace_root": workspace_root,
                 "status": "loaded",
             },
             status=SandboxTaskStatus.COMPLETED,
         )
 
     @staticmethod
-    def listed_files(skill: Skill) -> list[dict[str, Any]]:
-        """Bundled file inventory the model reads before choosing a script."""
-        manifest_files = (skill.package_manifest or {}).get("files")
-        if not isinstance(manifest_files, list):
+    def build_package_input_files(
+        *,
+        skill: Skill,
+        workspace_root: str,
+    ) -> list[SandboxInputFileSpec]:
+        package_files = (skill.skill_spec or {}).get("package_files")
+        if not isinstance(package_files, list):
             return []
-        listed: list[dict[str, Any]] = []
-        for item in manifest_files[:_MAX_LISTED_FILES]:
+
+        input_files: list[SandboxInputFileSpec] = []
+        for item in package_files:
             if not isinstance(item, dict):
                 continue
             path = item.get("path")
-            if not isinstance(path, str):
+            content_base64 = item.get("content_base64")
+            if not isinstance(path, str) or not isinstance(content_base64, str):
                 continue
-            size = item.get("size")
-            listed.append(
-                {"path": path, "size": size if isinstance(size, int) else None}
+            relative_path = PurePosixPath(path)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                continue
+            input_files.append(
+                SandboxInputFileSpec(
+                    target_path=PurePosixPath(workspace_root, relative_path).as_posix(),
+                    content_base64=content_base64,
+                    mode=item.get("mode")
+                    if isinstance(item.get("mode"), int)
+                    else None,
+                )
             )
-        return listed
+        return input_files
 
     @staticmethod
-    def allowed_tools(skill: Skill) -> list[str] | None:
-        from app.services.skill import SkillService
+    def skill_workspace_root(skill: Skill) -> str:
+        safe_name = _SAFE_SKILL_DIR_PATTERN.sub("_", skill.name).strip("._-")
+        if not safe_name:
+            safe_name = str(skill.id)
+        return f"/workspace/skill/{safe_name}"
 
-        return SkillService.parse_allowed_tools(skill)
+    @staticmethod
+    async def stage_package_resources(
+        *,
+        skill: Skill,
+        workspace_root: str,
+        tenant_id: str | None,
+        session_id: str,
+    ) -> SandboxResult | None:
+        input_files = SkillExecutor.build_package_input_files(
+            skill=skill,
+            workspace_root=workspace_root,
+        )
+        if not input_files:
+            return None
+
+        job = SandboxJob(
+            tenant_id=tenant_id,
+            source=SandboxJobSource.SKILL,
+            language="python",
+        )
+        staging_root = f".skill-staging/{job.job_id}"
+        destinations = []
+        for index, input_file in enumerate(input_files):
+            staged_path = f"{staging_root}/{index}"
+            destinations.append(
+                (staged_path, input_file.target_path.removeprefix("/workspace/"))
+            )
+            job.input_files.append(
+                input_file.model_copy(
+                    update={"target_path": f"/workspace/{staged_path}"}
+                )
+            )
+        job.code = (
+            "import os\n"
+            "import shutil\n"
+            "from pathlib import Path\n"
+            f"destinations = {destinations!r}\n"
+            "root = Path.cwd().resolve()\n"
+            "try:\n"
+            "    for source, destination in destinations:\n"
+            "        target = root / destination\n"
+            "        if not target.resolve().is_relative_to(root):\n"
+            "            raise ValueError('Skill resource path escapes workspace')\n"
+            "        current = target\n"
+            "        while current != root:\n"
+            "            if current.is_symlink():\n"
+            "                raise ValueError('Skill resource path contains a symlink')\n"
+            "            current = current.parent\n"
+            "        target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "        os.replace(source, target)\n"
+            "finally:\n"
+            f"    shutil.rmtree({staging_root!r})\n"
+            "return {'status': 'staged'}"
+        )
+        return await sandbox_gateway.submit_and_wait(
+            job,
+            session_id=session_id,
+            team_id=tenant_id,
+        )
+
+    @staticmethod
+    def from_sandbox_result(result) -> SkillExecutionResult:
+        return SkillExecutionResult(
+            success=result.success,
+            result=result.result,
+            error=result.error,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            artifacts=result.artifacts,
+            duration_ms=result.metadata.duration_ms,
+            status=result.status,
+        )
