@@ -6,12 +6,12 @@ subscription to the lifetime of one streaming API request:
 
 1. the request opens one negotiated ``McpClient`` session;
 2. the negotiated session is checked before anything is subscribed (fail
-   closed, never a fabricated success), using whichever mechanism the protocol
-   version offers:
+   closed, never a fabricated success). The negotiated *version* decides,
+   because 2026-07-28 removed ``resources/subscribe`` outright:
 
-   * ``resources/subscribe`` on servers that advertise it (up to 2025-11-25);
-   * ``subscriptions/listen`` on 2026-07-28 servers, which removed
-     ``resources/subscribe``;
+   * 2026-07-28 sessions use ``subscriptions/listen``, even when the server
+     still reports a stale ``resources.subscribe`` capability flag;
+   * older sessions use ``resources/subscribe`` when the server advertises it;
 
 3. updates are queued in memory for the owning request only;
 4. the request's TTL or client disconnect closes the session and performs a
@@ -284,12 +284,14 @@ async def open_subscription(
         # Capabilities come from the session we actually subscribe on: a probe
         # on a second connection could answer for a different server instance.
         capabilities = read_session_capabilities(session)
+        # Version first: 2026-07-28 removed ``resources/subscribe`` outright, so
+        # a modern session must use ``listen`` even if the server still reports
+        # a stale ``resources.subscribe`` capability flag (the SDK server does).
         listen = _listen_factory(capabilities.protocol_version)
-        use_listen = not capabilities.resources_subscribe and listen is not None
-        if not capabilities.resources_subscribe and not use_listen:
+        if listen is None and not capabilities.resources_subscribe:
             raise McpCapabilityUnavailable("resources.subscribe")
 
-        if use_listen:
+        if listen is not None:
             subscription = await stack.enter_async_context(
                 listen(session, resource_subscriptions=(uri,))
             )

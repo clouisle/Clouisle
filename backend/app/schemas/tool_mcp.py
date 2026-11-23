@@ -112,8 +112,8 @@ class McpRoundTripIn(McpOperationIn):
         default=None,
         description=(
             "Answers to the requests carried by a prior input_required result, "
-            "keyed by request key. Requires an explicit connection_id so both "
-            "legs of the round trip run under the same account."
+            "keyed by request key. When the tool runs under an explicit external "
+            "account, both legs must name the same connection_id."
         ),
     )
 
@@ -124,9 +124,6 @@ class McpRoundTripIn(McpOperationIn):
                 raise ValueError("mcp_input_responses_empty")
             if self.request_state is not None:
                 raise ValueError("mcp_input_responses_required_with_request_state")
-            return self
-        if self.connection_id is None:
-            raise ValueError("mcp_input_responses_require_connection")
         return self
 
 

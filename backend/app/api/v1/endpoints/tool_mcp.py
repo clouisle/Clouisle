@@ -457,6 +457,25 @@ def _validated_round_trip(parameters: dict[str, Any]) -> dict[str, Any] | None:
     return parse_input_responses(parameters.get("input_responses"))
 
 
+def _require_pinned_connection(tool: Tool, payload: Any) -> None:
+    """Refuse to resume under a different external account than the first leg.
+
+    Only tools that run under an external identity can drift: without one the
+    two legs cannot borrow different credentials, so those tools stay
+    resumable without forcing callers to name a connection.
+    """
+    if not payload.input_responses or payload.connection_id is not None:
+        return
+    identity_policy = str(getattr(tool, "identity_policy", "none") or "none")
+    if identity_policy == "none" and not (tool.connection_fields or []):
+        return
+    raise BusinessError(
+        code=ResponseCode.TOOL_CONNECTION_REQUIRED,
+        msg_key="tool_connection_required",
+        status_code=409,
+    )
+
+
 # ============ Metadata execution ============
 
 
@@ -746,6 +765,7 @@ async def call_mcp_tool(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     operation = f"{OP_TOOL_PREFIX}{payload.name}"
     parameters = {
         "name": payload.name,
@@ -831,6 +851,7 @@ async def read_mcp_resource_contents(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     uri = _validate_resource_uri(payload.uri)
     operation = OP_RESOURCE_READ
     parameters = {"uri": uri, **_round_trip_parameters(payload)}
@@ -1016,6 +1037,7 @@ async def get_mcp_prompt_result(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     operation = f"{OP_PROMPT_PREFIX}{payload.name}"
     parameters = {
         "name": payload.name,

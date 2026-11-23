@@ -71,7 +71,7 @@ class _Stream:
 def _fake_listen(items):
     @asynccontextmanager
     async def listen(session, *, resource_subscriptions=(), on_event=None):
-        assert tuple(resource_subscriptions) == ("file:///a",)
+        assert tuple(resource_subscriptions)  # the caller must name a URI
         yield _Stream(items)
 
     return listen
@@ -149,6 +149,63 @@ def test_listen_is_only_offered_on_modern_versions(monkeypatch):
 
     monkeypatch.setattr(subs, "_listen", None)
     assert subs._listen_factory("2026-07-28") is None
+
+
+@pytest.mark.asyncio
+async def test_a_modern_session_uses_listen_even_with_a_stale_subscribe_flag(
+    monkeypatch,
+):
+    """2026-07-28 removed resources/subscribe; a stale flag must not win.
+
+    The SDK server still reports ``resources.subscribe`` on modern sessions,
+    and calling the removed method fails with "Method not found".
+    """
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(subs, "_listen", _fake_listen([ResourceUpdated("memo://a")]))
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28", "_subscribe": True},
+        uri="memo://a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        # The fake session rejects subscribe_resource outright, so reaching the
+        # queue proves the listen path ran.
+        assert await _drain(handle) == ["memo://a"]
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_session_still_uses_subscribe(monkeypatch):
+    calls = []
+
+    class _LegacySession:
+        protocol_version = "2025-11-25"
+        server_capabilities = {"resources": {"subscribe": True}}
+
+        async def subscribe_resource(self, uri: str) -> None:
+            calls.append(uri)
+
+        async def unsubscribe_resource(self, uri: str) -> None:
+            calls.append(f"unsubscribe:{uri}")
+
+    class _LegacyClient(_Client):
+        @asynccontextmanager
+        async def connect(self, *, timeout=None):
+            yield _LegacySession()
+
+    monkeypatch.setattr(subs, "McpClient", _LegacyClient)
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={},
+        uri="memo://a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        assert handle.uri == "memo://a"
+
+    assert calls == ["memo://a", "unsubscribe:memo://a"]
 
 
 def test_subscription_ttl_uses_the_configured_setting(monkeypatch):

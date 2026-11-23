@@ -63,7 +63,7 @@ async def _team(actor: User) -> Team:
     return team
 
 
-async def _tool(team: Team) -> Tool:
+async def _tool(team: Team, *, with_identity: bool = True) -> Tool:
     return await Tool.create(
         id=uuid4(),
         team_id=team.id,
@@ -72,16 +72,22 @@ async def _tool(team: Team) -> Tool:
         description="mrtr test",
         type=ToolType.MCP,
         visibility=ToolVisibility.TEAM,
-        identity_policy="team_only",
-        connection_fields=[
-            {"name": "token", "label": "Token", "required": True, "secret": True}
-        ],
+        identity_policy="team_only" if with_identity else "none",
+        connection_fields=(
+            [{"name": "token", "label": "Token", "required": True, "secret": True}]
+            if with_identity
+            else []
+        ),
         approval_policy={"default_decision": "allow"},
-        mcp_config={
-            "transport": "sse",
-            "url": "https://mcp.example/sse",
-            "headers": {"Authorization": "Bearer {{token}}"},
-        },
+        mcp_config=(
+            {
+                "transport": "sse",
+                "url": "https://mcp.example/sse",
+                "headers": {"Authorization": "Bearer {{token}}"},
+            }
+            if with_identity
+            else {"transport": "sse", "url": "https://mcp.example/sse"}
+        ),
     )
 
 
@@ -267,6 +273,7 @@ async def test_resource_read_reports_the_parked_requests(mcp_app, monkeypatch):
 async def test_answers_without_an_explicit_connection_are_rejected(
     mcp_app, monkeypatch
 ):
+    """A tool that runs under an external account must pin that account."""
     team = await _team(mcp_app.actor)
     tool = await _tool(team)
     mock = AsyncMock(return_value=McpToolResult(success=True))
@@ -284,8 +291,31 @@ async def test_answers_without_an_explicit_connection_are_rejected(
         params={"team_id": str(team.id)},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 409
     assert mock.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_identity_less_tools_resume_without_a_connection(mcp_app, monkeypatch):
+    """No external account means nothing can drift between the two legs."""
+    team = await _team(mcp_app.actor)
+    tool = await _tool(team, with_identity=False)
+    mock = AsyncMock(return_value=McpToolResult(success=True, result="ok"))
+    monkeypatch.setattr(tool_mcp, "execute_mcp_tool", mock)
+
+    response = await mcp_app.client.post(
+        f"/tools/{tool.id}/mcp/tools/call",
+        json={
+            "name": "search",
+            "arguments": {},
+            "request_state": "state-1",
+            "input_responses": ANSWERS,
+        },
+        params={"team_id": str(team.id)},
+    )
+
+    assert response.status_code == 200
+    assert mock.await_args.kwargs["request_state"] == "state-1"
 
 
 @pytest.mark.asyncio
