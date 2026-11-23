@@ -171,6 +171,27 @@ msgstr "Git repository URL is invalid"
 msgid "skill_import_installed"
 msgstr "Skills imported successfully"
 
+msgid "skill_package_sync_failed"
+msgstr "The Skill package could not be delivered to the sandbox workspace"
+
+msgid "skill_package_sync_too_large"
+msgstr "The Skill package is too large to deliver to the sandbox workspace"
+
+msgid "skill_execution_extension_deprecated"
+msgstr "x-clouisle.execution is ignored: bundled scripts run through the sandbox tools"
+
+msgid "skill_name_invalid"
+msgstr "Skill name must use lowercase letters, digits, and single hyphens"
+
+msgid "skill_name_too_long"
+msgstr "Skill name must be at most 64 characters"
+
+msgid "skill_name_directory_mismatch"
+msgstr "Skill name does not match its directory name"
+
+msgid "skill_description_too_long"
+msgstr "Skill description must be at most 1024 characters"
+
 msgid "clouisle_checksum_mismatch"
 msgstr "Package checksum verification failed"
 

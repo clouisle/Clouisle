@@ -46,52 +46,6 @@ def test_find_skill_roots_honors_ignored_directories_and_depth(tmp_path: Path):
     assert SkillPackageService.find_skill_roots(tmp_path, max_depth=1) == [visible]
 
 
-def test_normalize_script_config_collects_missing_fields_and_artifact_errors(
-    tmp_path: Path,
-):
-    config, errors = SkillPackageService._normalize_execution_config(
-        {
-            "mode": "script",
-            "limits": "invalid",
-            "artifacts": [42, {}, "/tmp/result.txt", "output/result.txt"],
-        },
-        tmp_path,
-    )
-
-    assert config["limits"] == "invalid"
-    assert config["artifacts"] == [
-        {"path": "/workspace/output/result.txt", "optional": False}
-    ]
-    assert errors == [
-        "skill_script_runtime_required",
-        "skill_script_required",
-        "skill_execution_limits_invalid",
-        "skill_execution_artifacts_invalid",
-        "skill_execution_artifact_path_invalid",
-        "skill_execution_artifact_path_invalid",
-    ]
-
-
-def test_normalize_script_config_accepts_javascript_and_workspace_root(tmp_path: Path):
-    script = tmp_path / "run.js"
-    script.write_text("console.log('ok')", encoding="utf-8")
-
-    config, errors = SkillPackageService._normalize_execution_config(
-        {
-            "mode": "script",
-            "runtime": "javascript",
-            "script": "run.js",
-            "artifacts": ["/workspace"],
-        },
-        tmp_path,
-    )
-
-    assert errors == []
-    assert config["runtime"] == "node"
-    assert config["script"] == "run.js"
-    assert config["artifacts"] == [{"path": "/workspace", "optional": False}]
-
-
 def test_build_manifest_skips_symlinks_and_nested_archives(tmp_path: Path):
     (tmp_path / "SKILL.md").write_text("instructions", encoding="utf-8")
     (tmp_path / "nested.zip").write_bytes(b"archive")

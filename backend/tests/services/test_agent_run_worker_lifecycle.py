@@ -1465,6 +1465,14 @@ async def test_run_agent_round_checkpoint_gates_lifecycle_boundary(
     checkpoint_started = asyncio.Event()
     checkpoint_saved = asyncio.Event()
     loop_entered = False
+    sync_completed = False
+
+    async def _sync(session_id, _agent):
+        nonlocal sync_completed
+        assert worker.sandbox_gateway.begin_round.await_args.args[0] == session_id
+        sync_completed = True
+
+    monkeypatch.setattr(worker, "_sync_agent_skill_packages", _sync)
 
     async def _transition(run, expected, status, **_kwargs):
         assert run.status == expected
@@ -1475,6 +1483,7 @@ async def test_run_agent_round_checkpoint_gates_lifecycle_boundary(
     async def _in_loop(context):
         nonlocal loop_entered
         loop_entered = True
+        assert sync_completed
         begin = worker.sandbox_gateway.begin_round.await_args
         assert begin.args[0] == context.sandbox_session_id
         assert begin.args[1].startswith(f"{run.id}:{run.active_round_id}:")

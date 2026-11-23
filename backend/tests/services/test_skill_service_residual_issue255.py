@@ -233,9 +233,10 @@ async def test_tool_handler_forwards_tenant_and_handles_missing_agent(monkeypatc
     assert await tool.handler(value="x") == {"ok": True}
     assert execute.await_args.kwargs["tenant_id"] is None
 
-    agent = SimpleNamespace(team_id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
     await tool.handler(agent=agent, session_id="session", value="x")
     assert execute.await_args.kwargs["tenant_id"] == str(agent.team_id)
+    assert execute.await_args.kwargs["agent_id"] == str(agent.id)
 
 
 @pytest.mark.anyio
@@ -303,6 +304,48 @@ async def test_agent_definitions_and_config_validation_cover_all_branches():
             None, [{"type": "skill"}], agent.team_id
         )
     assert error.value.code == ResponseCode.BAD_REQUEST
+
+
+@pytest.mark.anyio
+async def test_list_available_skills_defaults_include_system_without_filters():
+    query = MagicMock()
+    query.prefetch_related.return_value = query
+    query.all = AsyncMock(return_value=[])
+    team_id = uuid4()
+    with (
+        patch.object(SkillService, "check_team_access", new=AsyncMock()) as access,
+        patch("app.services.skill.Skill.filter", return_value=query) as model_filter,
+    ):
+        assert (
+            await SkillService.list_available_skills(
+                team_id=team_id, user=SimpleNamespace()
+            )
+            == []
+        )
+    access.assert_awaited_once()
+    assert model_filter.call_args.kwargs == {}
+    assert len(model_filter.call_args.args[0].children) == 2
+    query.filter.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("frontmatter", "markdown", "expected"),
+    [
+        ({"allowed-tools": "Bash, Read*"}, "", ["Bash", "Read*"]),
+        ({"allowed-tools": "  "}, "allowed-tools: Write, Read", ["Write", "Read"]),
+        ({"allowed-tools": ["", "  "]}, "allowed-tools: Bash", ["Bash"]),
+        ({"allowed-tools": []}, "", None),
+    ],
+)
+def test_allowed_tools_frontmatter_and_markdown_fallback(
+    frontmatter, markdown, expected
+):
+    assert (
+        SkillService.parse_allowed_tools(
+            skill(frontmatter=frontmatter, skill_md=markdown)
+        )
+        == expected
+    )
 
 
 def test_output_and_allowed_tools_cover_optional_values_and_patterns():

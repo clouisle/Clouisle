@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.timezone import now
 
-from .models import SandboxBinding, SandboxSession
+from .models import SandboxBinding, SandboxSession, SandboxSkillSyncState
 
 STANDALONE_ROUND = "standalone"
 
@@ -77,10 +77,32 @@ class SandboxSessionStore:
     def _workspace_round_key(self, session_id: str) -> str:
         return f"sandbox:workspace-round:{session_id}"
 
+    def _skill_sync_key(self, session_id: str) -> str:
+        return f"sandbox:skill-sync:{session_id}"
+
     async def get_binding(self, session_id: str) -> SandboxBinding | None:
         redis = await get_redis()
         payload = await redis.get(self._binding_key(session_id))
         return SandboxBinding.model_validate_json(payload) if payload else None
+
+    async def get_skill_sync(self, session_id: str) -> SandboxSkillSyncState | None:
+        redis = await get_redis()
+        payload = await redis.get(self._skill_sync_key(session_id))
+        return SandboxSkillSyncState.model_validate_json(payload) if payload else None
+
+    async def set_skill_sync(
+        self,
+        session_id: str,
+        state: SandboxSkillSyncState,
+        *,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        redis = await get_redis()
+        await redis.set(
+            self._skill_sync_key(session_id),
+            state.model_dump_json(),
+            ex=ttl_seconds or _ttl_seconds(),
+        )
 
     async def get_worker(self, session_id: str) -> str | None:
         binding = await self.get_binding(session_id)
