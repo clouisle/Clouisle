@@ -158,6 +158,7 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "POSTGRES_SERVER=host.docker.internal" in cmd
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
+    assert "SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://host.docker.internal:8000" in cmd
     # Rootless bwrap needs namespace/mount syscalls the default seccomp
     # profile blocks; local dev mirrors the deployed worker security options.
     assert cmd[cmd.index("seccomp=unconfined") - 1] == "--security-opt"

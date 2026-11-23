@@ -132,7 +132,9 @@ async def test_tool_utils_add_skill_sandbox_tools_without_duplicates(monkeypatch
         tool_utils.tool_registry,
         "get_sandbox_tool_infos",
         lambda names: (
-            sandbox_tools if names == ["read", "edit", "write", "bash"] else []
+            sandbox_tools
+            if names == ["read", "edit", "write", "bash", "artifact"]
+            else []
         ),
     )
 
