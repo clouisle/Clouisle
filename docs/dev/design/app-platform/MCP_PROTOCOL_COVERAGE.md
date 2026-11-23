@@ -63,8 +63,9 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
 - **不靠形状猜类型**：`method` 显式声明要校验的结果模型
   （`ElicitResult` / `ListRootsResult` / `CreateMessageResult`），否则一次 elicitation
   的答案可能被塞进 sampling 的槽位。
-- **身份不漂移**：带 `input_responses` 时必须显式给 `connection_id`。否则默认连接
-  在两段之间变化，会把 A 账号的答案交给 B 账号的会话。
+- **身份不漂移**：工具如果是靠外部账号执行的，带 `input_responses` 必须显式给
+  `connection_id`（否则默认连接在两段之间变化，会把 A 账号的答案交给 B 账号的会话）；
+  `identity_policy=none` 的工具没有可漂移的身份，不强制要求。
 - **审批绑定**：`request_state` 与 `input_responses` 进入 `parameters`，自动进入
   `build_parameter_snapshot` 摘要；已批准的请求不能被换成另一组答案。不续跑时
   这两个字段不写入 `parameters`，因此升级前 parked 的执行仍可恢复。
@@ -78,9 +79,9 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
 
 | 协商结果 | 机制 |
 |---|---|
-| 服务器声明 `resources.subscribe` | `subscribe_resource(uri)`，退出时 `unsubscribe_resource` |
-| 版本 ≥ `2026-07-28` | `subscriptions/listen(resource_subscriptions=(uri,))`，后台任务把 `ResourceUpdated` 转进队列 |
-| 两者都没有 | 409 `mcp_capability_unavailable`，不伪造订阅 |
+| 版本 ≥ `2026-07-28` | `subscriptions/listen(resource_subscriptions=(uri,))`，后台任务把 `ResourceUpdated` 转进队列。**即使服务器仍上报旧的 `resources.subscribe` 标志也走这里**（该版本已移除该方法） |
+| 旧版本且服务器声明 `resources.subscribe` | `subscribe_resource(uri)`，退出时 `unsubscribe_resource` |
+| 两者都不满足 | 409 `mcp_capability_unavailable`，不伪造订阅 |
 
 两条路径都按**精确 URI** 过滤，所以 SSE 契约与协商版本无关。
 

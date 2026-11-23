@@ -416,7 +416,9 @@
         "openApprovals": "Open approvals",
         "resumeFailed": "The tool call could not be resumed. A completed or rejected request is never re-run.",
         "loadFailed": "Could not list MCP tools for this saved connection.",
-        "selectConnectionBeforeLoad": "Select a connection to load the MCP tool list."
+        "selectConnectionBeforeLoad": "Select a connection to load the MCP tool list.",
+        "inputRequiredTitle": "The server needs more input before it can continue",
+        "inputRequiredHint": "This is an MCP multi-round request (MRTR): resend the same request with the answers plus its request_state to continue."
       },
       "codeEditor": {
         "newTitle": "New Code Tool",

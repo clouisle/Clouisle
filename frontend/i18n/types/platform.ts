@@ -419,6 +419,8 @@ export type PlatformMessages = {
         resumeFailed: string
         loadFailed: string
         selectConnectionBeforeLoad: string
+        inputRequiredTitle: string
+        inputRequiredHint: string
       }
       codeEditor: {
         newTitle: string

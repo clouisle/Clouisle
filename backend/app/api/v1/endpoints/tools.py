@@ -180,6 +180,11 @@ def _tool_test_response(
         success=bool(raw.get("success", False)),
         result=raw.get("result"),
         error=raw.get("error"),
+        input_required=(
+            raw.get("input_required")
+            if isinstance(raw.get("input_required"), dict)
+            else None
+        ),
         duration_ms=duration_ms,
     )
 

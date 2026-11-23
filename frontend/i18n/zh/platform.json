@@ -416,7 +416,9 @@
         "openApprovals": "打开审批中心",
         "resumeFailed": "无法恢复工具调用。已完成或已拒绝的请求不会重新执行。",
         "loadFailed": "无法通过已保存的连接获取 MCP 工具列表。",
-        "selectConnectionBeforeLoad": "请先选择连接再获取 MCP 工具列表。"
+        "selectConnectionBeforeLoad": "请先选择连接再获取 MCP 工具列表。",
+        "inputRequiredTitle": "服务器需要补充输入后才能继续",
+        "inputRequiredHint": "这是 MCP 多轮往返（MRTR）：补全答案后携带 request_state 重试同一请求即可继续。"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",

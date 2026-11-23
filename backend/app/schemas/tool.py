@@ -458,6 +458,11 @@ class ToolExecuteResponse(BaseModel):
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
     pending_approval: bool = False
     execution_id: UUID | None = None
+    # A modern MCP server can park a call until the caller answers; the panel
+    # must not render that state as a plain failure.
+    input_required: dict[str, Any] | None = Field(
+        default=None, description="MCP input_required 请求（待补全）"
+    )
 
 
 class CodeExecuteRequest(BaseModel):
