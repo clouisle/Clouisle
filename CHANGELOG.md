@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Skill packages are pushed into the session workspace through the sandbox job payload when the sandbox session is created, so a worker node never reads shared or distributed storage. Sync is bound to the workspace generation and re-runs automatically after a reset, replacing the previous per-call package upload.
+- Skill packages are pushed into the session workspace through the sandbox job payload as the first sandbox round begins, so a worker node never reads shared or distributed storage. Sync is bound to the workspace generation and re-runs automatically after a reset or a checkpoint rollback, replacing the previous per-call package upload.
 - Added an administrator-configurable global watermark for signed-in pages (`/site-settings/watermark`, off by default). The overlay renders a per-user template (`{username}`, `{email}`, `{site_name}`, `{date}`, `{time}`) with configurable opacity, font size, rotation, tile spacing and color, delivered through the public site-settings endpoint and mounted only in the dashboard, platform and chat route groups — never on sign-in or embedded surfaces.
 
 ## [0.3.0] - 2026-11-01

@@ -190,8 +190,12 @@ class Settings(BaseSettings):
     # Skill packages are pushed into a session workspace through the job API,
     # never read from shared storage by the worker node. Sessions carry the
     # payload bound so a single job cannot exceed the broker message size.
+    # The bound is measured on the encoded payload, while import caps the raw
+    # package (``_MAX_PACKAGE_PAYLOAD_BYTES`` = 50 MiB); base64 inflates by 4/3,
+    # so the default must stay above ~67 MiB or a package that imports fine can
+    # never be delivered.
     SKILL_SYNC_MAX_TOTAL_BYTES: int = Field(
-        default=64 * 1024 * 1024, gt=0, le=256 * 1024 * 1024
+        default=72 * 1024 * 1024, gt=0, le=256 * 1024 * 1024
     )
     SKILL_SYNC_TIMEOUT_SECONDS: float = Field(default=120.0, gt=0, le=600)
 

@@ -155,11 +155,11 @@ class SkillPackageService:
         if not parsed.name:
             parsed.errors.append("skill_name_required")
         else:
-            parsed.errors.extend(
-                SkillPackageService._validate_name(
-                    parsed.name, directory_name=skill_root.name
-                )
+            name_errors, name_warnings = SkillPackageService._validate_name(
+                parsed.name, directory_name=skill_root.name
             )
+            parsed.errors.extend(name_errors)
+            parsed.warnings.extend(name_warnings)
         if not parsed.description:
             parsed.errors.append("skill_description_required")
         elif len(parsed.description) > MAX_DESCRIPTION_LENGTH:
@@ -192,21 +192,26 @@ class SkillPackageService:
         return parsed
 
     @staticmethod
-    def _validate_name(name: str, *, directory_name: str) -> list[str]:
+    def _validate_name(
+        name: str, *, directory_name: str
+    ) -> tuple[list[str], list[str]]:
         """Validate ``name`` against the Agent Skills specification.
 
         The spec requires lowercase alphanumerics and single hyphens, and the
-        containing directory must carry the same name. A directory mismatch only
-        warns: packages re-packed by users commonly keep an older folder name.
+        containing directory should carry the same name. A directory mismatch
+        only warns: packages re-packed by users commonly keep an older folder
+        name, and the name field is what the workspace directory is derived
+        from, so the mismatch cannot change where the package is staged.
         """
         errors: list[str] = []
+        warnings: list[str] = []
         if len(name) > MAX_NAME_LENGTH:
             errors.append("skill_name_too_long")
         if not _NAME_PATTERN.match(name):
             errors.append("skill_name_invalid")
         elif directory_name and directory_name != name:
-            errors.append("skill_name_directory_mismatch")
-        return errors
+            warnings.append("skill_name_directory_mismatch")
+        return errors, warnings
 
     @staticmethod
     def parse_skill_md(skill_md: str) -> tuple[dict[str, Any], str, list[str]]:

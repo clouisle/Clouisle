@@ -216,7 +216,10 @@ class SkillExecutor:
             arguments=arguments,
             config=merged_config,
             skill_root=SkillWorkspaceSync.skill_root(skill),
-            staged=bool(session_id),
+            # Legacy rows imported before package files existed have nothing to
+            # stage; reporting them as staged would point the model at a
+            # directory that was never created.
+            staged=bool(session_id and SkillWorkspaceSync.skill_files(skill)),
         )
 
     @staticmethod

@@ -44,7 +44,13 @@ def make_skill(**overrides) -> Skill:
             "file_count": 2,
         },
         "skill_spec": {
-            "package_files": [],
+            "package_files": [
+                {
+                    "path": "scripts/run.py",
+                    "content_base64": "cHJpbnQoMSk=",
+                    "mode": 0o755,
+                }
+            ],
         },
         "config_schema": {},
         "default_config": {"mode": "safe"},
@@ -145,6 +151,24 @@ async def test_execute_skill_syncs_package_into_session_workspace():
         team_id="team-1",
         agent_id="agent-1",
     )
+
+
+@pytest.mark.anyio
+async def test_legacy_skill_without_package_files_is_not_reported_as_staged():
+    """Rows imported before package files existed have no workspace directory."""
+    skill = make_skill(skill_spec={"package_files": []})
+
+    with patch(
+        "app.services.skill_executor.SkillWorkspaceSync.ensure_skills",
+        new=AsyncMock(return_value=[]),
+    ):
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments={"text": "hello"},
+            session_id="session-1",
+        )
+
+    assert result.result["files_staged"] is False
 
 
 @pytest.mark.anyio

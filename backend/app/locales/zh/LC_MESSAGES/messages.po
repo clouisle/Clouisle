@@ -2104,6 +2104,9 @@ msgstr "角色更新成功"
 msgid "role_with_name_exists"
 msgstr "该角色名已存在"
 
+msgid "wildcard_permission_superuser_only"
+msgstr "只有超级管理员可以授予通配符权限"
+
 msgid "pika_request_timeout"
 msgstr "Pika 请求超时"
 

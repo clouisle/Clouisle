@@ -2152,6 +2152,9 @@ msgstr "Role updated successfully"
 msgid "role_with_name_exists"
 msgstr "Role with this name already exists"
 
+msgid "wildcard_permission_superuser_only"
+msgstr "Only a superuser can grant the wildcard permission"
+
 msgid "pika_request_timeout"
 msgstr "Pika request timeout"
 

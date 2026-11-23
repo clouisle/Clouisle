@@ -422,10 +422,10 @@
   - [x] 4. Skills import API, permissions, audit, and i18n
   - [x] 5. Skill tool definition and instructions execution
   - [x] 6. Frontend import, preview, install, and detail UI
-  - [x] 7. Agent selection and security/regression tests
-  - [x] 8. Standard alignment: spec frontmatter, `allowed-tools`, and deprecation of `x-clouisle.execution`
-  - [x] 9. Session-created workspace sync of Skill packages through the sandbox job payload
-  - [ ] 10. Frontend Skill test panel and documentation refresh
+  - [x] 7. Agent selection and security/regression tests (backend suite only; cross-host failover and script execution for Git-imported Skills remain unverified)
+  - [x] 8. Standard alignment: spec frontmatter, `allowed-tools`, and deprecation of `x-[REDACTED].execution`
+  - [x] 9. Workspace sync of Skill packages through the sandbox job payload, including reset and checkpoint-rollback invalidation
+  - [x] 10. Frontend Skill test panel and documentation refresh
 
 - **sandbox-runtime-migration** — In progress. Migrate subprocess-based code execution to a long-running sandbox worker runtime that supports Python/JS package installation, CLI and custom command execution, skill compilation, and compatibility bridges for tools, chat, and workflow code nodes. See `docs/plan/sandbox-runtime-migration.md`
   - [ ] 1. Runtime contracts, policies, and compatibility schema

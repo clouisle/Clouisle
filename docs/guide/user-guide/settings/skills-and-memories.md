@@ -30,7 +30,7 @@ allowed-tools: Bash Read
 Run `scripts/extract.py <file>` and summarise the result.
 ```
 
-- `name` and `description` are required. `name` uses lowercase letters, digits, and single hyphens, is at most 64 characters, and should match the package directory name; `description` is at most 1024 characters.
+- `name` and `description` are required. `name` uses lowercase letters, digits, and single hyphens, is at most 64 characters, and should match the package directory name (a mismatch is an import warning, not an error); `description` is at most 1024 characters.
 - `license`, `compatibility`, `metadata`, and `allowed-tools` are optional. `allowed-tools` is a space-separated list of the tools the Skill expects to use; Clouisle passes it to the model as guidance.
 - There is no execution declaration. Scripts are run by the Agent with its sandbox tools (`bash`, `read`, `write`, `artifact`), exactly as the specification intends.
 - Older packages may still carry an `x-clouisle.execution` block. It is ignored and reported as an import warning.
@@ -45,17 +45,17 @@ Navigate to **Capabilities > Skills** from the workspace navigation:
    - **Import from ZIP**: upload a `.zip` bundle; every directory containing `SKILL.md` is previewed separately.
    - **Import from Git**: point at a public HTTPS repository and branch, tag, or commit; the whole checkout is scanned for `SKILL.md`.
 2. **Select and install**: pick the scanned Skills, resolve conflicts with update/skip, then install.
-3. **Attach to Agent**: open the Agent editor under **Apps > Agents > Edit** and enable the Skill in the **Tools & Skills** selector. Enable at least the `bash` tool (plus `read`/`write`/`artifact`) so the Agent can run and produce files.
+3. **Attach to Agent**: open the Agent editor under **Apps > Agents > Edit** and enable the Skill in the **Tools & Skills** selector. The sandbox tools the Skill needs (`read`, `edit`, `write`, `bash`, `artifact`) are added to the Agent automatically once it has a Skill, so there is nothing else to enable.
 
 ---
 
 ## 4. How Skills reach the sandbox
 
-When a chat or Agent run starts, Clouisle creates a sandbox session and pushes each enabled Skill package into that session's workspace through the sandbox job API. The worker node receives the package bytes in the job payload; it never reads shared or distributed storage. Files land under `/workspace/skills/<name>/`:
+When a chat or Agent run starts, [REDACTED] creates a sandbox session and pushes each enabled Skill package into that session's workspace through the sandbox job API as the first sandbox round begins. The worker node receives the package bytes in the job payload; it never reads shared or distributed storage. Files land under `/workspace/skills/<name>/`:
 
 - The first Skill call returns the `SKILL.md` body, the file inventory, and the Skill root path.
 - The Agent then reads `references/`, runs `scripts/`, and writes results to `/workspace/output`, where the `artifact` tool generates download links.
-- A workspace reset invalidates the copy, and the next Skill call pushes the package again.
+- A workspace reset, or a checkpoint rollback that replaces the workspace content, invalidates the copy, and the next Skill call pushes the package again. This is verified in a two-worker local setup; cross-host failover is not yet covered by tests.
 
 ---
 

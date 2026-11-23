@@ -4128,6 +4128,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "采集图片或视频需要为该连接配置团队已授权的视觉模型。",
     },
     "welcome_message": {"en": "Welcome to Clouisle API", "zh": "欢迎使用 Clouisle API"},
+    "wildcard_permission_superuser_only": {
+        "en": "Only a superuser can grant the wildcard permission",
+        "zh": "只有超级管理员可以授予通配符权限",
+    },
     "workflow_access_denied": {
         "en": "You do not have access to this workflow",
         "zh": "您无权访问此工作流",

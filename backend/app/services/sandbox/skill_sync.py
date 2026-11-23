@@ -85,12 +85,13 @@ class SkillWorkspaceSync:
         skills: Sequence[Skill],
         team_id: str | None = None,
         agent_id: str | None = None,
-        force: bool = False,
     ) -> list[str]:
         """Push every Skill the session is missing and return the synced IDs.
 
         The recorded state is bound to the workspace generation, so a reset or
-        recovery invalidates it and the next caller syncs again.
+        recovery invalidates it and the next caller syncs again. A generation
+        change *during* a push means the workspace was replaced underneath the
+        job, so that push is not recorded and the whole set is retried once.
         """
         pending: list[SkillPackage] = []
         for skill in skills:
@@ -103,25 +104,65 @@ class SkillWorkspaceSync:
         if not pending:
             return []
 
-        binding = await sandbox_session_store.get_binding(session_id)
-        generation = binding.generation if binding else None
-        state = await sandbox_session_store.get_skill_sync(session_id)
-        synced = (
-            {}
-            if force or state is None or state.generation != generation
-            else dict(state.skills)
+        for _attempt in range(2):
+            binding = await sandbox_session_store.get_binding(session_id)
+            generation = binding.generation if binding else None
+            state = await sandbox_session_store.get_skill_sync(session_id)
+            synced = (
+                {}
+                if state is None or state.generation != generation
+                else dict(state.skills)
+            )
+
+            missing = [
+                entry
+                for entry in pending
+                if synced.get(str(entry[0].id)) != (entry[0].package_hash or "")
+            ]
+            if not missing:
+                return []
+
+            synced_ids, replaced = await cls._push(
+                session_id=session_id,
+                chunks=cls._chunk_by_payload(missing),
+                generation=generation,
+                synced=synced,
+                team_id=team_id,
+                agent_id=agent_id,
+            )
+            if not replaced:
+                logger.info(
+                    "Synced %d Skill package(s) into sandbox session %s",
+                    len(synced_ids),
+                    session_id,
+                )
+                return synced_ids
+            logger.warning(
+                "Sandbox workspace was replaced while Skills were syncing for "
+                "session %s; retrying",
+                session_id,
+            )
+
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="skill_package_sync_failed",
+            status_code=502,
         )
 
-        missing = [
-            entry
-            for entry in pending
-            if synced.get(str(entry[0].id)) != (entry[0].package_hash or "")
-        ]
-        if not missing:
-            return []
-
+    @classmethod
+    async def _push(
+        cls,
+        *,
+        session_id: str,
+        chunks: list[list[SkillPackage]],
+        generation: int | None,
+        synced: dict[str, str],
+        team_id: str | None,
+        agent_id: str | None,
+    ) -> tuple[list[str], bool]:
+        """Push chunks, recording progress only while the workspace is stable."""
         synced_ids: list[str] = []
-        for chunk in cls._chunk_by_payload(missing):
+        for chunk in chunks:
             job = cls._build_job(chunk)
             result = await sandbox_gateway.submit_and_wait(
                 job,
@@ -141,24 +182,27 @@ class SkillWorkspaceSync:
                     msg_key="skill_package_sync_failed",
                     status_code=502,
                 )
+            recorded = generation
+            if recorded is None and result.binding is not None:
+                # No binding existed when the push started; adopt the one the
+                # gateway published so later calls can compare against it.
+                recorded = result.binding.generation
+            if (
+                generation is not None
+                and result.binding
+                and result.binding.generation != generation
+            ):
+                # Content landed in a workspace that is already gone; recording
+                # it would make every later call skip the Skill.
+                return synced_ids, True
             for skill, _files in chunk:
                 synced[str(skill.id)] = skill.package_hash or ""
                 synced_ids.append(str(skill.id))
-            synced_generation = (
-                result.binding.generation if result.binding else generation
-            )
             await sandbox_session_store.set_skill_sync(
                 session_id,
-                SandboxSkillSyncState(
-                    generation=synced_generation, skills=dict(synced)
-                ),
+                SandboxSkillSyncState(generation=recorded, skills=dict(synced)),
             )
-        logger.info(
-            "Synced %d Skill package(s) into sandbox session %s",
-            len(synced_ids),
-            session_id,
-        )
-        return synced_ids
+        return synced_ids, False
 
     @classmethod
     def _chunk_by_payload(

@@ -78,7 +78,7 @@ Run it.
         ("pdf--tools", ["skill_name_invalid"]),
         ("-pdf", ["skill_name_invalid"]),
         ("pdf_tools", ["skill_name_invalid"]),
-        ("a" * 65, ["skill_name_too_long", "skill_name_directory_mismatch"]),
+        ("a" * 65, ["skill_name_too_long"]),
     ],
 )
 def test_parse_skill_rejects_non_spec_names(tmp_path: Path, name, expected_errors):
@@ -111,7 +111,11 @@ Run it.
 
     parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
 
-    assert parsed.errors == ["skill_name_directory_mismatch"]
+    # A mismatched directory name is a warning: the Skill name drives the
+    # workspace path, so the older folder name cannot break staging.
+    assert parsed.valid is True
+    assert parsed.errors == []
+    assert "skill_name_directory_mismatch" in parsed.warnings
 
 
 def test_parse_skill_rejects_overlong_description(tmp_path: Path):
