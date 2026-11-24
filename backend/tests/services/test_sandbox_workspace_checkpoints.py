@@ -10,6 +10,7 @@ import os
 import errno
 import stat
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
@@ -21,7 +22,11 @@ from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 
 @pytest.fixture
-def manager(tmp_path: Path) -> SandboxWorkspaceManager:
+def manager(tmp_path: Path, monkeypatch) -> SandboxWorkspaceManager:
+    # Use the interpreter running the suite instead of the host's system Python.
+    monkeypatch.setattr(
+        workspace_module.settings, "SANDBOX_DEFAULT_PYTHON_BINARIES", [sys.executable]
+    )
     return SandboxWorkspaceManager(
         root=str(tmp_path / "jobs"), checkpoint_root=str(tmp_path / "checkpoints")
     )
