@@ -271,3 +271,41 @@ async def test_log_level_meta_branch_follows_the_negotiated_version():
     assert mcp._log_level_uses_meta("2025-11-25") is False
     assert mcp._log_level_uses_meta(None) is False
     assert mcp.LOG_LEVEL_META_MIN_PROTOCOL_VERSION == "2026-07-28"
+
+
+async def test_the_opt_in_survives_a_round_trip_through_the_tool_schema():
+    """The flag has to be a declared field, or saving a tool drops it.
+
+    ``McpConfigSchema`` ignores unknown keys, so an undeclared
+    ``server_log_level`` would vanish on every API save and the opt-in would be
+    unreachable through the UI.
+    """
+    from app.schemas.tool import McpConfigSchema
+
+    saved = McpConfigSchema.model_validate(
+        {"transport": "http", "url": "https://mcp.test", "server_log_level": "warning"}
+    )
+    assert saved.server_log_level == "warning"
+
+    reloaded = McpConfigSchema.model_validate_json(saved.model_dump_json())
+    assert reloaded.server_log_level == "warning"
+    assert mcp.server_logging_from_config(reloaded.model_dump()) is not None
+
+
+async def test_the_default_is_no_forwarding():
+    from app.schemas.tool import McpConfigSchema
+
+    default = McpConfigSchema(transport="http", url="https://mcp.test")
+    assert default.server_log_level is None
+    assert mcp.server_logging_from_config(default.model_dump()) is None
+
+
+async def test_an_unknown_level_is_rejected_at_the_schema_boundary():
+    from pydantic import ValidationError
+
+    from app.schemas.tool import McpConfigSchema
+
+    with pytest.raises(ValidationError):
+        McpConfigSchema.model_validate(
+            {"transport": "http", "url": "https://mcp.test", "server_log_level": "loud"}
+        )

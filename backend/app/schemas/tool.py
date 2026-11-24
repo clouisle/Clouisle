@@ -220,6 +220,24 @@ class McpConfigSchema(BaseModel):
     max_sampling_requests: int = Field(default=4, ge=0, le=20)
     max_elicitation_requests: int = Field(default=4, ge=0, le=20)
     sampling_max_tokens: int = Field(default=1024, ge=1, le=8192)
+    # 服务器日志转发的开关与级别。不设置即完全关闭：不适回调，也不请求任何级别。
+    # 允许的取值与适配层一致（mcp_client._SERVER_LOG_LEVELS）。
+    server_log_level: (
+        Literal[
+            "debug",
+            "info",
+            "notice",
+            "warning",
+            "error",
+            "critical",
+            "alert",
+            "emergency",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description="转发 MCP 服务器日志通知的级别（不设置则不转发）",
+    )
     # 声明 tasks 能力后，长耗时工具会先创建服务器侧任务，再轮询取结果；
     # 平台开关 MCP_TASKS_ENABLED 必须同时为真。
     enable_tasks: bool = Field(
