@@ -328,7 +328,11 @@ async def test_enabling_image_understanding_requires_configured_vision_model(
     monkeypatch.setattr(
         site_settings.SiteSetting,
         "get_value",
-        AsyncMock(return_value=model_id),
+        AsyncMock(
+            side_effect=lambda key, default=None: (
+                model_id if key == "kb_image_understanding_model_id" else default
+            )
+        ),
     )
     monkeypatch.setattr(
         site_settings.Model, "filter", lambda **_kwargs: Query(value=vision_model)
@@ -1023,14 +1027,25 @@ async def test_private_permission_migration_marker_is_not_manageable(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_kb_image_ocr_model_is_optional_and_requires_image_capability(
-    monkeypatch,
-):
+async def test_kb_image_ocr_model_requires_the_dedicated_ocr_type(monkeypatch):
     monkeypatch.setattr(
         site_settings.SiteSetting, "get_value", AsyncMock(return_value=False)
     )
     await _validate_setting_value("kb_image_ocr_model_id", "")
 
+    ocr_model = SimpleNamespace(
+        capabilities={"input_modalities": ["image"]},
+        is_enabled=True,
+        model_type="ocr",
+        provider="mistral",
+    )
+    monkeypatch.setattr(
+        site_settings.Model, "filter", lambda **_kwargs: Query(value=ocr_model)
+    )
+    await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
+
+    # A vision chat model transcribes text, but the OCR slot is reserved for the
+    # dedicated OCR type so the call path never depends on which one is configured.
     vision_model = SimpleNamespace(
         capabilities={"input_modalities": ["text", "image"]},
         is_enabled=True,
@@ -1040,29 +1055,65 @@ async def test_kb_image_ocr_model_is_optional_and_requires_image_capability(
     monkeypatch.setattr(
         site_settings.Model, "filter", lambda **_kwargs: Query(value=vision_model)
     )
-    await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
-
-    text_model = SimpleNamespace(
-        capabilities={"input_modalities": ["text"]},
-        is_enabled=True,
-        model_type="chat",
-        provider="openai",
-    )
-    monkeypatch.setattr(
-        site_settings.Model, "filter", lambda **_kwargs: Query(value=text_model)
-    )
     with pytest.raises(BusinessError) as exc_info:
         await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
     assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
 
 
 @pytest.mark.asyncio
+async def test_kb_image_ocr_model_rejects_a_malformed_identifier():
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_ocr_model_id", "not-a-uuid")
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_kb_image_ocr_model_rejects_a_non_string_value():
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_ocr_model_id", 123)
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_kb_image_understanding_model_rejects_a_non_string_value():
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_understanding_model_id", 123)
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_clearing_ocr_model_allowed_with_vision_model_and_rejected_without(
+    monkeypatch,
+):
+    async def values(key, default=None):
+        if key == "kb_image_understanding_enabled":
+            return True
+        if key == "kb_image_understanding_model_id":
+            return str(uuid4())
+        return default
+
+    monkeypatch.setattr(site_settings.SiteSetting, "get_value", values)
+    # Emptying the OCR slot falls back to the vision model for both roles.
+    await _validate_setting_value("kb_image_ocr_model_id", "")
+
+    async def no_vision(key, default=None):
+        if key == "kb_image_understanding_enabled":
+            return True
+        return ""
+
+    monkeypatch.setattr(site_settings.SiteSetting, "get_value", no_vision)
+    with pytest.raises(BusinessError) as exc_info:
+        await _validate_setting_value("kb_image_ocr_model_id", "")
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
 async def test_enabling_image_understanding_accepts_ocr_only(monkeypatch):
     ocr_model = SimpleNamespace(
-        capabilities={"input_modalities": ["text", "image"]},
+        capabilities={"input_modalities": ["image"]},
         is_enabled=True,
-        model_type="chat",
-        provider="openai",
+        model_type="ocr",
+        provider="mistral",
     )
     monkeypatch.setattr(
         site_settings.Model, "filter", lambda **_kwargs: Query(value=ocr_model)

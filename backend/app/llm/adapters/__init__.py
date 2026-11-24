@@ -12,6 +12,7 @@ from .audio import (
 )
 from .rerank import create_rerank_adapter
 from .decision import create_decision_adapter
+from .ocr import create_ocr_adapter
 from .video import create_video_adapter
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "create_embedding_model",
     "create_rerank_adapter",
     "create_decision_adapter",
+    "create_ocr_adapter",
     "create_image_adapter",
     "create_video_adapter",
     "create_tts_adapter",

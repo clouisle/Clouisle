@@ -36,6 +36,7 @@ const IMAGE_INPUT_PROVIDERS: Record<string, true> = {
   ollama: true,
   anthropic: true,
   google: true,
+  mistral: true,
   custom: true,
 }
 const NO_MODEL_VALUE = '__none__'
@@ -62,6 +63,7 @@ export default function SiteSettingsParsingPage() {
   const canUpdateSettings = canPerform('admin:settings:update')
   const [settings, setSettings] = React.useState<KnowledgeBaseImageSettings>(DEFAULTS)
   const [imageModels, setImageModels] = React.useState<Model[]>([])
+  const [ocrModels, setOcrModels] = React.useState<Model[]>([])
   const [loading, setLoading] = React.useState(true)
   const [settingsReady, setSettingsReady] = React.useState(false)
   const [modelsLoading, setModelsLoading] = React.useState(true)
@@ -72,7 +74,7 @@ export default function SiteSettingsParsingPage() {
   const selectedModelLabel = selectedModel
     ? `${selectedModel.provider_display_name?.trim() || selectedModel.provider} / ${selectedModel.name}`
     : t('parsingSettings.modelNone')
-  const selectedOcrModel = imageModels.find((model) => model.id === settings.kb_image_ocr_model_id)
+  const selectedOcrModel = ocrModels.find((model) => model.id === settings.kb_image_ocr_model_id)
   const selectedOcrModelLabel = selectedOcrModel
     ? `${selectedOcrModel.provider_display_name?.trim() || selectedOcrModel.provider} / ${selectedOcrModel.name}`
     : t('parsingSettings.ocrModelNone')
@@ -83,7 +85,7 @@ export default function SiteSettingsParsingPage() {
     setModelsLoading(true)
     const [settingsResult, modelsResult] = await Promise.allSettled([
       siteSettingsApi.getKnowledgeBaseImages(),
-      modelsApi.getModels({ model_type: ['chat'], is_enabled: true, pageSize: 100 }),
+      modelsApi.getModels({ model_type: ['chat', 'ocr'], is_enabled: true, pageSize: 100 }),
     ])
 
     if (settingsResult.status === 'fulfilled') {
@@ -94,27 +96,45 @@ export default function SiteSettingsParsingPage() {
     }
 
     if (modelsResult.status === 'fulfilled') {
-      const models = (modelsResult.value.items || []).filter((model) => {
+      // The description slot needs a chat model that understands images; the OCR
+      // slot needs a dedicated OCR model, which takes the image alone and never
+      // a prompt. A vision chat model cannot occupy the OCR slot.
+      const imageCapable = (modelsResult.value.items || []).filter((model) => {
         const modalities = model.capabilities?.input_modalities
         return Boolean(IMAGE_INPUT_PROVIDERS[model.provider])
           && Array.isArray(modalities)
           && modalities.includes('image')
       })
-      if (settingsResult.status === 'fulfilled') {
-        const missingIds = [
-          settingsResult.value.kb_image_understanding_model_id,
-          settingsResult.value.kb_image_ocr_model_id,
-        ].filter((id) => id && !models.some((model) => model.id === id))
-        const savedModels = await Promise.allSettled(
-          missingIds.map((id) => modelsApi.getModel(id)),
-        )
-        for (const result of savedModels) {
-          if (result.status === 'fulfilled' && !models.some((model) => model.id === result.value.id)) {
-            models.push(result.value)
-          }
-        }
-      }
-      setImageModels(models)
+      const chatModels = imageCapable.filter((model) => model.model_type === 'chat')
+      const ocrCapable = imageCapable.filter((model) => model.model_type === 'ocr')
+      // A saved model may have been disabled since it was chosen, or saved in the
+      // OCR slot before that slot required the dedicated type. Surface it so the
+      // select still shows the configured value instead of an empty trigger.
+      const savedSlots: Array<[string, typeof chatModels]> = [
+        [
+          settingsResult.status === 'fulfilled'
+            ? settingsResult.value.kb_image_understanding_model_id
+            : '',
+          chatModels,
+        ],
+        [
+          settingsResult.status === 'fulfilled'
+            ? settingsResult.value.kb_image_ocr_model_id
+            : '',
+          ocrCapable,
+        ],
+      ]
+      const missingSlots = savedSlots.filter(
+        ([id, models]) => Boolean(id) && !models.some((model) => model.id === id),
+      )
+      const savedModels = await Promise.allSettled(
+        missingSlots.map(([id]) => modelsApi.getModel(id)),
+      )
+      savedModels.forEach((result, index) => {
+        if (result.status === 'fulfilled') missingSlots[index][1].push(result.value)
+      })
+      setImageModels(chatModels)
+      setOcrModels(ocrCapable)
     } else {
       console.error('Failed to load image-capable models:', modelsResult.reason)
     }
@@ -265,7 +285,7 @@ export default function SiteSettingsParsingPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_MODEL_VALUE}>{t('parsingSettings.ocrModelNone')}</SelectItem>
-                {imageModels.map((model) => (
+                {ocrModels.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {`${model.provider_display_name?.trim() || model.provider} / ${model.name}`}
                   </SelectItem>

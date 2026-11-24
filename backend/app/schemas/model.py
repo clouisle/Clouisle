@@ -8,16 +8,61 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import ConfigDict, BaseModel, Field, field_validator
+from pydantic import ConfigDict, BaseModel, Field, ValidationInfo, field_validator
 import re
 
 
 _MODEL_MODALITIES = frozenset({"text", "image", "audio", "video", "file"})
+# Modalities each model type may declare. Chat is the only type addressed as a
+# conversation over arbitrary media; every other type has a fixed shape. OCR
+# recognizes text from an image or document and never takes a text prompt, while
+# embedding, rerank, and decision models return vectors or scores rather than a
+# media modality, so their output set is empty.
+_MODEL_TYPE_MODALITIES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "chat": (
+        frozenset({"text", "image", "audio", "video", "file"}),
+        frozenset({"text", "image", "audio", "video", "file"}),
+    ),
+    "ocr": (frozenset({"image", "file"}), frozenset({"text"})),
+    "tts": (frozenset({"text"}), frozenset({"audio"})),
+    "stt": (frozenset({"audio"}), frozenset({"text"})),
+    "audio_generation": (frozenset({"text"}), frozenset({"audio"})),
+    "text_to_image": (frozenset({"text"}), frozenset({"image"})),
+    "text_to_video": (frozenset({"text"}), frozenset({"video"})),
+    "embedding": (frozenset({"text"}), frozenset()),
+    "rerank": (frozenset({"text"}), frozenset()),
+    "decision": (frozenset({"text"}), frozenset()),
+}
 _MIME_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
 
 
-def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Validate canonical modality declarations while retaining extension keys."""
+def _resolve_model_type(
+    model_type: "ModelType | str | None",
+) -> "ModelType | None":
+    """Return the enum member for a declared type, or None when unconstrained."""
+    if model_type is None:
+        return None
+    return model_type if isinstance(model_type, ModelType) else ModelType(model_type)
+
+
+def _allowed_modalities(
+    model_type: "ModelType | None",
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return the input and output modalities ``model_type`` accepts."""
+    if model_type is None:
+        return _MODEL_MODALITIES, _MODEL_MODALITIES
+    return _MODEL_TYPE_MODALITIES[model_type.value]
+
+
+def validate_model_capabilities(
+    value: dict[str, Any] | None, model_type: "ModelType | str | None" = None
+) -> dict[str, Any] | None:
+    """Validate canonical modality declarations while retaining extension keys.
+
+    Declarations are always checked against the modality vocabulary and, when
+    ``model_type`` is supplied, against the modalities that type can accept, so
+    an OCR model cannot claim a text prompt or a non-text answer.
+    """
     if value is None:
         return None
     if not isinstance(value, dict):
@@ -30,7 +75,13 @@ def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] 
             ["text", "image"] if legacy_vision else ["text"]
         )
 
-    for key in ("input_modalities", "output_modalities"):
+    resolved = _resolve_model_type(model_type)
+    allowed_input, allowed_output = _allowed_modalities(resolved)
+
+    for key, allowed in (
+        ("input_modalities", allowed_input),
+        ("output_modalities", allowed_output),
+    ):
         modalities = capabilities.get(key)
         if modalities is None and key not in capabilities:
             continue
@@ -41,6 +92,17 @@ def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] 
             raise ValueError(
                 f"{key} must be a list of text, image, audio, video, or file"
             )
+        # ``allowed`` is the full vocabulary when the type is unknown, so the
+        # per-type check only has meaning once a type is declared.
+        if resolved is not None:
+            unsupported = sorted(
+                {modality for modality in modalities if modality not in allowed}
+            )
+            if unsupported:
+                raise ValueError(
+                    f"{key} cannot declare {', '.join(unsupported)} "
+                    f"for model type '{resolved.value}'"
+                )
 
     input_limits = capabilities.get("input_limits")
     if input_limits is not None:
@@ -49,6 +111,11 @@ def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] 
         for modality, limits in input_limits.items():
             if modality not in _MODEL_MODALITIES:
                 raise ValueError(f"input_limits.{modality} has an unsupported modality")
+            if resolved is not None and modality not in allowed_input:
+                raise ValueError(
+                    f"input_limits.{modality} is not an input modality "
+                    f"of model type '{resolved.value}'"
+                )
             if not isinstance(limits, dict):
                 raise ValueError(f"input_limits.{modality} must be an object")
             max_bytes = limits.get("max_bytes")
@@ -74,8 +141,13 @@ def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] 
     return capabilities
 
 
-def _validate_capabilities_field(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    return validate_model_capabilities(value)
+def _validate_capabilities_field(
+    value: dict[str, Any] | None, info: ValidationInfo
+) -> dict[str, Any] | None:
+    # ``model_type`` precedes ``capabilities`` in ModelCreate, so it is already
+    # resolved here. ModelUpdate omits it and re-validates in the endpoint
+    # against the stored model type.
+    return validate_model_capabilities(value, info.data.get("model_type"))
 
 
 class ModelProvider(str, Enum):
@@ -113,6 +185,9 @@ class ModelProvider(str, Enum):
     # Decision models (non-generative typed decisions)
     TYPESAFE = "typesafe"
 
+    # OCR / document understanding
+    MISTRAL = "mistral"
+
     # Custom/OpenAI-compatible
     CUSTOM = "custom"
 
@@ -129,6 +204,7 @@ class ModelType(str, Enum):
     TEXT_TO_IMAGE = "text_to_image"
     TEXT_TO_VIDEO = "text_to_video"
     DECISION = "decision"
+    OCR = "ocr"
 
 
 class ProviderInfo(BaseModel):

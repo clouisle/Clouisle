@@ -31,6 +31,7 @@ class ModelProvider(str, Enum):
     VOLCENGINE = "volcengine"  # 火山引擎 (豆包)
     SILICONFLOW = "siliconflow"
     XAI = "xai"  # Grok
+    MISTRAL = "mistral"
 
     # Local deployment
     OLLAMA = "ollama"
@@ -64,6 +65,7 @@ class ModelType(str, Enum):
     TEXT_TO_IMAGE = "text_to_image"  # Text-to-image generation
     TEXT_TO_VIDEO = "text_to_video"  # Text-to-video generation
     DECISION = "decision"  # Typed decision models (choice/score/yes-no)
+    OCR = "ocr"  # Text recognition over images and documents
 
 
 # Provider default configurations (base URLs, etc.)
@@ -137,6 +139,11 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
         "name": "xAI (Grok)",
         "base_url": "https://api.x.ai/v1",
         "icon": "xai",
+    },
+    ModelProvider.MISTRAL: {
+        "name": "Mistral AI",
+        "base_url": "https://api.mistral.ai/v1",
+        "icon": "mistral",
     },
     ModelProvider.OLLAMA: {
         "name": "Ollama",

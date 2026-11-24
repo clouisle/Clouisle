@@ -31,6 +31,7 @@ from app.schemas.model import (
     ModelTestResponse,
     ModelProvider,
     ModelType,
+    validate_model_capabilities,
 )
 from app.schemas.response import (
     Response,
@@ -97,6 +98,15 @@ DECISION_SUPPORTED_PROVIDERS: set[ModelProvider] = {
     ModelProvider.TYPESAFE,
 }
 
+# OCR models recognize text over images (and PDFs where the provider's document
+# endpoint accepts them). Only providers with an implemented recognition wire
+# format belong here.
+OCR_SUPPORTED_PROVIDERS: set[ModelProvider] = {
+    ModelProvider.QWEN,
+    ModelProvider.CUSTOM,
+    ModelProvider.MISTRAL,
+}
+
 
 def _validate_provider_model_type(
     provider: ModelProvider | str, model_type: ModelType | str
@@ -124,6 +134,13 @@ def _validate_provider_model_type(
 
     if model_type_enum == ModelType.DECISION:
         if provider_enum not in DECISION_SUPPORTED_PROVIDERS:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="model_type_not_supported",
+            )
+
+    if model_type_enum == ModelType.OCR:
+        if provider_enum not in OCR_SUPPORTED_PROVIDERS:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="model_type_not_supported",
@@ -226,6 +243,22 @@ async def update_model(
 
     update_data = model_in.model_dump(exclude_unset=True)
 
+    # ModelUpdate carries no model_type, so capabilities were only checked against
+    # the modality vocabulary. Re-check them against the stored type so an update
+    # cannot declare modalities the model cannot accept.
+    if update_data.get("capabilities") is not None:
+        try:
+            update_data["capabilities"] = validate_model_capabilities(
+                update_data["capabilities"], model.model_type
+            )
+        except ValueError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg=str(exc),
+                msg_key="validation_error",
+                status_code=422,
+            ) from exc
+
     if "api_key" in update_data:
         if update_data["api_key"] == "":
             update_data["api_key"] = None
@@ -325,6 +358,10 @@ async def test_model_connection(
             )
         elif model_type == ModelType.DECISION:
             await _test_decision_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
+        elif model_type == ModelType.OCR:
+            await _test_ocr_model(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
         elif model_type == ModelType.TEXT_TO_IMAGE:
@@ -468,6 +505,8 @@ async def test_model_config(
             await _test_rerank_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.DECISION:
             await _test_decision_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.OCR:
+            await _test_ocr_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
             await _test_image_model(
                 provider,
@@ -1237,6 +1276,45 @@ async def _test_decision_model(
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_test_empty_decision_result",
+        )
+
+
+# Smallest useful probe: a 1x1 transparent PNG. Recognition content is
+# irrelevant to a connection check; the provider only has to accept the payload.
+_OCR_PROBE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+
+async def _test_ocr_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = {}
+            self.max_output_tokens = None
+            self.config = config
+
+    from app.llm.adapters.ocr import create_ocr_adapter
+    from app.llm.types import MediaContent, OCRRequest
+
+    adapter = create_ocr_adapter(TempModel())
+    request = OCRRequest(
+        source=MediaContent(base64=_OCR_PROBE_PNG_BASE64, mime_type="image/png")
+    )
+
+    result = await adapter.recognize(request)
+
+    if not result.pages:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_ocr_result",
         )
 
 

@@ -600,4 +600,25 @@ describe('model management dialog', () => {
       default_params: { speaker: 'speaker-123', speed: 1.25 },
     }))
   })
+
+  test('offers the PDF modality only for Mistral OCR models', () => {
+    const ocrProviders = [
+      { code: 'mistral', base_url: 'https://api.mistral.test' },
+      { code: 'qwen', base_url: 'https://dashscope.test' },
+    ] as React.ComponentProps<typeof ModelDialog>['providers']
+    const ocrModelTypes = [{ code: 'ocr' }] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+    const renderer = render({ providers: ocrProviders, modelTypes: ocrModelTypes })
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'ocr' } }))
+
+    // Mistral's document endpoint accepts a PDF alongside the image.
+    selectProvider(renderer, 'mistral')
+    expect(JSON.stringify(renderer.toJSON())).toContain('modality.file')
+
+    // The OpenAI-compatible OCR endpoints take an image alone, so the PDF option
+    // must disappear rather than save a modality the backend drops.
+    selectProvider(renderer, 'qwen')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('modality.file')
+    expect(JSON.stringify(renderer.toJSON())).toContain('modality.image')
+  })
 })

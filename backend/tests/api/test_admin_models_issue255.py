@@ -665,3 +665,48 @@ async def test_model_persistence_errors_propagate(monkeypatch, operation):
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         await call
+
+
+@pytest.mark.anyio
+async def test_update_model_rejects_modalities_the_stored_type_cannot_accept(
+    monkeypatch,
+):
+    item = model(model_type="ocr", provider="mistral", model_id="pixtral-12b")
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(models.Model, "get", MagicMock(return_value=Query(item)))
+
+    with pytest.raises(BusinessError) as error:
+        await models.update_model(
+            item.id,
+            ModelUpdate(capabilities={"output_modalities": ["image"]}),
+            current_user=SimpleNamespace(),
+        )
+
+    assert error.value.code == ResponseCode.VALIDATION_ERROR
+    assert error.value.status_code == 422
+    assert "output_modalities cannot declare image" in str(error.value)
+    item.update_from_dict.assert_not_awaited()
+    item.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_update_model_accepts_modalities_the_stored_type_supports(monkeypatch):
+    item = model(model_type="ocr", provider="mistral", model_id="pixtral-12b")
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(models.Model, "get", MagicMock(return_value=Query(item)))
+
+    await models.update_model(
+        item.id,
+        ModelUpdate(
+            capabilities={
+                "input_modalities": ["image", "file"],
+                "output_modalities": ["text"],
+            }
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert item.update_from_dict.await_args.args[0]["capabilities"] == {
+        "input_modalities": ["image", "file"],
+        "output_modalities": ["text"],
+    }

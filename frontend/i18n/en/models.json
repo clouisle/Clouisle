@@ -233,6 +233,7 @@
       "siliconflow": "SiliconFlow",
       "volcengine": "Volcengine Ark",
       "typesafe": "TypeSafe AI",
+      "mistral": "Mistral AI",
       "custom": "OpenAI Compatible"
     },
     "providerGroups": {
@@ -247,6 +248,7 @@
       "embedding": "Embedding",
       "rerank": "Rerank",
       "decision": "Decision",
+      "ocr": "OCR",
       "tts": "Text to Speech",
       "stt": "Speech to Text",
       "audio_generation": "Audio Generation",

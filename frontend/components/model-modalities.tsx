@@ -22,6 +22,7 @@ const defaults: Record<string, { input: Modality[]; output: Modality[] }> = {
   embedding: { input: ['text'], output: ['embedding'] },
   rerank: { input: ['text'], output: ['ranking'] },
   decision: { input: ['text'], output: ['decision'] },
+  ocr: { input: ['image'], output: ['text'] },
   tts: { input: ['text'], output: ['audio'] },
   stt: { input: ['audio'], output: ['text'] },
   audio_generation: { input: ['text'], output: ['audio'] },

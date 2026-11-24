@@ -961,7 +961,7 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "type": "string",
         "category": "knowledge_base_images",
         "public": False,
-        "desc": "Optional image-capable chat model used only for OCR; empty reuses the vision model",
+        "desc": "Optional dedicated OCR model used only for text extraction; empty reuses the vision model",
     },
     "kb_image_understanding_allow_external": {
         "value": False,

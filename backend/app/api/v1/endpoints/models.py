@@ -103,6 +103,11 @@ async def get_model_types() -> Any:
             "name": "Decision",
             "description": "决策模型",
         },
+        {
+            "code": OrmModelType.OCR.value,
+            "name": "OCR",
+            "description": "文字识别模型",
+        },
     ]
     return success(data=types)
 

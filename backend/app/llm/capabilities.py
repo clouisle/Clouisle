@@ -41,6 +41,7 @@ _CHAT_ADAPTER_INPUTS: dict[ModelProvider, dict[ContentType, frozenset[str] | Non
     ModelProvider.OPENAI: {ContentType.IMAGE: _IMAGE_MIMES},
     ModelProvider.AZURE_OPENAI: {ContentType.IMAGE: _IMAGE_MIMES},
     ModelProvider.XAI: {ContentType.IMAGE: _IMAGE_MIMES},
+    ModelProvider.MISTRAL: {ContentType.IMAGE: _IMAGE_MIMES},
     ModelProvider.DEEPSEEK: {ContentType.IMAGE: _IMAGE_MIMES},
     ModelProvider.MOONSHOT: {ContentType.IMAGE: _IMAGE_MIMES},
     ModelProvider.ZHIPU: {ContentType.IMAGE: _IMAGE_MIMES},
@@ -71,6 +72,21 @@ _CHAT_ADAPTER_INPUTS: dict[ModelProvider, dict[ContentType, frozenset[str] | Non
         ContentType.VIDEO: _GOOGLE_VIDEO_MIMES,
         ContentType.FILE: frozenset({"application/pdf"}),
     },
+}
+
+
+_PDF_MIMES = frozenset({"application/pdf"})
+
+# OCR models are handed an image or a document and answer with text; they are
+# never addressed as a conversation, so TEXT is not a valid input modality for
+# them. Only providers with an implemented recognition wire format are listed.
+_OCR_ADAPTER_INPUTS: dict[ModelProvider, dict[ContentType, frozenset[str] | None]] = {
+    ModelProvider.MISTRAL: {
+        ContentType.IMAGE: _IMAGE_MIMES,
+        ContentType.FILE: _PDF_MIMES,
+    },
+    ModelProvider.QWEN: {ContentType.IMAGE: _IMAGE_MIMES},
+    ModelProvider.CUSTOM: {ContentType.IMAGE: _IMAGE_MIMES},
 }
 
 
@@ -111,27 +127,35 @@ def get_effective_input_capabilities(model_config: Model) -> InputCapabilities:
     """Return declared modalities intersected with native adapter serialization.
 
     Chat models without an explicit ``input_modalities`` declaration are
-    considered text-only. Legacy ``vision`` flags are intentionally ignored.
-    MIME and byte limits are intersected with model declarations when supplied;
-    unknown limits remain unknown.
+    considered text-only. OCR models are never text-only: they consume an image
+    or document and are not addressed as a conversation, so TEXT is neither
+    defaulted nor forced for them. Legacy ``vision`` flags are intentionally
+    ignored. MIME and byte limits are intersected with model declarations when
+    supplied; unknown limits remain unknown.
     """
-    if model_config.model_type != ModelType.CHAT:
+    model_type = model_config.model_type
+    if model_type not in {ModelType.CHAT, ModelType.OCR}:
         return InputCapabilities(frozenset(), {}, {})
+    is_chat = model_type == ModelType.CHAT
 
     capabilities = model_config.capabilities or {}
     declared = capabilities.get("input_modalities")
     if not isinstance(declared, list):
-        declared = [ContentType.TEXT.value]
+        declared = [ContentType.TEXT.value] if is_chat else []
     declared_set = {str(value) for value in declared}
-    declared_set.add(ContentType.TEXT.value)
+    if is_chat:
+        declared_set.add(ContentType.TEXT.value)
 
-    provider = model_config.provider
+    provider_enum: ModelProvider | None
     try:
-        provider = ModelProvider(provider)
+        provider_enum = ModelProvider(model_config.provider)
     except ValueError:
-        provider = None
-    adapter_inputs = dict(_CHAT_ADAPTER_INPUTS.get(provider, {})) if provider else {}
-    if _is_openrouter(model_config):
+        provider_enum = None
+    adapter_inputs_map = _CHAT_ADAPTER_INPUTS if is_chat else _OCR_ADAPTER_INPUTS
+    adapter_inputs = (
+        dict(adapter_inputs_map.get(provider_enum, {})) if provider_enum else {}
+    )
+    if is_chat and _is_openrouter(model_config):
         adapter_inputs.update(
             {
                 ContentType.AUDIO: frozenset(
@@ -154,7 +178,7 @@ def get_effective_input_capabilities(model_config: Model) -> InputCapabilities:
             }
         )
 
-    modalities = {ContentType.TEXT}
+    modalities = {ContentType.TEXT} if is_chat else set()
     mime_types: dict[ContentType, frozenset[str] | None] = {}
     limits: dict[ContentType, InputModalityLimits] = {}
     declared_limits = capabilities.get("input_limits")
