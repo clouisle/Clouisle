@@ -155,7 +155,7 @@ def _agent(team_id):
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_chat_streams_document_ref_and_reads_it_through_real_tool(
     workflow_asset, monkeypatch
 ):
@@ -227,7 +227,7 @@ async def test_chat_streams_document_ref_and_reads_it_through_real_tool(
     assert derived.source == AssetSource.DERIVED_TEXT
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_workflow_image_is_materialized_for_chat_and_stream_converters(
     workflow_asset, monkeypatch
 ):
@@ -329,7 +329,7 @@ async def test_workflow_image_is_materialized_for_chat_and_stream_converters(
     assert binding.asset_id == workflow_asset.image_asset.id
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_workflow_image_rejects_unauthorized_scope_and_text_only_model(
     workflow_asset, monkeypatch
 ):
@@ -370,7 +370,7 @@ async def test_workflow_image_rejects_unauthorized_scope_and_text_only_model(
         )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_workflow_image_openai_converter_rejects_unresolved_ref():
     from app.llm.adapters.chat.openai_adapter import OpenAIAdapter
     from app.llm.errors import InvalidRequestError
@@ -392,7 +392,7 @@ async def test_workflow_image_openai_converter_rejects_unresolved_ref():
         adapter._convert_messages([message])
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_chat_denies_external_import_for_unauthorized_run_caller(
     workflow_asset, monkeypatch
 ):
