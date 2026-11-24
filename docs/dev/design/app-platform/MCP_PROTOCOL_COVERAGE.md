@@ -116,8 +116,11 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
 `call_tool_with_tasks`。
 
 覆盖的协议面：`tools/call` 带 `params.task` 创建任务、`tasks/get` 轮询、
-`tasks/result` 取结果、`tasks/cancel` 取消。**不实现** `tasks/list`，因此能力声明里
-也不写它。
+`tasks/result` 取结果、`tasks/cancel` 取消。**不实现** `tasks/list`：一次调用的任务生命
+周期全在同一个 `execute_tool` 内完成，不靠枚举任务清单恢复或管理，因此能力声明只写
+`cancel`（声明未实现的能力会让服务器据此采取我们处理不了的行为）。这是产品决定，
+不是待补缺口；代价仅仅是客户端进程在轮询中途死亡时，服务器侧任务会留到它自己的
+`ttl` 过期才回收。
 
 ### 开启方式
 
@@ -275,8 +278,7 @@ MCP 连接永远不带静态凭据，凭据来自 `ToolConnection`：
 
 | 缺口 | Issue | 影响 |
 |---|---|---|
-| `x-mcp-header` 参数镜像 | #498 | 带 header 参数的工具少头 |
-| `tasks/list` 与 SDK 原生任务 API | #500 | 无法列出任务；客户端循环依赖 SDK 私有面，SDK 补齐后应替换 |
+| SDK 原生任务 API | #500 | 客户端循环依赖两处 SDK 私有面（能力钩子、原始 dispatcher），SDK 补齐后应替换；`tasks/list` 不在范围内 |
 
 ## 维护约定
 
