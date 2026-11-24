@@ -61,12 +61,6 @@ function getServerName(part: ToolPart): string | undefined {
   return undefined
 }
 
-/**
- * Completed percentage for a determinate progress update, or null when the
- * server reported no usable total.
- */
-const getProgressPercent = getToolProgressPercent
-
 export function ToolContent({
   part,
   className,
@@ -84,7 +78,7 @@ export function ToolContent({
   // last tick is noise next to its result.
   const progress =
     state === 'running' && 'progress' in part ? part.progress : undefined
-  const progressPercent = getProgressPercent(progress)
+  const progressPercent = getToolProgressPercent(progress)
 
   const StateIcon = {
     pending: Clock,
