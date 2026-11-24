@@ -31,14 +31,14 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
 | 内容块 | 支持 | `_content_block` | text / image / audio / resource_link / resource；未知类型原样透传 |
 | `sampling/createMessage`（服务器主动） | 支持（已弃用方向） | `_CallbackGuard.sampling` + `mcp_interactions` | 不自动应答，落库转人工审批；可限制 `max_tokens`、禁止工具调用 |
 | `elicitation/create`（服务器主动） | 支持（已弃用方向） | `_CallbackGuard.elicitation` | form 与 url 两种模式；敏感字段直接 decline |
-| `roots/list` | 支持（已弃用方向） | `_CallbackGuard.list_roots` | 只返回显式配置的白名单 root |
+| `roots/list` | 支持（已弃用方向） | `_CallbackGuard.list_roots` | 只返回 `file://` root；仅当 `roots_allowlist` 非空时才只返回白名单内的 root（默认空表放行所有 `file://`） |
 | MRTR（`input_required` 回填） | 支持 | `parse_input_responses` + `*_round_trip_kwargs` | 见下文「多轮往返」 |
 | `resources/subscribe`（≤2025-11-25） | 支持 | `mcp_subscriptions.open_subscription` | 会话内订阅 + 退出时 best-effort 退订 |
 | `subscriptions/listen`（2026-07-28） | 支持 | 同文件 `_pump_listen` | 一次请求声明过滤器，事件流入同一 SSE 契约 |
 | `tasks/*`（长任务） | 支持（可选，默认关） | `mcp_tasks.py` | 客户端手写循环；见下文「客户端任务」与 #500 |
 | 进度通知（服务器→客户端） | 支持 | `execute_tool(progress=...)` + `_ProgressReporter` | 见下文「进度与取消」 |
 | 取消（`notifications/cancelled`） | 支持 | `_cancel_in_flight` + `execute_tool` | 见下文「进度与取消」 |
-| `x-mcp-header` 参数镜像 | 未实现 | — | 见 #498 |
+| `x-mcp-header` 参数镜像 | 已实现（协议版本 `2026-07-28` 及以上） | `execute_tool`（同会话 list 后镜像 `Mcp-Param-*`） | 更早版本不镜像；发现列表在目标工具前被截断时 fail closed |
 | 服务端角色（对外提供 MCP） | 明确不做 | — | 本项目只做客户端 |
 
 ## 多轮往返（MRTR）
@@ -65,7 +65,9 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
   （`ElicitResult` / `ListRootsResult` / `CreateMessageResult`），否则一次 elicitation
   的答案可能被塞进 sampling 的槽位。
 - **身份不漂移**：工具如果是靠外部账号执行的，带 `input_responses` 必须显式给
-  `connection_id`（否则默认连接在两段之间变化，会把 A 账号的答案交给 B 账号的会话）；
+  `connection_id`；而且**首段调用与每一次续跑都必须给同一个** `connection_id`——只在
+  续跑时指定是不够的，首段若落到默认连接 A、续跑显式给 B，绑定照样会变。无
+  `execution_id` 的续跑没有可比对的已存绑定，因此这条约束由调用方保证；
   `identity_policy=none` 的工具没有可漂移的身份，不强制要求。
 - **审批绑定**：`request_state` 与 `input_responses` 进入 `parameters`，自动进入
   `build_parameter_snapshot` 摘要；已批准的请求不能被换成另一组答案。不续跑时
@@ -91,8 +93,9 @@ MCP 服务器，不对外暴露 MCP 服务端。协议实现集中在
 - 落点：Agent 运行时把 sink 放进 `RuntimeToolIdentity.progress`（仅当该运行有
   formatter，即真有观众时才放），`execute_agent_stored_tool` 转到 `ToolCallContext.progress`，
   `ToolExecutor` 再交给适配器。loop 用与 `tool_call`/`tool_result` 同一个 formatter
-  发 `tool_progress` 事件（`AgentRunStream` → SSE），因此 chat 与工作流面板展示同
-  一份事件契约。非流式路径、以及 MCP 工具测试端点没有 sink，行为不变。
+  发 `tool_progress` 事件（`AgentRunStream` → SSE）。chat 面板消费该事件并显示
+  百分比；工作流面板当前不展示进度。非流式路径、以及 MCP 工具测试端点没有 sink，
+  行为不变。
 
 **取消**
 
@@ -201,8 +204,9 @@ SDK 的 `initialize()` 正是用 `LATEST_HANDSHAKE_VERSION = 2025-11-25` 构建�
 - 落点：Agent 运行时把 sink 放进 `RuntimeToolIdentity.progress`（仅当该运行有
   formatter，即真有观众时才放），`execute_agent_stored_tool` 转到 `ToolCallContext.progress`，
   `ToolExecutor` 再交给适配器。loop 用与 `tool_call`/`tool_result` 同一个 formatter
-  发 `tool_progress` 事件（`AgentRunStream` → SSE），因此 chat 与工作流面板展示同
-  一份事件契约。非流式路径、以及 MCP 工具测试端点没有 sink，行为不变。
+  发 `tool_progress` 事件（`AgentRunStream` → SSE）。chat 面板消费该事件并显示
+  百分比；工作流面板当前不展示进度。非流式路径、以及 MCP 工具测试端点没有 sink，
+  行为不变。
 
 **取消**
 
@@ -219,7 +223,7 @@ SDK 的 `initialize()` 正是用 `LATEST_HANDSHAKE_VERSION = 2025-11-25` 构建�
 ## 资源订阅的双路径
 
 会话协商结果决定用哪一种，两者都向 SSE 端点输出同一份事件契约
-（`opened` / `update` / `closed`）：
+（`subscription_opened` / `resource_updated` / `subscription_closed`）：
 
 | 协商结果 | 机制 |
 |---|---|

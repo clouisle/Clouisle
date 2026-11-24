@@ -9,6 +9,8 @@ supports. The subscription half lives in
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -84,7 +86,8 @@ async def _open(client: mcp.McpClient, monkeypatch, session_class):
     monkeypatch.setattr(client, "_transport", _transport)
     monkeypatch.setattr(mcp, "ClientSession", session_class)
     async with client._open(mcp._Deadline(5.0, "test")) as opened:
-        yield opened
+        # These tests drive the session the adapter wired, not the guard.
+        yield opened[0], opened[1]
 
 
 def _logging_callbacks(**logging_kwargs):
@@ -309,3 +312,60 @@ async def test_an_unknown_level_is_rejected_at_the_schema_boundary():
         McpConfigSchema.model_validate(
             {"transport": "http", "url": "https://mcp.test", "server_log_level": "loud"}
         )
+
+
+async def test_an_exhausted_budget_skips_the_log_level_request(monkeypatch, caplog):
+    """Observability must not outlive the caller.
+
+    The session read timeout is fixed before the handshake, so it can be longer
+    than what is left of the operation; without the caller's budget a slow
+    ``logging/setLevel`` would push the whole call past its deadline.
+    """
+    caplog.set_level(logging.DEBUG, logger=mcp.logger.name)
+    client = mcp.McpClient({}, callbacks=_logging_callbacks())
+
+    deadline = mcp._Deadline(5.0, "test")
+    # The handshake consumed the whole budget; nothing is left for logs.
+    deadline._expires = asyncio.get_running_loop().time() - 1.0
+
+    monkeypatch.setattr(client, "_transport", _transport)
+    monkeypatch.setattr(mcp, "ClientSession", _LegacySession)
+    async with client._open(deadline) as opened:
+        session = opened[0]
+
+    assert session.log_level_calls == []
+    assert any("budget exhausted" in record.getMessage() for record in caplog.records)
+
+
+async def test_a_live_budget_still_requests_the_log_level(monkeypatch):
+    client = mcp.McpClient({}, callbacks=_logging_callbacks())
+
+    monkeypatch.setattr(client, "_transport", _transport)
+    monkeypatch.setattr(mcp, "ClientSession", _LegacySession)
+    async with client._open(mcp._Deadline(5.0, "test")) as opened:
+        session = opened[0]
+
+    assert session.log_level_calls == ["debug"]
+
+
+async def test_a_log_level_request_that_never_answers_is_logged_not_raised(
+    monkeypatch, caplog
+):
+    """A hung ``logging/setLevel`` is observability, never a failed operation."""
+    caplog.set_level(logging.WARNING, logger=mcp.logger.name)
+    client = mcp.McpClient({}, callbacks=_logging_callbacks())
+
+    async def hang(self, level):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(_LegacySession, "set_logging_level", hang)
+    monkeypatch.setattr(client, "_transport", _transport)
+    monkeypatch.setattr(mcp, "ClientSession", _LegacySession)
+
+    async with client._open(mcp._Deadline(0.05, "test")) as opened:
+        assert opened[0] is not None
+
+    assert any(
+        "did not acknowledge log level" in record.getMessage()
+        for record in caplog.records
+    )

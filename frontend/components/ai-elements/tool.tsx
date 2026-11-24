@@ -127,7 +127,11 @@ export const ToolHeader = ({ className, title, type, state, progress, ...props }
       <TraceLine status={failed ? "error" : running ? "running" : undefined}>
         <TraceIcon><WrenchIcon /></TraceIcon>
         <TraceTitle className="font-medium">{text}</TraceTitle>
-        {percent !== null && <TraceDescription>{percent}%</TraceDescription>}
+        {percent !== null && (
+          <TraceDescription>
+            <span role="status" aria-live="polite">{percent}%</span>
+          </TraceDescription>
+        )}
       </TraceLine>
     </TraceCollapsibleTrigger>
   );

@@ -89,6 +89,8 @@ _PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
 # Headroom kept when the caller's own budget is the tighter bound, so one
 # ``tasks/cancel`` still fits before that budget cancels this coroutine.
 _CANCEL_RESERVE_SECONDS = 2.0
+_CANCEL_REQUEST_TIMEOUT_SECONDS = 2.0
+"""Hard bound on the cleanup ``tasks/cancel`` request itself."""
 
 # Everything the hand-rolled loop touches. Probed once at import so a missing
 # model is a documented degradation instead of an AttributeError mid-call.
@@ -302,13 +304,25 @@ async def call_tool_with_tasks(
     """
     if not policy.enabled or not TASKS_SDK_READY:
         return await session.call_tool(tool_name, arguments, **kwargs)
+    if getattr(session, "protocol_version", None) != TASKS_PROTOCOL_VERSION:
+        # ``tasks/*`` exists only on this revision. Another revision defines no
+        # task capability, and the raw request also skips the SDK's modern
+        # stamping (``_meta`` protocol fields, ``Mcp-Method`` / ``Mcp-Name`` /
+        # ``Mcp-Param-*``), so sending it would at best earn a refusal.
+        return await session.call_tool(tool_name, arguments, **kwargs)
     deadline = _effective_deadline(policy, budget)
+    # One absolute expiry for the whole call: task creation time comes out of
+    # the same budget the poll loop is bounded by, so a slow ``tools/call``
+    # cannot push the poll window past the caller's deadline.
+    expires_at = asyncio.get_running_loop().time() + deadline
     start = await _start_task(session, tool_name, arguments, deadline, kwargs)
     if start is None:  # refused before any work started
         return await session.call_tool(tool_name, arguments, **kwargs)
     if isinstance(start, types.CallToolResult):  # server ran it inline
         return start
-    return await _await_task(session, start.task, policy, deadline)
+    return await _await_task(
+        session, start.task, policy, deadline=deadline, expires_at=expires_at
+    )
 
 
 def _effective_deadline(policy: McpTaskPolicy, budget: float | None) -> float:
@@ -353,6 +367,12 @@ async def _start_task(
         request_state=kwargs.get("request_state"),
     )
     opts: CallOptions = {"timeout": max(deadline, 0.001)}
+    progress_callback = kwargs.get("progress_callback")
+    if progress_callback is not None:
+        # ``session.call_tool`` is where the SDK would turn this into the
+        # dispatcher's ``on_progress`` option; the raw path has to do it here
+        # or an inline answer can never report progress.
+        opts["on_progress"] = progress_callback
     version = getattr(session, "protocol_version", None)
     if isinstance(version, str) and version:
         # The raw path skips the SDK's stamping; keep the negotiated version on
@@ -370,6 +390,11 @@ async def _start_task(
         # timeout or transport failure may follow real work, so it propagates.
         if _SdkMcpError is None or not isinstance(exc, _SdkMcpError):
             raise
+        if getattr(exc, "code", None) == types.REQUEST_TIMEOUT:
+            # The request was delivered and its answer never came: the server
+            # may have run the call. Replaying it synchronously could repeat a
+            # committed write, so this is not a pre-execution rejection.
+            raise
         logger.warning(
             "MCP server rejected the task-augmented tools/call for %s (%s); "
             "falling back to synchronous execution",
@@ -384,25 +409,39 @@ async def _start_task(
 
 
 async def _await_task(
-    session: ClientSession, task: types.Task, policy: McpTaskPolicy, deadline: float
+    session: ClientSession,
+    task: types.Task,
+    policy: McpTaskPolicy,
+    *,
+    deadline: float,
+    expires_at: float,
 ) -> types.CallToolResult:
-    """Poll ``tasks/get`` until the task is terminal, then fetch its payload."""
-    loop = asyncio.get_running_loop()
-    expires_at = loop.time() + deadline
+    """Poll ``tasks/get`` until the task is terminal, then fetch its payload.
+
+    ``expires_at`` is the absolute expiry fixed before the task was created;
+    ``deadline`` is the same bound in seconds, kept for the timeout message.
+    """
     polls = 0
     current = task
-    while current.status == _WORKING:
-        remaining = expires_at - loop.time()
-        if polls >= policy.max_polls or remaining <= 0:
-            await _cancel(session, current)
-            raise _timeout_error(
-                f"MCP task {current.task_id} did not complete within "
-                f"{deadline:g}s / {policy.max_polls} polls",
-                deadline,
-            )
-        await asyncio.sleep(min(policy.poll_interval, remaining))
-        polls += 1
-        current = await _get_task(session, current.task_id, expires_at)
+    try:
+        while current.status == _WORKING:
+            remaining = expires_at - asyncio.get_running_loop().time()
+            if polls >= policy.max_polls or remaining <= 0:
+                raise _timeout_error(
+                    f"MCP task {current.task_id} did not complete within "
+                    f"{deadline:g}s / {policy.max_polls} polls",
+                    deadline,
+                )
+            await asyncio.sleep(min(policy.poll_interval, remaining))
+            polls += 1
+            current = await _get_task(session, current.task_id, expires_at)
+    except BaseException:
+        # Every way out of the loop — timeout, caller cancellation, a failing
+        # ``tasks/get`` — abandons an accepted server task. MCP tasks are
+        # durable operations: without this the task keeps running with no
+        # poller left to read it. A normally completed task is never cancelled.
+        await _cancel(session, current, expires_at=expires_at)
+        raise
 
     if current.status == _COMPLETED:
         return await _task_result(session, current.task_id, expires_at)
@@ -449,14 +488,27 @@ async def _task_result(
     )
 
 
-async def _cancel(session: ClientSession, task: types.Task) -> None:
-    """Best-effort ``tasks/cancel``: cleanup never masks the real failure."""
+async def _cancel(
+    session: ClientSession, task: types.Task, *, expires_at: float | None = None
+) -> None:
+    """Best-effort ``tasks/cancel``: cleanup never masks the real failure.
+
+    The request carries its own short read timeout. Without one it inherits the
+    session timeout, which is far longer than the reserve left for cleanup, so
+    a server that never answers ``tasks/cancel`` would hold the caller past its
+    own budget instead of failing here.
+    """
+    budget = _CANCEL_REQUEST_TIMEOUT_SECONDS
+    if expires_at is not None:
+        budget = min(budget, max(_request_budget(expires_at), 0.001))
     try:
-        await session.send_request(
-            types.CancelTaskRequest(
-                params=types.CancelTaskRequestParams(task_id=task.task_id)
-            ),
-            types.CancelTaskResult,
-        )
-    except Exception:
+        async with asyncio.timeout(budget):
+            await session.send_request(
+                types.CancelTaskRequest(
+                    params=types.CancelTaskRequestParams(task_id=task.task_id)
+                ),
+                types.CancelTaskResult,
+                request_read_timeout_seconds=budget,
+            )
+    except BaseException:  # noqa: BLE001 - cleanup must not mask the real error
         logger.warning("Unable to cancel MCP task %s", task.task_id, exc_info=True)

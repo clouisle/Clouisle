@@ -781,3 +781,57 @@ async def test_open_subscription_unsubscribe_failure_is_best_effort(monkeypatch)
         assert handle.uri == "file:///a"
 
     assert handle.close_reason is None
+
+
+# ---------------------------------------------------------------------------
+# Approval preview projection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_resource_read_keeps_answer_values_out_of_the_approval_preview(
+    monkeypatch,
+):
+    """The preview is the reviewer's business input, not the resumed answers.
+
+    ``input_responses`` rides in the execution parameters so the digest binds
+    them, but the stored approval preview must stay URI-only — otherwise the
+    answers a caller supplied at continuation time become visible to whoever
+    reviews the request.
+    """
+    captured: dict[str, object] = {}
+
+    async def fake_execute(tool, operation, arguments, context, invoke, **kwargs):
+        captured["arguments"] = dict(arguments)
+        captured["preview"] = kwargs.get("preview_parameters")
+        return {"contents": []}
+
+    tool = SimpleNamespace(
+        id=uuid4(), identity_policy="none", connection_fields=[], is_enabled=True
+    )
+    monkeypatch.setattr(tool_mcp, "execute_stored_tool", fake_execute)
+    monkeypatch.setattr(tool_mcp, "_load_mcp_tool", AsyncMock(return_value=tool))
+    monkeypatch.setattr(
+        tool_mcp,
+        "_call_context",
+        lambda *args, **kwargs: SimpleNamespace(execution_id=None),
+    )
+
+    payload = tool_mcp.McpResourceReadIn(
+        uri="file:///a.txt",
+        input_responses={
+            "q": {"method": "elicitation/create", "result": {"action": "accept"}}
+        },
+        request_state="state-1",
+    )
+    await tool_mcp.read_mcp_resource_contents(
+        uuid4(), payload, team_id=uuid4(), current_user=SimpleNamespace(id=uuid4())
+    )
+
+    # Execution keeps the answers so the digest binds them...
+    arguments = captured["arguments"]
+    assert arguments["uri"] == "file:///a.txt"
+    assert arguments["request_state"] == "state-1"
+    assert "q" in arguments["input_responses"]
+    # ...but the reviewer's preview carries the URI only.
+    assert captured["preview"] == {"uri": "file:///a.txt"}

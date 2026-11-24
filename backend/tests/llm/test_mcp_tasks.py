@@ -7,6 +7,7 @@ cancellation, and every way the loop must stay bounded.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import mcp.types as types
@@ -92,6 +93,9 @@ class _FakeSession:
         self._cancel_error = cancel_error
         self.methods: list[str] = []
         self.sync_calls: list[tuple[str, dict | None, dict]] = []
+        # Failures a scripted poll can raise instead of answering.
+        self.fail_get_task: BaseException | None = None
+        self.hang_get_task = False
 
     async def send_request(
         self, request, result_type, request_read_timeout_seconds=None
@@ -108,6 +112,10 @@ class _FakeSession:
                 ttl=None,
             )
         if isinstance(request, types.GetTaskRequest):
+            if self.hang_get_task:
+                await asyncio.sleep(3600)
+            if self.fail_get_task is not None:
+                raise self.fail_get_task
             status = (
                 self._statuses.pop(0) if len(self._statuses) > 1 else self._statuses[0]
             )
@@ -163,14 +171,28 @@ async def test_task_is_created_polled_and_its_result_returned():
     assert opts["timeout"] == 2.0
 
 
-async def test_augmented_call_without_a_negotiated_version_sends_no_header():
+async def test_a_session_without_a_negotiated_version_stays_synchronous():
+    """``tasks/*`` exists on one revision only; anything else never asks."""
     dispatcher = _FakeDispatcher(response={"task": _task_payload(status="completed")})
     session = _FakeSession(dispatcher=dispatcher)
     session.protocol_version = None
 
     await mcp_tasks.call_tool_with_tasks(session, "index", {}, _policy())
 
-    assert "headers" not in dispatcher.calls[0][2]
+    assert dispatcher.calls == []
+    assert [call[0] for call in session.sync_calls] == ["index"]
+
+
+async def test_a_modern_session_stays_synchronous():
+    """2026-07-28 defines no task capability: no raw request is attempted."""
+    dispatcher = _FakeDispatcher(response={"task": _task_payload(status="completed")})
+    session = _FakeSession(dispatcher=dispatcher)
+    session.protocol_version = "2026-07-28"
+
+    await mcp_tasks.call_tool_with_tasks(session, "index", {}, _policy())
+
+    assert dispatcher.calls == []
+    assert [call[0] for call in session.sync_calls] == ["index"]
 
 
 async def test_a_task_that_is_already_complete_is_not_polled():
@@ -425,3 +447,72 @@ async def test_open_uses_the_task_capable_session_only_when_enabled(monkeypatch)
     await client.get_capabilities(timeout=1)
 
     assert opened == [_StubSession]
+
+
+async def test_an_sdk_request_timeout_never_replays_the_call():
+    """A delivered request whose answer timed out may already have run."""
+    dispatcher = _FakeDispatcher(
+        error=MCPError(code=types.REQUEST_TIMEOUT, message="Request timed out")
+    )
+    session = _FakeSession(dispatcher=dispatcher)
+
+    with pytest.raises(MCPError):
+        await mcp_tasks.call_tool_with_tasks(session, "index", {}, _policy())
+
+    assert session.sync_calls == []
+
+
+async def test_the_augmented_request_forwards_the_progress_callback():
+    """The raw path must translate ``progress_callback`` into ``on_progress``."""
+    callback = object()
+    dispatcher = _FakeDispatcher(
+        response={"content": [{"type": "text", "text": "inline"}], "isError": False}
+    )
+    session = _FakeSession(dispatcher=dispatcher)
+
+    await mcp_tasks.call_tool_with_tasks(
+        session, "index", {}, _policy(), progress_callback=callback
+    )
+
+    assert dispatcher.calls[0][2]["on_progress"] is callback
+
+
+async def test_a_failing_poll_cancels_the_accepted_task():
+    """Every exceptional exit releases the server task; a durable one persists."""
+    dispatcher = _FakeDispatcher(response={"task": _task_payload()})
+    session = _FakeSession(dispatcher=dispatcher, statuses=("working",))
+    session.fail_get_task = RuntimeError("poll transport died")
+
+    with pytest.raises(RuntimeError):
+        await mcp_tasks.call_tool_with_tasks(session, "index", {}, _policy())
+
+    assert "CancelTaskRequest" in session.methods
+
+
+async def test_caller_cancellation_cancels_the_accepted_task():
+    dispatcher = _FakeDispatcher(response={"task": _task_payload()})
+    session = _FakeSession(dispatcher=dispatcher, statuses=("working",))
+    session.hang_get_task = True
+
+    task = asyncio.create_task(
+        mcp_tasks.call_tool_with_tasks(
+            session, "index", {}, _policy(poll_interval=0.01, timeout=30.0)
+        )
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert "CancelTaskRequest" in session.methods
+
+
+async def test_a_non_string_version_sends_no_protocol_header():
+    """A malformed version must never be stamped onto the wire."""
+    dispatcher = _FakeDispatcher(response={"task": _task_payload(status="completed")})
+    session = _FakeSession(dispatcher=dispatcher)
+    session.protocol_version = 20251125
+
+    await mcp_tasks._start_task(session, "index", {}, 5.0, {})
+
+    assert "headers" not in dispatcher.calls[0][2]

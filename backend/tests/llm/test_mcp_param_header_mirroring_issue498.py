@@ -41,7 +41,7 @@ def _install(monkeypatch, client, session, capabilities=None):
 
     @asynccontextmanager
     async def fake_open(deadline):
-        yield session, caps
+        yield session, caps, mcp._CallbackGuard(client.callbacks)
 
     monkeypatch.setattr(client, "_open", fake_open)
 

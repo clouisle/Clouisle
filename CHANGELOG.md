@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- MCP resource subscriptions follow the negotiated protocol version: a session that advertises `resources.subscribe` keeps the subscribe/unsubscribe path, a 2026-07-28 session opens a `subscriptions/listen` stream, and a session offering neither fails closed with the capability error. Capabilities are read from the subscribed session itself instead of a separate probe connection, so a subscription can no longer be granted on one server instance and opened on another.
+- MCP resource subscriptions follow the negotiated protocol version: a session before `2026-07-28` that advertises `resources.subscribe` keeps the subscribe/unsubscribe path, a `2026-07-28` session opens a `subscriptions/listen` stream even when it also advertises `resources.subscribe`, and a session offering neither fails closed with the capability error. Capabilities are read from the subscribed session itself instead of a separate probe connection, so a subscription can no longer be granted on one server instance and opened on another.
 
 ## [0.3.0] - 2026-11-01
 

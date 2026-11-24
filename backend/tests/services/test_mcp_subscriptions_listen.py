@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -16,6 +17,8 @@ import pytest
 from mcp.client.subscriptions import ResourceUpdated, ToolsListChanged
 
 from app.core.config import settings
+from app.core.timezone import now_utc
+from app.llm.tools import mcp_client
 from app.services import mcp_subscriptions as subs
 
 
@@ -58,10 +61,15 @@ class _Client:
 
 
 class _Stream:
-    """Minimal async iterator over scripted events, including failures."""
+    """Minimal async iterator over scripted events, including failures.
 
-    def __init__(self, items):
+    ``honored`` mirrors ``Subscription.honored``: the subset of the requested
+    filter the server acknowledged, which the adapter now validates.
+    """
+
+    def __init__(self, items, honored=("file:///a",)):
         self._items = list(items)
+        self.honored = SimpleNamespace(resource_subscriptions=list(honored))
 
     def __aiter__(self):
         return self
@@ -78,6 +86,9 @@ class _Stream:
 class _SilentStream:
     """A ``listen`` stream that never delivers: only the ping can wake us."""
 
+    def __init__(self, honored=("file:///a",)):
+        self.honored = SimpleNamespace(resource_subscriptions=list(honored))
+
     def __aiter__(self):
         return self
 
@@ -85,18 +96,18 @@ class _SilentStream:
         await asyncio.Event().wait()
 
 
-def _fake_listen(items=None):
+def _fake_listen(items=None, honored=("file:///a",)):
     @asynccontextmanager
     async def listen(session, *, resource_subscriptions=(), on_event=None):
         assert tuple(resource_subscriptions)  # the caller must name a URI
-        yield _SilentStream() if items is None else _Stream(items)
+        yield (_SilentStream(honored) if items is None else _Stream(items, honored))
 
     return listen
 
 
-async def _open(monkeypatch, items=None, **config):
+async def _open(monkeypatch, items=None, honored=("file:///a",), **config):
     monkeypatch.setattr(subs, "McpClient", _Client)
-    monkeypatch.setattr(subs, "_listen", _fake_listen(items))
+    monkeypatch.setattr(subs, "_listen", _fake_listen(items, honored))
     return subs.open_subscription(
         tool=SimpleNamespace(id=uuid4()),
         config=config,
@@ -178,7 +189,11 @@ async def test_a_modern_session_uses_listen_even_with_a_stale_subscribe_flag(
     and calling the removed method fails with "Method not found".
     """
     monkeypatch.setattr(subs, "McpClient", _Client)
-    monkeypatch.setattr(subs, "_listen", _fake_listen([ResourceUpdated("memo://a")]))
+    monkeypatch.setattr(
+        subs,
+        "_listen",
+        _fake_listen([ResourceUpdated("memo://a")], honored=("memo://a",)),
+    )
 
     async with subs.open_subscription(
         tool=SimpleNamespace(id=uuid4()),
@@ -337,3 +352,107 @@ async def test_the_subscription_session_opts_into_server_logs_from_its_config(
 
     assert _Client.last.callbacks.server_logging.level == "debug"
     assert _Client.last.callbacks.server_logging.subject.startswith("tool:")
+
+
+@pytest.mark.asyncio
+async def test_an_acknowledgment_without_the_uri_fails_closed(monkeypatch):
+    """A stream the server never admits updates for must not look open."""
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(subs, "_listen", _fake_listen(honored=()))
+
+    with pytest.raises(mcp_client.McpCapabilityUnavailable):
+        async with subs.open_subscription(
+            tool=SimpleNamespace(id=uuid4()),
+            config={"_version": "2026-07-28"},
+            uri="file:///a",
+            user_id=uuid4(),
+            team_id=uuid4(),
+        ):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_a_parent_uri_acknowledgment_covers_its_children(monkeypatch):
+    """The SDK admits a sub-resource update when a parent was honored."""
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(
+        subs,
+        "_listen",
+        _fake_listen([ResourceUpdated("file:///a/b")], honored=("file:///a",)),
+    )
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28"},
+        uri="file:///a/b",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        assert await _drain(handle) == ["file:///a/b"]
+
+
+@pytest.mark.asyncio
+async def test_a_modern_session_disables_the_notification_collector(monkeypatch):
+    """The SDK also tees listen frames to message_handler; one update, one event."""
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(subs, "_listen", _fake_listen())
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28"},
+        uri="file:///a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        collector = _Client.last.callbacks.notification
+        assert collector.enabled is False
+        # Even a matching frame routed through the collector stays quiet.
+        await collector(
+            SimpleNamespace(
+                method="notifications/resources/updated",
+                params=SimpleNamespace(uri="file:///a"),
+            )
+        )
+        assert handle._sequence == 0
+
+
+@pytest.mark.asyncio
+async def test_a_non_string_acknowledged_uri_is_ignored(monkeypatch):
+    """A malformed entry cannot cover a URI, and does not crash the check either."""
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(
+        subs,
+        "_listen",
+        _fake_listen(honored=(None, 7, "file:///unrelated", "file:///a")),
+    )
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28"},
+        uri="file:///a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        # A later valid entry still counts as coverage.
+        assert handle.close_reason is None
+
+
+@pytest.mark.asyncio
+async def test_a_ping_stops_once_the_subscription_has_expired(monkeypatch):
+    """The liveness loop exits instead of pinging a dead subscription."""
+    session = SimpleNamespace(pings=0)
+
+    async def send_ping():
+        session.pings += 1
+
+    session.send_ping = send_ping
+    handle = SimpleNamespace(
+        tool_id=uuid4(),
+        uri="file:///a",
+        expires_at=now_utc() - timedelta(seconds=1),
+        close_reason=None,
+    )
+
+    await subs._ping_session(session, handle, 0.01)
+
+    assert session.pings == 0

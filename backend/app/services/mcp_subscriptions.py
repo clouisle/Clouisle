@@ -70,6 +70,10 @@ CONNECT_TIMEOUT_SECONDS = 15.0
 # noticed in half the budget rather than at the read timeout at the very end.
 PING_INTERVAL_FRACTION = 0.5
 MIN_PING_INTERVAL_SECONDS = 0.01
+# A ping inherits the session read timeout otherwise, which is longer than the
+# subscription itself: an unanswering server would then only be noticed once the
+# TTL expires, recording ``ttl_expired`` instead of the loss the ping exists for.
+PING_TIMEOUT_FRACTION = 0.5
 # First protocol version that removes ``resources/subscribe`` in favour of
 # ``subscriptions/listen``. Versions are ISO dates, so they compare as strings.
 LISTEN_MIN_PROTOCOL_VERSION = "2026-07-28"
@@ -194,12 +198,21 @@ class SubscriptionHandle:
 
 
 class _NotificationCollector:
-    """Filters this subscription's resource-update notifications."""
+    """Filters this subscription's resource-update notifications.
+
+    Only the legacy ``resources/subscribe`` path needs it. The SDK tees every
+    frame to ``message_handler`` — including the events of a ``listen`` stream —
+    so leaving delivery on for a modern session would enqueue each update twice,
+    once here and once from ``_pump_listen``, with two sequence numbers.
+    """
 
     def __init__(self, handle: SubscriptionHandle) -> None:
         self.handle = handle
+        self.enabled = True
 
     async def __call__(self, message: Any) -> None:
+        if not self.enabled:
+            return
         payload = message
         root = getattr(payload, "root", None)
         if root is not None:
@@ -221,6 +234,24 @@ class _NotificationCollector:
         if not isinstance(uri, str) or uri != self.handle.uri:
             return
         self.handle.enqueue_update(uri)
+
+
+def _ack_covers_uri(honored: Any, uri: str) -> bool:
+    """Whether a ``listen`` acknowledgment admits updates for ``uri``.
+
+    The server answers with the subset of the requested filter it agreed to
+    deliver, and the SDK admits an update only when at least one resource
+    subscription was honored. A parent URI therefore covers its children (the
+    spec lets the stamped URI be a sub-resource); an unrelated URI covers
+    nothing, and the stream would stay silent for the lifetime of the handle.
+    """
+    uris = getattr(honored, "resource_subscriptions", None) or ()
+    for candidate in uris:
+        if not isinstance(candidate, str):
+            continue
+        if candidate == uri or uri.startswith(candidate.rstrip("/") + "/"):
+            return True
+    return False
 
 
 def _listen_factory(protocol_version: str | None) -> Any | None:
@@ -270,8 +301,14 @@ async def _ping_session(
     """
     while True:
         await asyncio.sleep(interval)
+        remaining = (handle.expires_at - now_utc()).total_seconds()
+        if remaining <= 0:
+            return
         try:
-            await session.send_ping()
+            async with asyncio.timeout(
+                max(remaining * PING_TIMEOUT_FRACTION, MIN_PING_INTERVAL_SECONDS)
+            ):
+                await session.send_ping()
         except Exception:
             logger.warning(
                 "MCP subscription ping failed for tool %s; the session is lost",
@@ -309,8 +346,9 @@ async def open_subscription(
         account_label=account_label,
         expires_at=now_utc() + timedelta(seconds=ttl),
     )
+    collector = _NotificationCollector(handle)
     callbacks = McpCallbacks(
-        notification=_NotificationCollector(handle),
+        notification=collector,
         server_logging=server_logging_from_config(config, subject=f"tool:{tool.id}"),
         policy=McpCallbackPolicy(max_callback_seconds=min(10.0, ttl)),
     )
@@ -336,9 +374,13 @@ async def open_subscription(
         stack.push_async_callback(_stop_task, ping)
 
         if listen is not None:
+            # A modern session delivers through the pump alone.
+            collector.enabled = False
             subscription = await stack.enter_async_context(
                 listen(session, resource_subscriptions=(uri,))
             )
+            if not _ack_covers_uri(getattr(subscription, "honored", None), uri):
+                raise McpCapabilityUnavailable("resources.subscribe")
             pump = asyncio.create_task(_pump_listen(subscription, handle))
             stack.push_async_callback(_stop_task, pump)
             yield handle

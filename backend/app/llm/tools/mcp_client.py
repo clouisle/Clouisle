@@ -1548,6 +1548,8 @@ async def _request_server_log_level(
     session: ClientSession,
     capabilities: McpServerCapabilities,
     level: str,
+    *,
+    timeout: float,
 ) -> None:
     """Ask a handshake-era server to emit log notifications at ``level``.
 
@@ -1560,7 +1562,9 @@ async def _request_server_log_level(
     error.
 
     Observability must never fail an operation: a rejected level is logged and
-    the session goes on without server logs.
+    the session goes on without server logs. ``timeout`` is the caller's
+    remaining budget: the session's own read timeout was fixed before the
+    handshake and can be longer than what is left of the operation.
     """
     if _log_level_uses_meta(capabilities.protocol_version):
         return
@@ -1569,8 +1573,16 @@ async def _request_server_log_level(
             "MCP server does not advertise logging; level %r not requested", level
         )
         return
+    if timeout <= 0:
+        logger.debug(
+            "MCP operation budget exhausted; log level %r not requested", level
+        )
+        return
     try:
-        await session.set_logging_level(cast(Any, level))
+        async with asyncio.timeout(timeout):
+            await session.set_logging_level(cast(Any, level))
+    except TimeoutError:
+        logger.warning("MCP server did not acknowledge log level %r in time", level)
     except Exception:
         logger.warning("MCP server rejected log level %r", level, exc_info=True)
 
@@ -2027,13 +2039,13 @@ class McpClient:
             timeout if timeout is not None else self.timeouts.request,
             "connect",
         )
-        async with self._open(deadline) as (session, _capabilities):
+        async with self._open(deadline) as (session, _capabilities, _guard):
             yield session
 
     @asynccontextmanager
     async def _open(
         self, deadline: _Deadline
-    ) -> AsyncIterator[tuple[ClientSession, McpServerCapabilities]]:
+    ) -> AsyncIterator[tuple[ClientSession, McpServerCapabilities, _CallbackGuard]]:
         guard = _CallbackGuard(self.callbacks)
         async with AsyncExitStack() as stack:
             connect_budget = min(
@@ -2102,7 +2114,10 @@ class McpClient:
             capabilities = _read_negotiated(session, handshake)
             if server_logging is not None:
                 await _request_server_log_level(
-                    session, capabilities, server_logging.level
+                    session,
+                    capabilities,
+                    server_logging.level,
+                    timeout=deadline.remaining(),
                 )
             logger.debug(
                 "MCP session negotiated transport=%s protocol=%s tools=%s "
@@ -2114,7 +2129,7 @@ class McpClient:
                 capabilities.prompts,
                 capabilities.completions,
             )
-            yield session, capabilities
+            yield session, capabilities, guard
 
     @asynccontextmanager
     async def _transport(self) -> AsyncIterator[tuple[Any, Any]]:
@@ -2252,7 +2267,7 @@ class McpClient:
             timeout if timeout is not None else self.timeouts.request,
             "capabilities",
         )
-        async with self._open(deadline) as (_session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             return capabilities
 
     # -- enumeration --------------------------------------------------------
@@ -2367,7 +2382,7 @@ class McpClient:
             _LIST_TOOLS,
         )
         effective_limits = limits or self.enumeration_limits
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "tools")
 
             async def fetch(cursor: str | None) -> tuple[list[McpToolInfo], str | None]:
@@ -2411,7 +2426,7 @@ class McpClient:
             _LIST_RESOURCES,
         )
         effective_limits = limits or self.enumeration_limits
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "resources")
 
             async def fetch(
@@ -2453,7 +2468,7 @@ class McpClient:
             _LIST_RESOURCE_TEMPLATES,
         )
         effective_limits = limits or self.enumeration_limits
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "resources")
 
             async def fetch(
@@ -2494,7 +2509,7 @@ class McpClient:
             _LIST_PROMPTS,
         )
         effective_limits = limits or self.enumeration_limits
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "prompts")
 
             async def fetch(
@@ -2558,7 +2573,7 @@ class McpClient:
             accepts_input_required=_READ_RESOURCE_ALLOWS_INPUT_REQUIRED,
         )
 
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "resources")
             budget = self._request_budget(deadline)
             try:
@@ -2616,7 +2631,7 @@ class McpClient:
             accepts_input_required=_GET_PROMPT_ALLOWS_INPUT_REQUIRED,
         )
 
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "prompts")
             budget = self._request_budget(deadline)
             try:
@@ -2673,7 +2688,7 @@ class McpClient:
             _COMPLETE,
         )
 
-        async with self._open(deadline) as (session, capabilities):
+        async with self._open(deadline) as (session, capabilities, _guard):
             _require_capability(capabilities, "completions")
             budget = self._request_budget(deadline)
             try:
@@ -2761,7 +2776,7 @@ class McpClient:
         )
 
         try:
-            async with self._open(deadline) as (session, capabilities):
+            async with self._open(deadline) as (session, capabilities, guard):
                 _require_capability(capabilities, "tools")
                 # The 2026-07-28 header mirroring reads its annotations from the
                 # tool's last ``tools/list`` entry on this very session, so the
@@ -2811,7 +2826,10 @@ class McpClient:
                 budget = self._request_budget(deadline)
                 try:
                     async with asyncio.timeout(budget):
-                        guard = _CallbackGuard(self.callbacks)
+                        # ``guard`` comes from ``_open``: the session already
+                        # routes live callbacks through it, so reusing it keeps
+                        # one elicitation allowance per operation instead of a
+                        # second zeroed counter for parked answers.
                         remaining = self.callbacks.policy.max_elicitation_requests
                         while True:
                             # Progress rides the same per-request options as the

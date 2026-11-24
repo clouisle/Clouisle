@@ -34,10 +34,15 @@ def _caps(**overrides):
     return mcp.McpServerCapabilities(**values)
 
 
+def _guard_for(client):
+    """A real guard, so a faked ``_open`` still hands the operation one."""
+    return mcp._CallbackGuard(client.callbacks)
+
+
 def _install(monkeypatch, client, session):
     @asynccontextmanager
     async def fake_open(deadline):
-        yield session, _caps()
+        yield session, _caps(), _guard_for(client)
 
     monkeypatch.setattr(client, "_open", fake_open)
 
@@ -427,3 +432,35 @@ async def test_sampling_answer_with_tool_use_uses_the_tool_enabled_type():
 async def test_malformed_answers_are_rejected(payload):
     with pytest.raises(mcp.McpInvalidRequest):
         mcp.parse_input_responses(payload)
+
+
+async def test_parked_answers_share_the_operation_elicitation_counter(monkeypatch):
+    """One allowance per operation, not one per callback path.
+
+    ``_open`` already routes live server callbacks through a guard; a second
+    guard for parked (``input_required``) answers would give the server two
+    prompts under a configured limit of one.
+    """
+    created: list[object] = []
+    real_guard = mcp._CallbackGuard
+
+    def counting_guard(callbacks):
+        guard = real_guard(callbacks)
+        created.append(guard)
+        return guard
+
+    monkeypatch.setattr(mcp, "_CallbackGuard", counting_guard)
+
+    async def elicit(_context, _params):
+        return types.ElicitResult(action="accept", content={})
+
+    session = _Session(_parked())
+    callbacks = mcp.McpCallbacks(
+        elicitation=elicit, policy=mcp.McpCallbackPolicy(max_elicitation_requests=4)
+    )
+    client = mcp.McpClient({}, callbacks=callbacks)
+    _install(monkeypatch, client, session)
+
+    await client.execute_tool("search", {}, resolve_input_required=True)
+
+    assert len(created) == 1

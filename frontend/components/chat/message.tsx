@@ -1478,7 +1478,14 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               collapsible
               iconContent={getTraceToolIcon(part.toolName, isMcpToolCallPart(part), part.input, isToolCallPart(part) ? part.toolDisplayName : undefined)}
               label={stepLabel}
-              description={progressPercent === null ? undefined : `${progressPercent}%`}
+              description={
+                progressPercent === null ? undefined : (
+                  // Polite live region: the trace line has no other status
+                  // semantics, so a screen reader would otherwise never hear
+                  // the tick advance.
+                  <span role="status" aria-live="polite">{progressPercent}%</span>
+                )
+              }
               status={getToolCallStepStatus(part.state)}
             >
               <ToolInput input={part.input} />

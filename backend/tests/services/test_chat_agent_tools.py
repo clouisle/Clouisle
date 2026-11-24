@@ -258,7 +258,11 @@ async def test_authenticated_mcp_discovery_uses_each_invoking_users_account(
     import mcp.types as types
     from tortoise import Tortoise
 
-    from app.llm.tools.mcp_client import McpClient, McpServerCapabilities
+    from app.llm.tools.mcp_client import (
+        McpClient,
+        McpServerCapabilities,
+        _CallbackGuard,
+    )
     from app.models.tool import Tool
     from app.models.user import Team, TeamMember, User
     from app.schemas.response import BusinessError
@@ -282,7 +286,12 @@ async def test_authenticated_mcp_discovery_uses_each_invoking_users_account(
                 ]
             )
 
-        yield SimpleNamespace(list_tools=list_tools), McpServerCapabilities(tools=True)
+        yield (
+            SimpleNamespace(list_tools=list_tools),
+            McpServerCapabilities(tools=True),
+            # ``_open`` also hands out the operation's callback guard.
+            _CallbackGuard(client.callbacks),
+        )
 
     monkeypatch.setattr(McpClient, "_open", authorized_catalog)
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})

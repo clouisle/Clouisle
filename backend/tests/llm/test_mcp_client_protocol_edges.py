@@ -31,10 +31,15 @@ def _caps(**overrides):
     return mcp.McpServerCapabilities(**values)
 
 
+def _guard_for(client):
+    """A real guard, so a faked ``_open`` still hands the operation one."""
+    return mcp._CallbackGuard(client.callbacks)
+
+
 def _install_open(monkeypatch, client, session, capabilities=None):
     @asynccontextmanager
     async def fake_open(deadline):
-        yield session, capabilities or _caps()
+        yield session, capabilities or _caps(), _guard_for(client)
 
     monkeypatch.setattr(client, "_open", fake_open)
 

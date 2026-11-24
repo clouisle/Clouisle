@@ -898,6 +898,10 @@ async def read_mcp_resource_contents(
             parameters,
             context,
             invoke,
+            # The URI identifies the read; resumed answer values are the
+            # caller's input, not the reviewer's business. Keep them out of the
+            # stored approval preview, exactly as the tool and prompt paths do.
+            preview_parameters={"uri": uri},
         )
     except BusinessError:
         raise

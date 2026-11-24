@@ -41,6 +41,11 @@ def _caps(**overrides):
     return mcp.McpServerCapabilities(**values)
 
 
+def _guard_for(client):
+    """A real guard, so a faked ``_open`` still hands the operation one."""
+    return mcp._CallbackGuard(client.callbacks)
+
+
 def _install_open(monkeypatch, client, session, capabilities=None):
     """Replace transport+handshake so request behavior is testable directly."""
 
@@ -48,7 +53,7 @@ def _install_open(monkeypatch, client, session, capabilities=None):
 
     @asynccontextmanager
     async def fake_open(deadline):
-        yield session, caps
+        yield session, caps, _guard_for(client)
 
     monkeypatch.setattr(client, "_open", fake_open)
 
@@ -60,7 +65,7 @@ def _install_class_open(monkeypatch, session, capabilities=None):
 
     @asynccontextmanager
     async def fake_open(self, deadline):
-        yield session, caps
+        yield session, caps, _guard_for(self)
 
     monkeypatch.setattr(mcp.McpClient, "_open", fake_open)
 
