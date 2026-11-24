@@ -69,3 +69,21 @@ def test_settings_prefers_nonempty_internal_token_file(tmp_path):
     )
 
     assert settings.get_internal_api_token() == "from-file"
+
+
+def test_default_cors_origins_cover_both_loopback_spellings():
+    """The dev server answers on both spellings; the default must allow both.
+
+    Opening the app on the spelling missing from CORS makes every browser API
+    call fail with "Disallowed CORS origin", which hides real UI behaviour
+    behind a blank page.
+    """
+    settings = Settings(_env_file=None)
+
+    hosts = {
+        origin.rsplit(":", 1)[0].removeprefix("http://")
+        for origin in settings.BACKEND_CORS_ORIGINS
+    }
+    assert "127.0.0.1" in hosts
+    assert "localhost" in hosts
+    assert len(settings.BACKEND_CORS_ORIGINS) == len(set(settings.BACKEND_CORS_ORIGINS))

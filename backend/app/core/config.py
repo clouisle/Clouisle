@@ -82,8 +82,13 @@ class Settings(BaseSettings):
     RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS: float = 2.0
 
     # CORS
+    # Local-development convenience only: every deployment overrides this via
+    # BACKEND_CORS_ORIGINS (deploy/.env.example, k8s, helm). Both loopback
+    # spellings are listed because the dev server answers on either, and a
+    # browser opened on the other one gets every API call rejected.
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js dev server
+        "http://127.0.0.1:3000",
     ]
 
     # External API Keys

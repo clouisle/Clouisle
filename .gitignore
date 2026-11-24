@@ -82,3 +82,6 @@ backend/fix_stats.py
 
 # Local task notes
 /TODO.md
+
+# Local browser/E2E test artifacts (screenshots, traces)
+.test-artifacts/
