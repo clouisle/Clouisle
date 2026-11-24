@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import Image from 'next/image'
 import { useLocale, useTranslations } from 'next-intl'
@@ -303,12 +304,15 @@ export function WorkflowSettingsDrawer({
     }
   }
 
+  const webhookUrl = webhookToken && typeof window !== 'undefined'
+    ? `${window.location.origin}${API_BASE_URL}/workflows/webhook/${webhookToken}`
+    : ''
+
   // 复制 Webhook URL
   const handleCopyWebhookUrl = () => {
-    if (!webhookToken) return
-    
-    const url = `${window.location.origin}/api/v1/workflows/webhook/${webhookToken}`
-    navigator.clipboard.writeText(url)
+    if (!webhookUrl) return
+
+    navigator.clipboard.writeText(webhookUrl)
     setCopied(true)
     toast.success(t('editor.copiedToClipboard'))
     setTimeout(() => setCopied(false), 2000)
@@ -524,7 +528,7 @@ export function WorkflowSettingsDrawer({
                   {webhookToken ? (
                     <div className="flex items-center gap-1">
                       <Input
-                        value={`${window.location.origin}/api/v1/workflows/webhook/${webhookToken}`}
+                        value={webhookUrl}
                         readOnly
                         className="h-8 text-[11px] font-mono bg-background"
                       />

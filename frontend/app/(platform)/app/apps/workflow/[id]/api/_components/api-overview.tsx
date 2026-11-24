@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Copy, Check, AlertCircle, ExternalLink } from 'lucide-react'
@@ -175,7 +176,7 @@ export function ApiOverview({ workflow, webhookUrl }: ApiOverviewProps) {
   "data": {
     "run_id": "uuid",
     "status": "pending",
-    "stream_url": "/api/v1/workflows/runs/{run_id}/stream"
+    "stream_url": "${API_BASE_URL}/workflows/runs/{run_id}/stream"
   },
   "msg": "workflow_triggered"
 }`}

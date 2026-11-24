@@ -49,7 +49,6 @@ from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from app.core.config import settings
 from app.core.network_security import ensure_external_http_url_allowed
 from app.core.timezone import now_utc
 from app.core.tool_secrets import (
@@ -71,13 +70,13 @@ from app.models.tool_oauth import (
 from app.models.user import TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_oauth import (
+    RESERVED_AUTHORIZATION_PARAMS,
+    RESERVED_TOKEN_PARAMS,
     HttpOAuth2Config,
     McpOAuthConfig,
     OAuthConnectionStatusOut,
     OAuthDisconnectOut,
     OAuthStartOut,
-    RESERVED_AUTHORIZATION_PARAMS,
-    RESERVED_TOKEN_PARAMS,
     validate_redirect_path,
 )
 from app.services.tool_connections import (
@@ -206,9 +205,11 @@ def _fail(
     raise BusinessError(code=code, msg_key=msg_key, status_code=status_code, **kwargs)
 
 
-def _callback_url() -> str:
+async def _callback_url() -> str:
     """Server-configured public callback URI (never derived from a request)."""
-    base = (settings.PUBLIC_API_URL or settings.API_BASE_URL or "").rstrip("/")
+    from app.models.site_setting import SiteSetting
+
+    base = (await SiteSetting.get_value("site_url", "") or "").rstrip("/")
     parsed = urlsplit(base)
     if parsed.scheme != "https" and parsed.hostname not in {
         "localhost",
@@ -232,11 +233,10 @@ def _callback_url() -> str:
 async def _frontend_url() -> str:
     from app.models.site_setting import SiteSetting
 
-    try:
-        site_url = await SiteSetting.get_value("site_url", "")
-    except Exception:  # pragma: no cover - configuration read failure
-        site_url = ""
-    return (site_url or settings.FRONTEND_URL).rstrip("/")
+    site_url = await SiteSetting.get_value("site_url", "")
+    if not site_url:
+        raise RuntimeError("site_url is not configured")
+    return site_url.rstrip("/")
 
 
 async def _frontend_redirect(
@@ -552,7 +552,7 @@ class ToolOAuthService:
             await check_tool_write_access(tool, actor)
 
         kind = cls._provider_kind(tool)
-        redirect_uri = _callback_url()
+        redirect_uri = await _callback_url()
         setup = await cls._ensure_provider(
             tool=tool,
             kind=kind,

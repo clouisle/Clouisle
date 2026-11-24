@@ -102,9 +102,9 @@ describe('upload API', () => {
       expect(uploadApi.getFullUrl('http://files.test/a.txt')).toBe('http://files.test/a.txt')
       expect(uploadApi.getFullUrl('https://files.test/a.txt')).toBe('https://files.test/a.txt')
       process.env.NEXT_PUBLIC_API_URL = 'https://api.test/api/v1'
-      expect(uploadApi.getFullUrl('/api/v1/upload/files/a.txt')).toBe('https://api.test/api/v1/upload/files/a.txt')
+      expect(uploadApi.getFullUrl('/api/v1/upload/files/a.txt')).toBe(`${typeof window === 'undefined' ? '' : window.location.origin}/api/v1/upload/files/a.txt`)
       delete process.env.NEXT_PUBLIC_API_URL
-      expect(uploadApi.getFullUrl('/api/v1/upload/files/a.txt')).toBe('http://localhost:8000/api/v1/upload/files/a.txt')
+      expect(uploadApi.getFullUrl('/api/v1/upload/files/a.txt')).toBe(`${typeof window === 'undefined' ? '' : window.location.origin}/api/v1/upload/files/a.txt`)
     } finally {
       if (originalBaseUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL
       else process.env.NEXT_PUBLIC_API_URL = originalBaseUrl

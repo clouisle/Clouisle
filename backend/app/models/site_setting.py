@@ -1059,10 +1059,30 @@ WATERMARK_SETTING_DEFAULTS = {
 
 
 async def init_default_settings():
-    """Initialize default settings if not exist"""
+    """Initialize missing settings and backfill an empty public site URL."""
+    from app.core.config import settings
+
     for key, config in DEFAULT_SETTINGS.items():
         existing = await SiteSetting.filter(key=key).first()
-        if not existing:
+        if key == "site_url":
+            seed = settings.FRONTEND_URL.strip().rstrip("/")
+            if existing is None:
+                existing, _ = await SiteSetting.get_or_create(
+                    key=key,
+                    defaults={
+                        "value": seed,
+                        "value_type": config["type"],
+                        "category": config["category"],
+                        "description": config["desc"],
+                        "is_public": config["public"],
+                    },
+                )
+            if seed and not existing.value:
+                # Do not overwrite a value saved concurrently by an administrator.
+                await SiteSetting.filter(key=key, value=existing.value).update(
+                    value=seed
+                )
+        elif existing is None:
             await SiteSetting.set_value(
                 key=key,
                 value=config["value"],

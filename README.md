@@ -252,12 +252,9 @@ Key configuration options (see `.env.example` for full list):
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | Redis connection |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant vector database |
 | `SECRET_KEY` | JWT signing key |
-| `VECTOR_BACKEND` | Vector DB backend (default: qdrant) |
-| `API_BASE_URL` | Public API URL for the backend |
-| `FRONTEND_URL` | Frontend URL for CORS and redirects |
-| `NEXT_PUBLIC_API_URL` | API URL consumed by the frontend |
+| `API_BASE_URL` | Internal API service URL |
+| `FRONTEND_URL` | Public site origin used to initialize `site_url` |
 | `TAVILY_API_KEY` | Legacy one-time import into site-managed search; use admin UI for subsequent configuration |
-| `SANDBOX_RUNTIME_ENABLED` | Enable sandboxed code execution |
 
 ### Site Settings
 

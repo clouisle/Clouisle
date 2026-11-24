@@ -70,7 +70,6 @@ const messages: Record<string, string> = {
   'agents.apiAccess.runLifecycleDescription': 'Agent chat runs are durable.',
   'agents.apiAccess.answerTitle': 'Submit Answers',
   'agents.apiAccess.answerDescription': 'When a run is waiting for user answers.',
-  'agents.apiAccess.answerEndpoint': 'POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers',
   'agents.apiAccess.answerBody': 'Request body:',
   'agents.apiAccess.answerFields.toolCallId': 'Pending tool-call ID',
   'agents.apiAccess.answerFields.answers': 'ID-keyed answer map',
@@ -120,7 +119,7 @@ let container: HTMLElement | null = null
 let cleanupWindow: Window | null = null
 
 async function renderApiContent(agent: Partial<Agent> = {}) {
-  cleanupWindow = new Window()
+  cleanupWindow = new Window({ url: 'https://app.example.test' })
   const { document, navigator } = cleanupWindow
   const writeText = mock(async () => {})
   Object.assign(globalThis, {
@@ -175,7 +174,7 @@ describe('ApiAccessContent', () => {
 
     expect(container.textContent).toContain('API Access')
     expect(container.textContent).toContain('POST')
-    expect(container.textContent).toContain('http://localhost:8000/api/v1/agents/agent-123/chat/stream')
+    expect(container.textContent).toContain('https://app.example.test/api/v1/agents/agent-123/chat/stream')
     expect(container.textContent).toContain('Authorization: Bearer YOUR_API_KEY')
     expect(container.textContent).toContain('message_end')
     expect(container.textContent).toContain('customer_id')
@@ -198,19 +197,19 @@ describe('ApiAccessContent', () => {
     expect(container.textContent).toContain('skipped')
   })
 
-  test('keeps the answer endpoint in sync with the configured API base URL', async () => {
+  test('uses the current origin for the answer endpoint', async () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
     const { container } = await renderApiContent()
 
-    expect(container.textContent).toContain('https://api.example.test/api/v1/agents/agent-123/chat/runs/{run_id}/answers')
+    expect(container.textContent).toContain('https://app.example.test/api/v1/agents/agent-123/chat/runs/{run_id}/answers')
 
   })
-  test('uses configured API base URL in endpoint and examples', async () => {
+  test('uses the current origin in endpoint and examples', async () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
     const { container } = await renderApiContent()
 
-    expect(container.textContent).toContain('https://api.example.test/api/v1/agents/agent-123/chat/stream')
-    expect(container.textContent).toContain('curl -X POST "https://api.example.test/api/v1/agents/agent-123/chat/stream"')
+    expect(container.textContent).toContain('https://app.example.test/api/v1/agents/agent-123/chat/stream')
+    expect(container.textContent).toContain('curl -X POST "https://app.example.test/api/v1/agents/agent-123/chat/stream"')
 
     delete process.env.NEXT_PUBLIC_API_URL
   })

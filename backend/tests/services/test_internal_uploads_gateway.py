@@ -233,6 +233,16 @@ def test_media_save_and_delete_delegate_to_document_processor(
     delete_assets.assert_awaited_once()
 
 
+@pytest.mark.parametrize("override", ["", "http://gateway:8000/"])
+def test_gateway_client_uses_internal_api_default_or_override(monkeypatch, override):
+    from app.services.upload_gateway import client
+
+    monkeypatch.setattr(settings, "API_BASE_URL", "http://api:8000/")
+    monkeypatch.setattr(settings, "API_INTERNAL_BASE_URL", override)
+    gateway = client()
+    assert str(gateway.base_url).rstrip("/") == (override or "http://api:8000").rstrip("/")
+
+
 @pytest.fixture
 def remote_processor(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "UPLOAD_STORAGE_MODE", "remote")

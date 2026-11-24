@@ -1,4 +1,5 @@
 'use client'
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 
 type AuthenticatedAssetCacheEntry = {
@@ -118,33 +119,23 @@ export function isAllowedAssetDownloadUrl(src: string): boolean {
 }
 
 export function getAuthenticatedApiAssetUrl(src: string): string | null {
-  if (src.startsWith('/api/v1/')) return src
+  if (src.startsWith(`${API_BASE_URL}/`)) return src
 
   try {
     const parsed = new URL(
       src,
       typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
     )
-    if (!parsed.pathname.startsWith('/api/v1/')) return null
+    if (!parsed.pathname.startsWith(`${API_BASE_URL}/`)) return null
 
     const browserOrigin = typeof window !== 'undefined' ? window.location.origin : null
-    if (parsed.origin === browserOrigin || parsed.origin === getConfiguredApiOrigin()) {
+    if (parsed.origin === browserOrigin) {
       return `${parsed.pathname}${parsed.search}`
     }
   } catch {
     return null
   }
   return null
-}
-
-function getConfiguredApiOrigin(): string | null {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL
-  if (!apiUrl) return null
-  try {
-    return new URL(apiUrl).origin
-  } catch {
-    return null
-  }
 }
 
 export function getCachedAuthenticatedAssetUrl(

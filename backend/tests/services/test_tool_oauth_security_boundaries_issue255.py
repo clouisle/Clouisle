@@ -8,6 +8,8 @@ the SSRF guard are replaced at their module boundary.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -183,7 +185,9 @@ def _allow_ssrf(monkeypatch):
         return url
 
     monkeypatch.setattr(oauth, "ensure_external_http_url_allowed", allow)
-    monkeypatch.setattr(settings, "PUBLIC_API_URL", "https://api.example.test")
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="https://api.example.test")
+    )
 
 
 def _query(url: str) -> dict[str, list[str]]:
@@ -375,7 +379,7 @@ async def test_redirect_path_allowlist_and_length_boundaries():
 # ---------------------------------------------------------------------------
 
 
-async def test_frontend_url_prefers_site_setting_then_falls_back(monkeypatch):
+async def test_frontend_url_uses_site_setting_and_rejects_empty(monkeypatch):
     async with _database():
         monkeypatch.setattr(settings, "FRONTEND_URL", "https://fallback.example.test")
         setting = await SiteSetting.create(
@@ -384,17 +388,23 @@ async def test_frontend_url_prefers_site_setting_then_falls_back(monkeypatch):
         assert await oauth._frontend_url() == "https://site.example.test"
 
         await SiteSetting.filter(id=setting.id).update(value="")
-        assert await oauth._frontend_url() == "https://fallback.example.test"
+        with pytest.raises(RuntimeError, match="site_url is not configured"):
+            await oauth._frontend_url()
 
 
 async def test_callback_url_rejects_origin_without_hostname(monkeypatch):
-    monkeypatch.setattr(settings, "PUBLIC_API_URL", "https://")
+    monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value="https://"))
     with pytest.raises(BusinessError) as invalid:
-        oauth._callback_url()
+        await oauth._callback_url()
     assert invalid.value.code == ResponseCode.TOOL_OAUTH_CONFIG_INVALID
 
-    monkeypatch.setattr(settings, "PUBLIC_API_URL", "http://localhost:8000/")
-    assert oauth._callback_url() == "http://localhost:8000/api/v1/tool-oauth/callback"
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="http://localhost:8000/")
+    )
+    assert (
+        await oauth._callback_url()
+        == "http://localhost:8000/api/v1/tool-oauth/callback"
+    )
 
 
 async def test_provider_kind_and_authorization_server_bounds():

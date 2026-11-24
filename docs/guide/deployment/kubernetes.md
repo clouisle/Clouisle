@@ -237,16 +237,12 @@ metadata:
   name: clouisle-config
   namespace: clouisle
 data:
-  PROJECT_NAME: "Clouisle"
   TIMEZONE: "Asia/Shanghai"
   API_BASE_URL: "http://api:8000"
-  PUBLIC_API_URL: ""
-  API_INTERNAL_BASE_URL: "http://api:8000"
-  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
   SANDBOX_WORKER_CONCURRENCY: "1"
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
   SANDBOX_FILESYSTEM_ISOLATION_BINARY: "/usr/bin/bwrap"
-  FRONTEND_URL: "http://frontend:3000"
+  FRONTEND_URL: "https://your-domain.com"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
   POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
@@ -254,7 +250,6 @@ data:
   POSTGRES_DB: "clouisle"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  VECTOR_BACKEND: "qdrant"
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION_PREFIX: "kb_dim"
   QDRANT_DISTANCE: "Cosine"
@@ -262,7 +257,7 @@ data:
   RETRIEVAL_SHADOW_ENABLED: "false"
 ```
 
-For your public domain, put the public origin into `PUBLIC_API_URL` and set `FRONTEND_URL`/`BACKEND_CORS_ORIGINS` accordingly (keep `API_BASE_URL` internal).
+Before starting a public deployment, set `config.FRONTEND_URL` (Helm) or ConfigMap `FRONTEND_URL` (raw manifest) to the browser-visible origin matching your Ingress, including the scheme. The default is empty: without a public origin, `site_url` is not initialized and features that generate public links or authentication callbacks need the site address to be set. Configure `BACKEND_CORS_ORIGINS` separately when needed; keep `API_BASE_URL` internal.
 
 ## Persistent Volumes
 
@@ -648,7 +643,7 @@ spec:
             periodSeconds: 30
 ```
 
-The frontend runs the Next.js standalone server (`node server.js`). The supplied manifest and Helm chart set no frontend environment variables, so `BACKEND_INTERNAL_URL` is unset and its Next.js rewrite destination falls back to the code default `http://localhost:8000`. Browser `/api` traffic does not rely on that rewrite: the Ingress routes `/api` to the `api` Service (:8000) and `/` to the `frontend` Service (:3000). There is no `NEXT_PUBLIC_API_URL` runtime env either (it is baked in at image build time).
+The frontend runs the Next.js standalone server (`node server.js`). The frontend image uses the same Docker build argument for its internal SSR and proxy targets, defaulting to `http://api:8000`. Do not override `BACKEND_INTERNAL_URL` at runtime. Browser `/api` traffic does not rely on that rewrite: the Ingress routes `/api` to the `api` Service (:8000) and `/` to the `frontend` Service (:3000).
 
 ## Worker and Beat Deployments
 

@@ -14,16 +14,16 @@ from tortoise.transactions import in_transaction
 from app.api import deps
 from app.core import security
 from app.core.timezone import now_utc
-from app.models.site_setting import SiteSetting
+from app.integrations.feishu import FeishuAPIError
+from app.integrations.registry import IntegrationCapability, integration_registry
+from app.models.feishu_user import FeishuUser
 from app.models.integration import Integration
+from app.models.site_setting import SiteSetting
 from app.models.sso_session import SSOSession
 from app.models.user import User
 from app.models.user_sso_connection import UserSSOConnection
-from app.integrations.feishu import FeishuAPIError
-from app.models.feishu_user import FeishuUser
-from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.integration import IntegrationLoginPublic
-from app.integrations.registry import IntegrationCapability, integration_registry
+from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.services.audit_log import AuditLogService
 from app.services.sso import PKCE_PROVIDER_TYPES, SSOService
 
@@ -44,23 +44,10 @@ def _supports_login(integration: Integration) -> bool:
 
 
 async def _frontend_url() -> str:
-    from app.core.config import settings
-
     site_url = await SiteSetting.get_value("site_url", "")
-    return (site_url or settings.FRONTEND_URL).rstrip("/")
-
-
-def _backend_url(request: Request) -> str:
-    from app.core.config import settings
-
-    backend_url = getattr(settings, "BACKEND_URL", None)
-    if backend_url:
-        return backend_url.rstrip("/")
-
-    base_url = str(request.base_url).rstrip("/")
-    if ":3000" in base_url:
-        return base_url.replace(":3000", ":8000")
-    return base_url
+    if not site_url:
+        raise RuntimeError("site_url is not configured")
+    return site_url.rstrip("/")
 
 
 def _safe_sso_redirect(redirect_url: Optional[str]) -> str:
@@ -133,8 +120,8 @@ async def sso_login(
     try:
         provider_instance = SSOService.get_provider_instance(provider)
 
-        # Build callback URL from backend/API origin for IdP redirects.
-        callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
+        # Build callback URL from configured site origin for IdP redirects.
+        callback_url = f"{await _frontend_url()}/api/v1/sso/callback/{provider.name}"
 
         if provider.provider_type in PKCE_PROVIDER_TYPES:
             auth_result = await provider_instance.get_authorization_url(
@@ -257,8 +244,8 @@ async def sso_callback(
     try:
         provider_instance = SSOService.get_provider_instance(provider)
 
-        # Build callback URL from backend/API origin for IdP redirects.
-        callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
+        # Build callback URL from configured site origin for IdP redirects.
+        callback_url = f"{await _frontend_url()}/api/v1/sso/callback/{provider.name}"
 
         if provider.provider_type in PKCE_PROVIDER_TYPES:
             callback_data = {"code": code}
@@ -317,7 +304,7 @@ async def sso_callback(
             provider=provider, provider_user_id=provider_user_id, user_info=mapped_data
         )
 
-        # Use public site_url for browser redirect, fall back to FRONTEND_URL
+        # Use the configured public site URL for browser redirects.
         frontend_url = await _frontend_url()
         final_redirect = _safe_sso_redirect(session.redirect_url)
 
@@ -472,7 +459,7 @@ async def start_account_link(
         )
 
     state = secrets.token_urlsafe(32)
-    callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
+    callback_url = f"{await _frontend_url()}/api/v1/sso/callback/{provider.name}"
     try:
         authorization = await SSOService.get_provider_instance(
             provider

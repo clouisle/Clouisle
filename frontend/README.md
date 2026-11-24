@@ -29,7 +29,6 @@ bun install
 Copy `.env.example` or create `.env.local`:
 
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
 ### 3. Start Development Server

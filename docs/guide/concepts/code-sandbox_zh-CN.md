@@ -102,7 +102,6 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 
 | 变量 | 通用默认值 | Sandbox Worker 部署值 | 说明 |
 |---|---|---|---|
-| `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | 启用沙箱运行时 |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | `true` | 在 Bubblewrap 文件系统命名空间内启动可执行任务 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap 命令名或绝对路径 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Worker 并发槽位数 |
@@ -134,7 +133,7 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复。工作区、检查点、身份、锁和缓存目录应一起保存在同一份 Worker 本地磁盘上，不会跨节点复制。TTL 到期后，Worker 能处理清理任务时会永久删除会话数据；若节点不可访问，其他节点无法远程删除其本地文件。
 - Bash 工具结果包含有界的首尾预览。超过沙箱日志容量时会明确终止执行，并标记预览／日志为部分内容；日志仅在所属沙箱会话期间可从 `/workspace/...` 路径通过 `read` 工具读取，保留 hashline/snapshot 锚点。会话 TTL 清理后日志将删除；它们不是持久化 Asset，也不能跨会话读取。
 
-调用侧采用 fail-closed：`SANDBOX_RUNTIME_ENABLED=false` 时，代码执行直接失败，不会在当前进程启用本地降级；沙箱任务失败也会返回失败。Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离；若缺少 `bwrap` 或工作空间根目录，任务会失败，不会在未隔离的情况下启动负载。
+沙箱任务失败时会返回错误，不会降级到当前进程执行。Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离；若缺少 `bwrap` 或工作空间根目录，任务会失败，不会在未隔离的情况下启动负载。
 
 ## 安全模型
 

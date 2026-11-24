@@ -166,11 +166,11 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 
 Choose Docker Compose for a single server, Kubernetes with Helm, or Kubernetes single-file manifest generation. Docker mode prompts for an installation directory, defaulting to `/opt/clouisle`, then generates strong secrets, downloads the current Compose file, pulls images, and starts all services. Helm mode guides you through namespace, Ingress, shared storage, and optional image-pull-secret settings. The manifest mode writes a `0600` file at `./clouisle-k8s.yaml` by default (override with `CLOUISLE_K8S_MANIFEST`), does not apply it automatically, and requires applying the generated file path after review; when `CLOUISLE_K8S_MANIFEST` is unset, use `kubectl apply -f ./clouisle-k8s.yaml`.
 
-For non-interactive Docker installation:
+The Docker installer prompts for the public origin on first setup. For a non-interactive public deployment, supply it before the first startup:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
-  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_FRONTEND_URL=https://app.example.com CLOUISLE_YES=1 bash
 ```
 
 ### Configuration
@@ -190,11 +190,10 @@ The following are the public-origin settings to change for production. Keep serv
 
 | Variable | Default | Production Example |
 |----------|---------|-------------------|
-| `PUBLIC_API_URL` | *(empty)* | `https://example.com` |
 | `FRONTEND_URL` | `http://localhost:3000` | `https://example.com` |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `["https://example.com"]` |
 
-`API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal service URLs (usually `http://api:8000` in Compose/Kubernetes), not public domains. `PUBLIC_API_URL` is for browser-visible absolute API/file URLs. `POSTGRES_SERVER`, `REDIS_HOST`, and `QDRANT_URL` are overridden in the supplied deployment files with internal service names.
+`API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal service URLs (usually `http://api:8000` in Compose/Kubernetes), not public domains. `site_url` is for browser-visible absolute API/file URLs. `POSTGRES_SERVER`, `REDIS_HOST`, and `QDRANT_URL` are overridden in the supplied deployment files with internal service names.
 
 Tool-domain secrets (tool connections, approval parameters, OAuth client secrets/PKCE verifiers, interaction responses) use an envelope keyring: inject `TOOL_SECRET_KEYS` (`key_id:fernet_key,...`) and `TOOL_SECRET_PRIMARY_KEY_ID` from your secret manager. Without them the process derives a single fallback key from `SECRET_KEY` (upgrade-safe but not a production keyring). Rotation command: `cd backend && python -m app.core.tool_secret_rotation --dry-run`, then without `--dry-run`; see [environment variables](environment-variables.md#tool_secret_keys) for the full runbook.
 
@@ -321,6 +320,8 @@ Default exposed ports:
 
 ### Custom Domain & HTTPS
 
+Browser requests use `/api/v1` on the site origin. When upgrading, verify the stored `site_url` is your public origin; `FRONTEND_URL` only seeds missing or empty values. If an OAuth or SSO provider previously used a separate API hostname, register the new same-origin callback URL before switching traffic. `NEXT_PUBLIC_API_URL`, `PUBLIC_API_URL`, and `API_V1_STR` no longer take effect.
+
 For production with a custom domain, place an external reverse proxy (e.g., Nginx, Caddy, Traefik) in front of the frontend container:
 
 **Option A: Caddy (automatic HTTPS)**
@@ -367,17 +368,12 @@ server {
 When using HTTPS, set the public browser origin separately from internal service URLs:
 
 ```bash
-# Internal service-to-service address; keep this as http://api:8000 in Compose/Kubernetes.
-API_BASE_URL=http://api:8000
-API_INTERNAL_BASE_URL=http://api:8000
-
 # Public/browser origin and CORS policy
-PUBLIC_API_URL=https://example.com
 FRONTEND_URL=https://example.com
 BACKEND_CORS_ORIGINS='["https://example.com"]'
 ```
 
-`API_BASE_URL` is not the public domain. `PUBLIC_API_URL` is used when absolute browser-visible API/file URLs are needed; `FRONTEND_URL` is used for browser/SSO redirects.
+`API_BASE_URL` is not the public domain. `site_url` is used when absolute browser-visible API/file URLs are needed; `FRONTEND_URL` seeds the stored `site_url`.
 
 ### Scaling
 
@@ -553,11 +549,10 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
 
-Also update the ConfigMap (keep `API_BASE_URL` internal; put the public origin in `PUBLIC_API_URL`):
+Also update the ConfigMap (keep `API_BASE_URL` internal; seed `site_url` through `FRONTEND_URL`):
 
 ```yaml
 data:
-  PUBLIC_API_URL: "https://your-domain.com"
   FRONTEND_URL: "https://your-domain.com"
   BACKEND_CORS_ORIGINS: "https://your-domain.com"
 ```
@@ -647,17 +642,15 @@ kubectl -n clouisle top pods
 |----------|---------|-------------|
 | `REDIS_PASSWORD` | *(empty)* | Redis password. Empty means no authentication. |
 | `QDRANT_API_KEY` | *(empty)* | Qdrant API key. Empty means no authentication. |
-| `PUBLIC_API_URL` | *(empty)* | Browser-visible public API origin for absolute API/file URLs. |
-| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL used for SSO redirect URIs. Set to your actual public domain in production. |
+| `FRONTEND_URL` | `http://localhost:3000` | Public site origin used to seed `site_url`. Set it before initialization; change the stored setting afterward. |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed CORS origins. Must include your frontend domain. |
 
-> `API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal server-to-server addresses used by the backend and workers. Do not set them to public domains. Use `PUBLIC_API_URL` for browser-visible API/file links and `FRONTEND_URL` for SSO redirect URIs.
+> `API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal server-to-server addresses used by the backend and workers. Do not set them to public domains. Use `site_url` for browser-visible API/file links and SSO redirect URIs.
 
 ### Optional
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PROJECT_NAME` | `Clouisle` | Display name |
 | `TIMEZONE` | `Asia/Shanghai` | Server timezone (affects scheduled tasks) |
 | `POSTGRES_SERVER` | `localhost` | PostgreSQL host. Overridden to `db` (Compose) or `postgres` (K8s) in deployment configs. |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
@@ -666,12 +659,10 @@ kubectl -n clouisle top pods
 | `DATABASE_URL` | *(auto-assembled)* | Full PostgreSQL DSN. If set, overrides individual `POSTGRES_*` variables. |
 | `REDIS_HOST` | `localhost` | Redis host. Overridden to `redis` in deployment configs. |
 | `REDIS_PORT` | `6379` | Redis port |
-| `VECTOR_BACKEND` | `qdrant` | Vector database backend |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant URL. Overridden to `http://qdrant:6333` in deployment configs. |
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection name prefix |
 | `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
 | `TAVILY_API_KEY` | *(empty)* | Legacy one-time import into site-managed search when no global key exists; later changes use the admin UI |
-| `SANDBOX_RUNTIME_ENABLED` | `true` | Route executable tasks through the sandbox runtime. |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | Enable the Bubblewrap mount namespace; the generic application default is `true`. |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `/usr/bin/bwrap` in sandbox-worker deployments | Bubblewrap executable path. Generic application default is `bwrap`. |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery worker concurrency. |
@@ -693,7 +684,7 @@ Browser
   └── API requests (/api/*) ──► Next rewrites (frontend container) ──► Backend Gunicorn (:8000)
 ```
 
-The frontend container runs the Next.js standalone server (`node server.js`) on port 3000. It handles server-side rendering and proxies `/api/*` requests to the backend through Next.js rewrites (`frontend/next.config.ts`, destination from `BACKEND_INTERNAL_URL`, code default `http://localhost:8000`; Compose sets it to `http://api:8000`).
+The frontend container runs the Next.js standalone server (`node server.js`) on port 3000. It handles SSR and proxies `/api/*` to the same backend address baked into the frontend image (`BACKEND_INTERNAL_URL`, default `http://api:8000`). Rebuild the image to change this destination; do not override it at runtime.
 
 ### Header Forwarding
 
@@ -833,7 +824,7 @@ The backend initializes/updates the schema at startup through Tortoise ORM (`ini
 - [ ] **Enable HTTPS** — Use TLS termination at the external reverse proxy or K8s Ingress
 - [ ] **Restrict exposed ports** — In production, only expose port 3000 (or 443 via reverse proxy). Remove database/Redis/Qdrant port mappings.
 - [ ] **Set CORS origins** — `BACKEND_CORS_ORIGINS` should only contain your actual frontend domain, not `*`
-- [ ] **Set URL variables by role** — keep `API_BASE_URL` internal (for example `http://api:8000` inside Compose/K8s); use `PUBLIC_API_URL` for browser-visible API/file links and `FRONTEND_URL` for SSO redirects
+- [ ] **Set URL variables by role** — keep `API_BASE_URL` internal (for example `http://api:8000` inside Compose/K8s); seed `site_url` with `FRONTEND_URL` for browser-visible links and SSO redirects
 - [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
 - [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
 - [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
@@ -864,7 +855,7 @@ Common causes:
 
 ### Frontend returns 502 for API requests
 
-The frontend container proxies `/api/*` to the backend via Next.js rewrites (destination from `BACKEND_INTERNAL_URL`; code default `http://localhost:8000`, Compose sets `http://api:8000`). A 502 means the backend is unreachable.
+The frontend container proxies `/api/*` to the internal backend address configured when the image was built (default `http://api:8000`). A 502 means the backend is unreachable.
 
 ```bash
 # Check if backend is running

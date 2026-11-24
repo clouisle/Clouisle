@@ -51,8 +51,15 @@ def test_k8s_installer_generates_a_secret_manifest_and_preserves_output(tmp_path
     assert result.returncode == 0, result.stderr
     assert output_path.stat().st_mode & 0o777 == 0o600
     assert f"kubectl apply -f {output_path}" in result.stdout
+    assert "Set ConfigMap FRONTEND_URL to your public origin" in result.stdout
 
     documents = _generated_documents(output_path)
+    config = next(
+        document["data"]
+        for document in documents
+        if document["kind"] == "ConfigMap" and "FRONTEND_URL" in document["data"]
+    )
+    assert config["FRONTEND_URL"] == ""
     secret = next(document for document in documents if document["kind"] == "Secret")
     decoded = {
         key: base64.b64decode(secret["data"][key]).decode("ascii")

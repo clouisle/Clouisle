@@ -37,6 +37,7 @@ mock.module('@/components/permission-guard', () => ({
 const { ApiAccessContent } = await import('./api-access-content')
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+Object.assign(globalThis, { window: { location: { origin: 'https://app.example.test' } } })
 
 const renderers: ReactTestRenderer[] = []
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL
@@ -69,6 +70,15 @@ afterEach(() => {
 })
 
 describe('ApiAccessContent approvals', () => {
+  test('uses the current origin instead of the configured API URL', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://backend.example.test/api/v1'
+    const rendered = output(render({ id: 'agent-1', name: 'Support', status: 'published', variables: [] }))
+    expect(rendered).toContain('https://app.example.test/api/v1/agents/agent-1/chat/stream')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-approvals')
+    expect(rendered).not.toContain('https://backend.example.test')
+    expect(rendered).not.toContain('/api/v1/api/v1')
+  })
+
   test('documents the approval pause using the original tool arguments', () => {
     const renderer = render({ id: 'agent-1', name: 'Support', status: 'published', variables: [] })
     const rendered = output(renderer)
@@ -89,12 +99,12 @@ describe('ApiAccessContent approvals', () => {
     const rendered = output(renderer)
     const codes = codeText(renderer)
 
-    expect(rendered).toContain('https://api.example.test/api/v1/tool-approvals?page=1&page_size=20')
-    expect(rendered).toContain('https://api.example.test/api/v1/tool-executions?run_id={run_id}&status=awaiting_approval')
-    expect(rendered).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}')
-    expect(rendered).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}/decision')
-    expect(rendered).toContain('https://api.example.test/api/v1/tool-approvals/{request_id}/decision')
-    expect(rendered).toContain('https://api.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence={sequence}')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-approvals?page=1&page_size=20')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-executions?run_id={run_id}&status=awaiting_approval')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-executions/{execution_id}')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-executions/{execution_id}/decision')
+    expect(rendered).toContain('https://app.example.test/api/v1/tool-approvals/{request_id}/decision')
+    expect(rendered).toContain('https://app.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence={sequence}')
     expect(rendered).toContain('approval.viewResponse')
     expect(rendered).toContain('approval.decisionBody')
     expect(rendered).toContain('approval.decisionResponse')
@@ -122,10 +132,10 @@ describe('ApiAccessContent approvals', () => {
     expect(rendered).toContain('approval.apiKeyResumeLabel')
     expect(rendered).toContain('approval.apiKeyScopeNote')
     expect(codes).toContain('Bearer clou_your_key')
-    expect(codes).toContain('https://api.example.test/api/v1/agents/agent-1/chat/stream')
-    expect(codes).toContain('https://api.example.test/api/v1/tool-approvals?page=1&page_size=20')
-    expect(codes).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}/decision')
-    expect(codes).toContain('https://api.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence=17')
+    expect(codes).toContain('https://app.example.test/api/v1/agents/agent-1/chat/stream')
+    expect(codes).toContain('https://app.example.test/api/v1/tool-approvals?page=1&page_size=20')
+    expect(codes).toContain('https://app.example.test/api/v1/tool-executions/{execution_id}/decision')
+    expect(codes).toContain('https://app.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence=17')
   })
 
   test('states that workflows never request tool approval', () => {

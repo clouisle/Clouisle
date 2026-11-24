@@ -8,7 +8,7 @@ Use this checklist before exposing a Clouisle deployment to users. Items describ
 - [ ] Set a unique non-empty `INTERNAL_API_TOKEN`; API, worker, and sandbox-worker share it for the authenticated internal upload gateway.
 - [ ] Keep `.env`, Kubernetes Secret manifests, and generated installer output out of source control and restrict file permissions.
 - [ ] Store production secrets in a secret manager or an externally managed Kubernetes Secret where possible; rotate them through a planned maintenance window.
-- [ ] Confirm `API_BASE_URL`/`API_INTERNAL_BASE_URL` are internal service URLs, while `PUBLIC_API_URL`, `FRONTEND_URL`, and `BACKEND_CORS_ORIGINS` contain the public browser origin.
+- [ ] Confirm `API_BASE_URL`/`API_INTERNAL_BASE_URL` are internal service URLs, while `FRONTEND_URL` (to seed `site_url`) and `BACKEND_CORS_ORIGINS` contain the public browser origin.
 
 ## Authentication and Access
 

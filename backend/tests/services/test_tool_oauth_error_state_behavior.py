@@ -10,6 +10,8 @@ boundary; tokens, flows and connection state use real Tortoise models.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -18,8 +20,8 @@ from uuid import uuid4
 import pytest
 from tortoise import Tortoise
 
-from app.core.config import settings
 from app.core.timezone import now_utc
+from app.models.site_setting import SiteSetting
 from app.models.tool import CustomToolType, Tool, ToolType, ToolVisibility
 from app.models.tool_connection import (
     ToolConnection,
@@ -126,7 +128,9 @@ def _allow_ssrf(monkeypatch):
         return url
 
     monkeypatch.setattr(oauth, "ensure_external_http_url_allowed", allow)
-    monkeypatch.setattr(settings, "PUBLIC_API_URL", "https://api.example.test")
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="https://api.example.test")
+    )
 
 
 def _frontend(monkeypatch, value: str = "https://app.example.test") -> None:

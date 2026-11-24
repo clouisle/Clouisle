@@ -213,8 +213,16 @@ install_docker() {
   download "$RAW_BASE_URL/docker-compose.yml" "$compose_temporary"
   mv "$compose_temporary" "$compose_file"
 
+  local public_origin="${CLOUISLE_FRONTEND_URL:-}"
   if [[ ! -f "$env_file" ]]; then
+    if [[ -z "$public_origin" && "$TTY_AVAILABLE" == "1" ]]; then
+      public_origin="$(prompt "Public site origin (include http:// or https://)" "http://localhost:3000")"
+    fi
     download "$RAW_BASE_URL/.env.example" "$env_file"
+  fi
+  if [[ -n "$public_origin" ]]; then
+    [[ "$public_origin" =~ ^https?://([A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(:[0-9]+)?/?$ ]] || die "CLOUISLE_FRONTEND_URL must be an HTTP(S) origin with no path"
+    set_env_value "$env_file" FRONTEND_URL "${public_origin%/}"
   fi
 
   ensure_secret "$env_file" SECRET_KEY changethis-to-a-secure-random-secret-key
@@ -441,7 +449,7 @@ install_k8s_manifest() {
   chmod 600 "$temporary"
   mv "$temporary" "$output_path"
   log "Generated secure Kubernetes manifest: $output_path"
-  log "Review cluster-specific image, storage, and Ingress settings, then apply with:"
+  log "Set ConfigMap FRONTEND_URL to your public origin and review image, storage, and Ingress settings before applying:"
   log "kubectl apply -f $output_path"
 }
 

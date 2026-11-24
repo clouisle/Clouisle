@@ -151,13 +151,6 @@ async def rotate_tool_secrets(*, dry_run: bool = False, batch_size: int = 200) -
     }
 
 
-def _database_url() -> str:
-    return settings.DATABASE_URL or (
-        f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
-        f"@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
-    )
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Rewrap tool-domain secrets onto TOOL_SECRET_PRIMARY_KEY_ID"
@@ -171,7 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     async def _run() -> dict:
         from tortoise import Tortoise
 
-        await Tortoise.init(db_url=_database_url(), modules={"models": ["app.models"]})
+        await Tortoise.init(
+            db_url=settings.DATABASE_URL, modules={"models": ["app.models"]}
+        )
         try:
             return await rotate_tool_secrets(
                 dry_run=args.dry_run, batch_size=args.batch_size

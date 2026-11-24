@@ -203,7 +203,6 @@ class WorkflowOrchestrator:
         user_id: UUID,
         team_id: UUID | None = None,
         stream: bool = True,
-        public_base_url: str | None = None,
         origin: WorkflowExecutionOrigin | None = None,
     ) -> str:
         """
@@ -215,8 +214,6 @@ class WorkflowOrchestrator:
             user_id: User UUID triggering the run
             team_id: Optional team UUID
             stream: Whether to enable streaming
-            public_base_url: Public base URL of the triggering request, used as a
-                fallback for absolutizing upload URLs when PUBLIC_API_URL is unset
             origin: Trusted entrypoint that started this run. Background callers
                 (cron, nested workflow) must pass it; omitted means the workflow
                 surface.
@@ -248,7 +245,6 @@ class WorkflowOrchestrator:
             ORIGIN_SNAPSHOT_KEY: origin_snapshot(
                 origin or workflow_origin(workflow_id)
             ),
-            **({"public_base_url": public_base_url} if public_base_url else {}),
         }
         await run.save(update_fields=["context_snapshot"])
 
@@ -273,7 +269,6 @@ class WorkflowOrchestrator:
             redis_client=redis_client,
             workflow_id=str(workflow_id),
             user_id=user_id,
-            public_base_url=public_base_url,
         )
         await context.set_inputs(inputs)
 
@@ -401,7 +396,6 @@ class WorkflowOrchestrator:
         team_id: UUID | None = None,
         stream: bool = True,
         is_debug: bool = False,
-        public_base_url: str | None = None,
         resume: bool = False,
     ) -> str:
         """
@@ -446,9 +440,6 @@ class WorkflowOrchestrator:
                     details={"reason": "workflow_pause_snapshot_missing"}
                 )
             workflow_def = saved_definition
-            saved_base_url = context_snapshot.get("public_base_url")
-            if not public_base_url and isinstance(saved_base_url, str):
-                public_base_url = saved_base_url
         else:
             # The persisted run mode is authoritative, so callers cannot make
             # a normal run execute the live draft inconsistently.
@@ -456,8 +447,6 @@ class WorkflowOrchestrator:
                 workflow, is_debug=run.is_debug
             )
             context_snapshot["workflow_definition"] = workflow_def
-            if public_base_url:
-                context_snapshot["public_base_url"] = public_base_url
             # Trusted creation routes stamp the real entrypoint. A row without
             # one (legacy or direct task creation) is executed as the workflow
             # surface, never as the workflow's configured trigger.
@@ -498,7 +487,6 @@ class WorkflowOrchestrator:
             redis_client=redis_client,
             workflow_id=str(workflow_id),
             user_id=user_id,
-            public_base_url=public_base_url,
         )
         await context.set_inputs(inputs)
 

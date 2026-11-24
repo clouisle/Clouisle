@@ -1,3 +1,4 @@
+import { UPLOAD_API_PATH } from './lib/constants'
 import type { NextConfig } from "next";
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
@@ -25,13 +26,13 @@ const nextConfig: NextConfig = {
         protocol: 'http',
         hostname: 'localhost',
         port: '8000',
-        pathname: '/api/v1/upload/**',
+        pathname: `${UPLOAD_API_PATH}/**`,
       },
       {
         protocol: 'http',
         hostname: '127.0.0.1',
         port: '8000',
-        pathname: '/api/v1/upload/**',
+        pathname: `${UPLOAD_API_PATH}/**`,
       },
       {
         protocol: 'https',
@@ -73,7 +74,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
+        destination: `${backendUrl.replace(/\/+$/, '')}/api/:path*`,
       },
     ];
   },

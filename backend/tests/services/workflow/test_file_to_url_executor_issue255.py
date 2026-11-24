@@ -6,6 +6,15 @@ from uuid import uuid4
 import pytest
 
 from app.services.workflow.executors.subworkflow import FileToURLNodeExecutor
+from app.core.config import settings
+from app.models.site_setting import SiteSetting
+
+
+@pytest.fixture(autouse=True)
+def mock_public_site_url(monkeypatch):
+    lookup = AsyncMock(return_value="")
+    monkeypatch.setattr(SiteSetting, "get_value", lookup)
+    return lookup
 
 
 def node(**config):
@@ -80,15 +89,18 @@ async def test_legacy_input_variable_returns_upload_url_without_reading_file():
 
 
 @pytest.mark.asyncio
-async def test_ensure_absolute_uses_public_api_url_when_configured():
+async def test_ensure_absolute_uses_site_url_when_configured():
     context = SimpleNamespace(
         get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
     )
-    from app.core.config import settings
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(settings, "PUBLIC_API_URL", "http://public.example:8000")
+        monkeypatch.setattr(
+            SiteSetting,
+            "get_value",
+            AsyncMock(return_value="http://public.example:8000"),
+        )
         result = await FileToURLNodeExecutor().execute(
             node(inputVariable="file", ensureAbsolute=True),
             context,
@@ -101,15 +113,13 @@ async def test_ensure_absolute_uses_public_api_url_when_configured():
 
 @pytest.mark.asyncio
 async def test_ensure_absolute_preserves_relative_url_without_public_origin():
-    from app.core.config import settings
 
     context = SimpleNamespace(
         get_public_base_url=lambda: None,
         resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
     )
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(settings, "PUBLIC_API_URL", "")
-        monkeypatch.setattr(settings, "API_BASE_URL", "http://internal-api:8000")
+        monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=""))
         result = await FileToURLNodeExecutor().execute(
             node(inputVariable="file", ensureAbsolute=True),
             context,
@@ -120,27 +130,28 @@ async def test_ensure_absolute_preserves_relative_url_without_public_origin():
 
 
 @pytest.mark.asyncio
-async def test_context_base_url_fallback_absolutizes_when_public_api_url_unset():
-    # 请求来源 URL 作为 PUBLIC_API_URL 未配置时的兜底（run/debug 端点传入）
-    from app.core.config import settings
+async def test_request_origin_is_not_used_without_site_url():
 
     context = SimpleNamespace(
         get_public_base_url=lambda: "http://dev.example:8000",
         resolve_variable_ref=AsyncMock(return_value="/files/report.txt"),
     )
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(settings, "PUBLIC_API_URL", "")
+        monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=""))
         result = await FileToURLNodeExecutor().execute(
             node(inputVariable="file", ensureAbsolute=True),
             context,
             SimpleNamespace(),
         )
 
-    assert result.outputs["url"] == "http://dev.example:8000/files/report.txt"
+    assert result.outputs["url"] == "/files/report.txt"
 
 
 @pytest.mark.asyncio
-async def test_multi_file_value_produces_absolutized_url_list_from_context_base():
+async def test_multi_file_value_produces_absolutized_url_list_from_site_url(
+    mock_public_site_url,
+):
+    mock_public_site_url.return_value = "http://dev.example:8000"
     # 多文件：files 参数值是 URL 数组 → 输出绝对 URL 数组
     context = SimpleNamespace(
         get_public_base_url=lambda: "http://dev.example:8000",
@@ -166,7 +177,6 @@ async def test_multi_file_value_produces_absolutized_url_list_from_context_base(
 @pytest.mark.asyncio
 async def test_legacy_path_to_base64_streams_internal_upload(monkeypatch):
     import httpx
-    from app.core.config import settings
 
     async def aiter_bytes():
         yield b"hel"

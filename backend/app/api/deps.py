@@ -5,7 +5,7 @@ from fastapi import Depends, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
 
-from app.core.config import settings
+from app.core.config import API_V1_PREFIX, settings
 from app.core.redis import is_token_blacklisted
 from app.core.timezone import now_utc
 from app.core.i18n import set_language, resolve_language
@@ -15,7 +15,7 @@ from app.schemas.token import TokenPayload
 from app.schemas.response import ResponseCode, BusinessError
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/login/access-token",
+    tokenUrl=f"{API_V1_PREFIX}/login/access-token",
     auto_error=False,  # 不自动抛错，允许 API Key 认证
 )
 

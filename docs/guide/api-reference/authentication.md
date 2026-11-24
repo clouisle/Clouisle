@@ -48,7 +48,6 @@ curl -X GET "https://your-domain.com/api/v1/users/me" \
 ### Token Expiration
 
 - **Default lifetime**: The access token is valid for the `session_timeout_days` site setting (default **30 days**, configurable by administrators)
-- **JWT fallback**: If the site setting is absent, the JWT configuration falls back to `ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 8` (8 days)
 - **Refresh**: There is no refresh endpoint — login again to get a new token
 - **Expired JWT**: Returns `403 Forbidden` with code `2003` (`INVALID_CREDENTIALS`); only **API key** expiry returns `401 Unauthorized` with code `2002` (`TOKEN_EXPIRED`)
 

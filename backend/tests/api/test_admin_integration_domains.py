@@ -343,13 +343,15 @@ async def test_sso_login_dispatches_feishu_through_the_pkce_branch(monkeypatch):
     )
     monkeypatch.setattr(sso_endpoints.SSOSession, "create", AsyncMock())
     monkeypatch.setattr(
-        sso_endpoints, "_backend_url", lambda _request: "https://api.example"
-    )
-    monkeypatch.setattr(
         "app.sso.providers.feishu.exchange_user_access_token",
         AsyncMock(return_value="u-token"),
     )
     request = MagicMock()
+    monkeypatch.setattr(
+        sso_endpoints.SiteSetting,
+        "get_value",
+        AsyncMock(return_value="https://app.example"),
+    )
     request.base_url = "https://api.example/"
 
     response = await sso_endpoints.sso_login("feishu", request, redirect="/app/kb")
@@ -379,6 +381,11 @@ async def test_sso_login_ignores_feishu_without_the_login_capability(monkeypatch
     )
 
     request = MagicMock()
+    monkeypatch.setattr(
+        sso_endpoints.SiteSetting,
+        "get_value",
+        AsyncMock(return_value="https://app.example"),
+    )
     request.base_url = "https://api.example/"
 
     response = await sso_endpoints.sso_login("feishu", request, redirect=None)

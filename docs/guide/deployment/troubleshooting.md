@@ -330,7 +330,7 @@ docker compose logs api | grep -i login
 
 **Solutions**:
 
-1. **Increase session lifetime** — the effective session duration is the `session_timeout_days` site setting (default 30 days), managed in the admin UI site settings. The config fallback is `ACCESS_TOKEN_EXPIRE_MINUTES` (default 11520 minutes / 8 days) in `.env`. There is no `JWT_EXPIRATION` variable.
+1. **Increase session lifetime** — the effective session duration is the `session_timeout_days` site setting (default 30 days), managed in the admin UI site settings.
 2. **Check system time:**
 ```bash
 # Ensure system time is correct

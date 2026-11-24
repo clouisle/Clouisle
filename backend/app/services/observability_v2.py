@@ -1499,15 +1499,6 @@ async def _celery_dependency_probe() -> dict[str, Any]:
 
 
 async def _qdrant_dependency_probe() -> dict[str, Any]:
-    from app.core.config import settings
-
-    if settings.VECTOR_BACKEND.strip().lower() != "qdrant":
-        return {
-            "status": "unknown",
-            "latency_ms": None,
-            "detail": "Qdrant is not the configured vector backend",
-        }
-
     started = monotonic()
     try:
         from app.services.memory import _get_qdrant_client

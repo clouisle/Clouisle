@@ -8,7 +8,7 @@
 - [ ] 设置唯一且非空的 `INTERNAL_API_TOKEN`；API、worker 与 sandbox-worker 共享它，用于经认证的内部上传网关。
 - [ ] 不要把 `.env`、Kubernetes Secret manifest 或安装器生成文件提交到代码仓库，并限制文件权限。
 - [ ] 尽量使用密钥管理器或外部管理的 Kubernetes Secret 保存生产密钥；通过有计划的维护窗口轮换密钥。
-- [ ] 确认 `API_BASE_URL`/`API_INTERNAL_BASE_URL` 是内部服务地址，而 `PUBLIC_API_URL`、`FRONTEND_URL` 和 `BACKEND_CORS_ORIGINS` 使用浏览器可访问的公网 origin。
+- [ ] 确认 `API_BASE_URL`/`API_INTERNAL_BASE_URL` 是内部服务地址，而 `site_url`、`FRONTEND_URL` 和 `BACKEND_CORS_ORIGINS` 使用浏览器可访问的公网 origin。
 
 ## 认证与访问控制
 

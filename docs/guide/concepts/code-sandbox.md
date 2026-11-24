@@ -114,7 +114,6 @@ Continuation cursors are opaque. Cursor encoding was compressed to reduce model 
 
 | Variable | Generic Default | Sandbox Worker Deployment | Description |
 |---|---|---|---|
-| `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Enable the sandbox runtime |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | `true` | Launch executable payloads inside the Bubblewrap filesystem namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Number of concurrent sandbox worker slots |
@@ -146,7 +145,7 @@ Sandbox egress is configured in [Settings → Security → Sandbox Egress Allowl
 AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Idle runtime directories are evicted after checkpointing and restored on the next task. Persist workspace, checkpoint, identity, lock and cache paths on the same worker-local disk. TTL cleanup permanently deletes session data when a worker can process the cleanup task; an unreachable node's local files cannot be deleted remotely.
 - Bash tool results include a bounded head/tail preview. If output exceeds the sandbox capture limit, execution stops explicitly and the partial preview is labeled; the retained log is available only during its owning sandbox session. Read it by `/workspace/...` path with the sandbox `read` tool, which preserves hashline/snapshot anchors. Session TTL cleanup deletes logs; they are not durable Assets and cannot be read from another session.
 
-The caller fails closed: when `SANDBOX_RUNTIME_ENABLED` is false, code execution returns a failure without running a local fallback. A failed sandbox task also returns failure. The sandbox-worker image installs Bubblewrap and enables isolation; a missing binary or workspace root fails the task instead of launching the payload without isolation.
+A failed sandbox task returns an error without falling back to local execution. The sandbox-worker image installs Bubblewrap and enables isolation; a missing binary or workspace root fails the task instead of launching the payload without isolation.
 
 ## Security Model
 

@@ -90,7 +90,7 @@ describe('uploadApi', () => {
     expect(uploadApi.getFullUrl('')).toBe('')
     expect(uploadApi.getFullUrl('https://cdn.test/file.txt')).toBe('https://cdn.test/file.txt')
     expect(uploadApi.getFullUrl('http://cdn.test/file.txt')).toBe('http://cdn.test/file.txt')
-    expect(uploadApi.getFullUrl('/api/v1/upload/files/file.txt')).toBe('https://api.test/api/v1/upload/files/file.txt')
+    expect(uploadApi.getFullUrl('/api/v1/upload/files/file.txt')).toBe(`${typeof window === 'undefined' ? '' : window.location.origin}/api/v1/upload/files/file.txt`)
 
     if (previous === undefined) delete process.env.NEXT_PUBLIC_API_URL
     else process.env.NEXT_PUBLIC_API_URL = previous

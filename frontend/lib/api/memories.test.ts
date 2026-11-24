@@ -110,30 +110,13 @@ describe('server URL helpers', () => {
     else process.env.BACKEND_INTERNAL_URL = originalBackendInternalUrl
   })
 
-  it('keeps an absolute API URL and derives its backend origin', () => {
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
-    expect(serverUrl.getServerBackendOrigin()).toBe('http://localhost:8000')
-  })
-
-  it('evaluates the HTTPS condition', () => {
-    const startsWith = spyOn(String.prototype, 'startsWith')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-    spies.push(startsWith)
-
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
-    expect(startsWith).toHaveBeenNthCalledWith(1, 'http://')
-    expect(startsWith).toHaveBeenNthCalledWith(2, 'https://')
-  })
-
-  it('uses configured and default backend origins for a relative API path', () => {
-    const startsWith = spyOn(String.prototype, 'startsWith').mockReturnValue(false)
-    spies.push(startsWith)
-
-    process.env.BACKEND_INTERNAL_URL = 'http://backend:8000'
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://backend:8000http://localhost:8000/api/v1')
-
+  it('uses the local backend by default', () => {
     delete process.env.BACKEND_INTERNAL_URL
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000http://localhost:8000/api/v1')
+    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
+  })
+
+  it('appends the fixed API prefix to the configured internal backend origin', () => {
+    process.env.BACKEND_INTERNAL_URL = 'http://backend:8000/'
+    expect(serverUrl.getServerApiBaseUrl()).toBe('http://backend:8000/api/v1')
   })
 })

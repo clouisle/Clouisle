@@ -143,7 +143,7 @@ async def test_login_protocol_matrix(
     for key, value in session_fields.items():
         assert create.await_args.kwargs[key] == value
     assert instance.get_authorization_url.await_args.kwargs["redirect_uri"] == (
-        "http://localhost:8000/api/v1/sso/callback/company"
+        "https://frontend.example/api/v1/sso/callback/company"
     )
 
 

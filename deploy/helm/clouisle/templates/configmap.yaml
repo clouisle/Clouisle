@@ -17,10 +17,8 @@ metadata:
   labels:
     {{- include "clouisle.componentLabels" (dict "root" . "component" "config") | nindent 4 }}
 data:
-  PROJECT_NAME: {{ .Values.config.PROJECT_NAME | quote }}
   TIMEZONE: {{ .Values.config.TIMEZONE | quote }}
   API_BASE_URL: {{ .Values.config.API_BASE_URL | quote }}
-  PUBLIC_API_URL: {{ .Values.config.PUBLIC_API_URL | quote }}
   API_INTERNAL_BASE_URL: {{ .Values.config.API_INTERNAL_BASE_URL | quote }}
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: {{ .Values.config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL | quote }}
   FRONTEND_URL: {{ .Values.config.FRONTEND_URL | quote }}
@@ -43,7 +41,6 @@ data:
   REDIS_HOST: {{ required "redis.external.host is required when redis.enabled=false" .Values.redis.external.host | quote }}
   REDIS_PORT: {{ .Values.redis.external.port | quote }}
   {{ end }}
-  VECTOR_BACKEND: {{ .Values.config.VECTOR_BACKEND | quote }}
   {{ if .Values.qdrant.enabled }}
   QDRANT_URL: "http://qdrant:6333"
   {{ else }}
@@ -53,7 +50,6 @@ data:
   QDRANT_DISTANCE: {{ .Values.config.QDRANT_DISTANCE | quote }}
   RETRIEVAL_HYBRID_KILL_SWITCH: {{ .Values.config.RETRIEVAL_HYBRID_KILL_SWITCH | quote }}
   RETRIEVAL_SHADOW_ENABLED: {{ .Values.config.RETRIEVAL_SHADOW_ENABLED | quote }}
-  SANDBOX_RUNTIME_ENABLED: {{ .Values.config.SANDBOX_RUNTIME_ENABLED | quote }}
   SANDBOX_WORKER_CONCURRENCY: {{ .Values.config.SANDBOX_WORKER_CONCURRENCY | quote }}
   WECHAT_POLL_BATCH_SIZE: {{ .Values.config.WECHAT_POLL_BATCH_SIZE | quote }}
   WECHAT_POLL_CONCURRENCY: {{ .Values.config.WECHAT_POLL_CONCURRENCY | quote }}

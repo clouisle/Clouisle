@@ -15,6 +15,14 @@ from app.services.workflow.executors.start import (
     UserInputNodeExecutor,
 )
 from app.services.workflow.executors.template import TemplateNodeExecutor
+from app.models.site_setting import SiteSetting
+
+
+@pytest.fixture(autouse=True)
+def mock_public_site_url(monkeypatch):
+    lookup = AsyncMock(return_value="http://dev.example:8000")
+    monkeypatch.setattr(SiteSetting, "get_value", lookup)
+    return lookup
 
 
 class TestStartExecutors:
@@ -171,7 +179,6 @@ class TestFilesIterationEndToEnd:
         from app.services.workflow.executors.subworkflow import FileToURLNodeExecutor
 
         ctx = ExecutionContext(run_id=str(uuid4()), redis_client=self._FakeRedis())
-        ctx._public_base_url = "http://dev.example:8000"
         await ctx.set_inputs({"docs": ["/uploads/a.pdf", "/uploads/b.pdf"]})
 
         # 迭代执行器会创建 StreamManager 连真实 Redis；这里打桩避免依赖真实事件循环

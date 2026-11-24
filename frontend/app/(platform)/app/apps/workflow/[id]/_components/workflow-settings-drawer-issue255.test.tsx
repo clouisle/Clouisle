@@ -143,7 +143,7 @@ test('covers remaining editable controls and guarded selections', () => {
   expect(findAll(tree, (node) => node.props.value === 'Updated')).toHaveLength(1)
 })
 
-test('copies a configured webhook URL', () => {
+test('shows and copies the same complete webhook URL', () => {
   const originalSetTimeout = globalThis.setTimeout
   let timeoutCallback: (() => void) | undefined
   globalThis.setTimeout = ((callback: () => void) => { timeoutCallback = callback; return 1 }) as unknown as typeof globalThis.setTimeout
@@ -152,10 +152,12 @@ test('copies a configured webhook URL', () => {
     const webhook = { ...workflow, trigger_type: 'webhook', webhook_token: 'secret' }
     const tree = settle({ workflow: webhook })
     const copy = control(tree, (node) => node.props.className === 'h-8 w-8 shrink-0')
+    const displayedUrl = control(tree, (node) => node.props.readOnly === true).props.value
+    expect(displayedUrl).toBe('https://app.test/api/v1/workflows/webhook/secret')
 
     ;(copy.props.onClick as () => void)()
 
-    expect(writeText).toHaveBeenCalledWith('https://app.test/api/v1/workflows/webhook/secret')
+    expect(writeText).toHaveBeenCalledWith(displayedUrl)
     expect(toastSuccess).toHaveBeenCalledWith('editor.copiedToClipboard')
     timeoutCallback!()
   } finally {

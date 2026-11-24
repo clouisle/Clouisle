@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +22,7 @@ export function ResponseSchema() {
     data: {
       run_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
       status: 'pending',
-      stream_url: '/api/v1/workflows/runs/a1b2c3d4-e5f6-7890-abcd-ef1234567890/stream',
+      stream_url: `${API_BASE_URL}/workflows/runs/a1b2c3d4-e5f6-7890-abcd-ef1234567890/stream`,
     },
     msg: 'workflow_triggered',
   }

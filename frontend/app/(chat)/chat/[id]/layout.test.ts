@@ -7,7 +7,7 @@ const fetchMock = mock(() =>
 globalThis.fetch = fetchMock as typeof fetch
 mock.module('@/lib/api/server-url', () => ({
   getServerApiBaseUrl: () => 'https://api.example.test',
-  getServerBackendOrigin: () => 'https://backend.example.test',
+  getPublicSiteOrigin: async () => 'https://app.example.test',
 }))
 
 const { default: ChatLayout, generateMetadata } = await import('./layout')
@@ -29,7 +29,7 @@ test('uses generic metadata when the public agent is unavailable', async () => {
   })
 })
 
-test('builds agent metadata; favicon stays proxied, openGraph uses backend URLs', async () => {
+test('builds agent metadata; favicon stays proxied, openGraph uses the public site URL', async () => {
   fetchMock.mockResolvedValueOnce({
     ok: true,
     json: () =>
@@ -47,7 +47,7 @@ test('builds agent metadata; favicon stays proxied, openGraph uses backend URLs'
     openGraph: {
       title: 'Weather',
       description: 'Chat with Weather',
-      images: ['https://backend.example.test/weather.svg'],
+      images: ['https://app.example.test/weather.svg'],
     },
   })
 })
@@ -73,7 +73,7 @@ test('uses the public avatar before the configured icon', async () => {
     title: 'Support',
     description: 'Answers questions',
     icons: { icon: '/avatars/support.png' },
-    openGraph: { images: ['https://backend.example.test/avatars/support.png'] },
+    openGraph: { images: ['https://app.example.test/avatars/support.png'] },
   })
 })
 

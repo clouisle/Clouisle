@@ -348,7 +348,6 @@ async def test_run_workflow_dispatches_mocked_runtime_and_records_audit():
         inputs={"query": "hello"},
         user_id=str(user.id),
         team_id=str(workflow.team_id),
-        base_url="http://testserver",
     )
     audit.assert_awaited_once()
     assert response["data"]["run_id"] == str(run.id)

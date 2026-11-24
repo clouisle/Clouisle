@@ -27,12 +27,8 @@ metadata:
   name: clouisle-config
   namespace: clouisle
 data:
-  PROJECT_NAME: "Clouisle"
   TIMEZONE: "Asia/Shanghai"
   API_BASE_URL: "http://api:8000"
-  PUBLIC_API_URL: ""
-  API_INTERNAL_BASE_URL: "http://api:8000"
-  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
   SANDBOX_WORKER_CONCURRENCY: "1"
   WECHAT_POLL_BATCH_SIZE: "64"
   WECHAT_POLL_CONCURRENCY: "16"
@@ -42,14 +38,14 @@ data:
   SANDBOX_CHECKPOINT_ROOT: "/var/lib/clouisle/sandbox/checkpoints"
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
   SANDBOX_FILESYSTEM_ISOLATION_BINARY: "/usr/bin/bwrap"
-  FRONTEND_URL: "http://frontend:3000"
+  # Set to the browser-visible origin (including scheme) before applying.
+  FRONTEND_URL: ""
   POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
   POSTGRES_USER: "postgres"
   POSTGRES_DB: "clouisle"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  VECTOR_BACKEND: "qdrant"
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION_PREFIX: "kb_dim"
   QDRANT_DISTANCE: "Cosine"

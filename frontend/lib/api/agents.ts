@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '@/lib/constants'
 import { api, ApiError, getErrorMessage } from './client'
 
 function getPublicStatusErrorMessage(status: number): string {
@@ -869,9 +870,8 @@ export const agentsApi = {
   ): { stream: Promise<Response>; abort: () => void } => {
     const controller = new AbortController()
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
-    const stream = fetch(`${baseUrl}/agents/${agentId}/messages/${messageId}/regenerate`, {
+    const stream = fetch(`${API_BASE_URL}/agents/${agentId}/messages/${messageId}/regenerate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -897,9 +897,8 @@ export const agentsApi = {
   ): { stream: Promise<Response>; abort: () => void } => {
     const controller = new AbortController()
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
-    const stream = fetch(`${baseUrl}/agents/${agentId}/messages/${messageId}/edit/stream`, {
+    const stream = fetch(`${API_BASE_URL}/agents/${agentId}/messages/${messageId}/edit/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -931,9 +930,8 @@ export const agentsApi = {
   chatStream: (agentId: string, data: ChatRequest): { stream: Promise<Response>; abort: () => void } => {
     const controller = new AbortController()
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
     
-    const stream = fetch(`${baseUrl}/agents/${agentId}/chat/stream`, {
+    const stream = fetch(`${API_BASE_URL}/agents/${agentId}/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -961,9 +959,8 @@ export const agentsApi = {
   ): { stream: Promise<Response>; abort: () => void } => {
     const controller = new AbortController()
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
     const stream = fetch(
-      `${baseUrl}/agents/${agentId}/chat/runs/${runId}/stream?after_sequence=${afterSequence}`,
+      `${API_BASE_URL}/agents/${agentId}/chat/runs/${runId}/stream?after_sequence=${afterSequence}`,
       {
         headers: {
           Accept: 'text/event-stream',
@@ -1376,7 +1373,6 @@ export interface PublicAgent {
 
 // ============ Public Agent API (No Auth Required) ============
 
-import { API_BASE_URL } from '@/lib/constants'
 
 export const publicAgentsApi = {
   /**
