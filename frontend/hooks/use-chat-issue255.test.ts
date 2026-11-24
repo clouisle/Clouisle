@@ -239,6 +239,53 @@ describe('useChat issue 255 branches', () => {
     )
   })
 
+  test('attaches progress carried by the run envelope', async () => {
+    // The worker wraps every loop event in a run envelope; the flat-event test
+    // above never exercises that shape, so this pins the real wire form.
+    const sequence = (n: number, type: string, payload: unknown) => ({
+      run_id: 'run-1',
+      sequence: n,
+      timestamp: '2026-11-24T00:00:00Z',
+      type,
+      payload,
+    })
+    streamEvents = [
+      { event: 'run_start', data: sequence(1, 'run_start', { status: 'running' }) },
+      {
+        event: 'tool_call',
+        data: sequence(2, 'tool_call', {
+          tool_call_id: 'call-1',
+          tool_name: 'mcp_docs_index',
+          arguments: {},
+        }),
+      },
+      {
+        event: 'tool_progress',
+        data: sequence(3, 'tool_progress', {
+          tool_call_id: 'call-1',
+          tool_name: 'mcp_docs_index',
+          progress: 2,
+          total: 8,
+          message: 'indexing',
+        }),
+      },
+    ]
+    chatStream.mockReturnValue({ stream: ok(), abort: mock() })
+
+    await render().sendMessage('question')
+    const parts = render().messages[1].parts
+    const toolCalls = parts.filter((part) => part.type === 'tool-call')
+
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0]).toEqual(
+      expect.objectContaining({
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        progress: { progress: 2, total: 8, message: 'indexing' },
+      }),
+    )
+  })
+
   test('stops after backend ID recovery and calls stream end once', async () => {
     let reject!: (error: Error) => void
     const blocked = new Promise<Event>((_, rejectPromise) => { reject = rejectPromise })
