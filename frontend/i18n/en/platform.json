@@ -627,7 +627,12 @@
           "invalidPackage": "Invalid Skill package",
           "packageNotInSession": "Package is not in this import session",
           "packagePathInvalid": "Invalid package path",
-          "nameExists": "A Skill with this name already exists"
+          "nameExists": "A Skill with this name already exists",
+          "nameInvalid": "Skill name must use lowercase letters, digits, and single hyphens",
+          "nameTooLong": "Skill name must be at most 64 characters",
+          "descriptionTooLong": "Skill description must be at most 1024 characters",
+          "directoryNameMismatch": "Skill name does not match its directory name",
+          "executionExtensionDeprecated": "x-clouisle.execution is ignored: bundled scripts run through the sandbox tools"
         }
       }
     },

@@ -380,6 +380,13 @@ export function AdminSkillsPanel() {
       skill_package_not_in_session: t('import.errors.packageNotInSession'),
       skill_package_path_invalid: t('import.errors.packagePathInvalid'),
       skill_name_exists: t('import.errors.nameExists'),
+      skill_name_invalid: t('import.errors.nameInvalid'),
+      skill_name_too_long: t('import.errors.nameTooLong'),
+      skill_description_too_long: t('import.errors.descriptionTooLong'),
+      skill_name_directory_mismatch: t('import.errors.directoryNameMismatch'),
+      skill_execution_extension_deprecated: t(
+        'import.errors.executionExtensionDeprecated'
+      ),
     }
     return messages[key] || key
   }

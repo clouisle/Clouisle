@@ -69,3 +69,13 @@ def test_settings_prefers_nonempty_internal_token_file(tmp_path):
     )
 
     assert settings.get_internal_api_token() == "from-file"
+
+
+def test_skill_sync_timeout_matches_sandbox_limits_floor():
+    """A sub-second timeout passes settings but fails job construction."""
+    from app.services.sandbox.models import SandboxLimits
+
+    assert Settings.model_fields["SKILL_SYNC_TIMEOUT_SECONDS"].metadata
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SKILL_SYNC_TIMEOUT_SECONDS=0.5)
+    assert SandboxLimits(timeout_seconds=1.0).timeout_seconds == 1.0

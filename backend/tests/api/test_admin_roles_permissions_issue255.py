@@ -306,6 +306,67 @@ async def test_role_permission_assignment_guards_before_clear(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_create_role_rejects_wildcard_permission_for_non_superuser(monkeypatch):
+    """``*`` satisfies every check, so only a superuser may hand it out."""
+    create = AsyncMock()
+    monkeypatch.setattr(roles.Role, "filter", lambda **kwargs: Query(first=None))
+    monkeypatch.setattr(roles.Role, "create", create)
+
+    with pytest.raises(BusinessError) as exc:
+        await roles.create_role(
+            role_in=RoleCreate(name="ops", permissions=["*"]),
+            current_user=SimpleNamespace(is_superuser=False),
+        )
+
+    assert exc.value.code == ResponseCode.PERMISSION_DENIED
+    assert exc.value.msg_key == "wildcard_permission_superuser_only"
+    create.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_role_permission_assignment_rejects_wildcard_for_non_superuser(
+    monkeypatch,
+):
+    relation = SimpleNamespace(clear=AsyncMock(), add=AsyncMock())
+    role = SimpleNamespace(id=uuid4(), is_system_role=False, permissions=relation)
+    monkeypatch.setattr(roles.Role, "filter", lambda **kwargs: Query(first=role))
+
+    with pytest.raises(BusinessError) as exc:
+        await roles.update_role_permissions(
+            role_id=role.id,
+            permissions_in=roles.RolePermissionsUpdate(permissions=["*"]),
+            current_user=SimpleNamespace(is_superuser=False),
+        )
+
+    assert exc.value.code == ResponseCode.PERMISSION_DENIED
+    relation.clear.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_superuser_may_assign_wildcard_permission(monkeypatch):
+    relation = SimpleNamespace(clear=AsyncMock(), add=AsyncMock())
+    role = SimpleNamespace(id=uuid4(), is_system_role=False, permissions=relation)
+    wildcard = PermissionCode("*")
+    loaded = SimpleNamespace(id=role.id)
+    monkeypatch.setattr(roles.Role, "filter", lambda **kwargs: Query(first=role))
+    monkeypatch.setattr(
+        roles.Role, "get", lambda **kwargs: Query(first=loaded, rows=loaded)
+    )
+    monkeypatch.setattr(
+        roles.Permission, "filter", lambda **kwargs: Query(first=wildcard)
+    )
+
+    result = await roles.update_role_permissions(
+        role_id=role.id,
+        permissions_in=roles.RolePermissionsUpdate(permissions=["*"]),
+        current_user=SimpleNamespace(is_superuser=True),
+    )
+
+    assert result["data"] is loaded
+    relation.add.assert_awaited_once_with(wildcard)
+
+
+@pytest.mark.anyio
 async def test_role_permission_assignment_replaces_and_validates(monkeypatch):
     relation = SimpleNamespace(clear=AsyncMock(), add=AsyncMock())
     role = SimpleNamespace(id=uuid4(), is_system_role=False, permissions=relation)

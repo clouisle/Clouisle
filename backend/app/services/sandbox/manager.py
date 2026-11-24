@@ -304,6 +304,10 @@ class SandboxManager:
                 allow_empty=session.disk_usage_bytes == 0,
                 force=previous_round is not None and previous_round != round_id,
             )
+            if previous_round is not None and previous_round != round_id:
+                # The restore replaced live content with an older checkpoint, so
+                # any Skill directories pushed since then are gone.
+                await sandbox_session_store.clear_skill_sync(session_id)
             if not await sandbox_session_store.mark_workspace_round(
                 session_id, round_id, expected_binding=job.binding
             ):
