@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
+import { getToolProgressPercent } from '@/lib/utils/tool-progress'
 import {
   Wrench,
   Server,
@@ -19,7 +20,6 @@ import {
 } from '@/components/ui/collapsible'
 import type {
   ToolCallPart,
-  ToolCallProgress,
   ToolResultPart,
   McpToolCallPart,
   McpToolResultPart,
@@ -65,14 +65,7 @@ function getServerName(part: ToolPart): string | undefined {
  * Completed percentage for a determinate progress update, or null when the
  * server reported no usable total.
  */
-function getProgressPercent(progress: ToolCallProgress | undefined): number | null {
-  const total = progress?.total
-  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) {
-    return null
-  }
-  const ratio = (progress?.progress ?? 0) / total
-  return Math.min(100, Math.max(0, Math.round(ratio * 100)))
-}
+const getProgressPercent = getToolProgressPercent
 
 export function ToolContent({
   part,

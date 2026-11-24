@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { getToolProgressPercent } from "@/lib/utils/tool-progress";
 import { Badge } from "@/components/ui/badge";
 import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
 import {
@@ -8,6 +9,7 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
+  TraceDescription,
   TraceIcon,
   TraceLine,
   TraceTitle,
@@ -67,6 +69,8 @@ export type ToolHeaderProps = {
   type: ToolUIPart["type"];
   state: ToolUIPart["state"];
   className?: string;
+  /** Determinate progress for a call that is still running; omitted when unknown. */
+  progress?: { progress: number; total?: number | null };
 };
 
 export const getStatusBadge = (
@@ -94,7 +98,7 @@ export const getStatusBadge = (
   return <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">{icons[status]}{labels[status]}</Badge>;
 };
 
-export const ToolHeader = ({ className, title, type, state, ...props }: ToolHeaderProps) => {
+export const ToolHeader = ({ className, title, type, state, progress, ...props }: ToolHeaderProps) => {
   const t = useTranslations("chat.tool");
   const { isOpen, contentId } = useToolContext();
   const running = state === "input-streaming" || state === "input-available";
@@ -109,6 +113,9 @@ export const ToolHeader = ({ className, title, type, state, ...props }: ToolHead
     "output-denied": t("denied"),
   };
   const text = `${statusLabels[state]}: ${title ?? type.split("-").slice(1).join("-")}`;
+  // A determinate tick only belongs next to a still-running call: a finished
+  // call's last tick is noise next to its result.
+  const percent = running ? getToolProgressPercent(progress) : null;
 
   return (
     <TraceCollapsibleTrigger
@@ -120,6 +127,7 @@ export const ToolHeader = ({ className, title, type, state, ...props }: ToolHead
       <TraceLine status={failed ? "error" : running ? "running" : undefined}>
         <TraceIcon><WrenchIcon /></TraceIcon>
         <TraceTitle className="font-medium">{text}</TraceTitle>
+        {percent !== null && <TraceDescription>{percent}%</TraceDescription>}
       </TraceLine>
     </TraceCollapsibleTrigger>
   );
