@@ -118,6 +118,12 @@ async def test_parse_files_reuses_internal_asset_without_network_or_persist(
     from app.services import asset_url_import
 
     _patch_scope(monkeypatch)
+    monkeypatch.setattr(
+        asset_url_import.SiteSetting,
+        "get_value",
+        AsyncMock(return_value="https://app.example.test"),
+    )
+    url = "https://app.example.test/api/v1/upload/files/agent-attachments/2026/10/uploaded.bin"
     asset = SimpleNamespace(
         id=uuid4(),
         display_filename="uploaded.md",
@@ -129,7 +135,7 @@ async def test_parse_files_reuses_internal_asset_without_network_or_persist(
         return_value=InternalDocument(
             asset=asset,
             ref="cafe",
-            url="/api/v1/upload/files/agent-attachments/2026/10/uploaded.md",
+            url=url,
         )
     )
     monkeypatch.setattr(asset_url_import, "load_url_document", load)
@@ -148,7 +154,7 @@ async def test_parse_files_reuses_internal_asset_without_network_or_persist(
     )
 
     result = await file_parser.parse_files(
-        ["/api/v1/upload/files/agent-attachments/2026/10/uploaded.md"],
+        [url],
         agent=None,
         user=None,
         workflow_run_id=uuid4(),
@@ -157,9 +163,7 @@ async def test_parse_files_reuses_internal_asset_without_network_or_persist(
     entry = result["files"][0]
     assert entry["ref"] == "cafe"
     assert entry["title"] == "Original"
-    assert entry["url"] == (
-        "/api/v1/upload/files/agent-attachments/2026/10/uploaded.md"
-    )
+    assert entry["url"] == url
     persist.assert_not_awaited()
 
 

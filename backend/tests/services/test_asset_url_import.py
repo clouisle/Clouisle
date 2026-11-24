@@ -10,6 +10,7 @@ import pytest_asyncio
 from tortoise.context import TortoiseContext
 
 from app.models.asset import Asset, AssetScopeType, AssetSource, AssetStatus
+from app.models.site_setting import SiteSetting
 from app.schemas.response import BusinessError
 from app.services import asset_url_import
 from app.services.asset_url_import import (
@@ -44,34 +45,44 @@ def upload_root(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_internal_storage_key_only_accepts_relative_or_same_origin(monkeypatch):
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/api/v1/upload/files/a.txt", "a.txt"),
+        ("https://api.example.test/api/v1/upload/files/dir%2Fa.txt", "dir/a.txt"),
+        ("https://app.example.test/api/v1/upload/files/a.txt", "a.txt"),
+        ("http://app.example.test/api/v1/upload/files/a.txt", None),
+        ("https://app.example.test:8443/api/v1/upload/files/a.txt", None),
+        ("https://app.example.test@other.example.test/api/v1/upload/files/a.txt", None),
+        ("https://other.example.test/api/v1/upload/files/a.txt", None),
+        ("https://app.example.test/files/a.txt", None),
+        ("file:///api/v1/upload/files/a.txt", None),
+        ("/api/v1/upload/files/", None),
+    ],
+)
+async def test_internal_storage_key_only_accepts_relative_or_configured_origins(
+    monkeypatch, url, expected
+):
     monkeypatch.setattr(
         asset_url_import.settings, "API_BASE_URL", "https://api.example.test/"
     )
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="https://app.example.test/")
+    )
+    assert await internal_storage_key(url) == expected
 
-    assert internal_storage_key("/api/v1/upload/files/agent/2026/10/a.txt") == (
-        "agent/2026/10/a.txt"
-    )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("site_url", ["", "https://[invalid"])
+async def test_internal_storage_key_requires_a_valid_public_origin(
+    monkeypatch, site_url
+):
+    monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=site_url))
     assert (
-        internal_storage_key(
-            "https://api.example.test/api/v1/upload/files/agent/2026/10/a.txt"
-        )
-        == "agent/2026/10/a.txt"
-    )
-    assert (
-        internal_storage_key(
-            "https://api.example.test/api/v1/upload/files/agent%2F2026%2F10%2Fa.txt"
-        )
-        == "agent/2026/10/a.txt"
-    )
-    assert (
-        internal_storage_key(
-            "https://other.example.test/api/v1/upload/files/agent/2026/10/a.txt"
-        )
+        await internal_storage_key("https://app.example.test/api/v1/upload/files/a.txt")
         is None
     )
-    assert internal_storage_key("https://example.test/files/a.txt") is None
-    assert internal_storage_key("file:///api/v1/upload/files/a.txt") is None
 
 
 def test_safe_display_filename_strips_paths_and_controls():
@@ -98,9 +109,12 @@ def test_resolve_document_scope_prefers_workflow_and_rejects_absent():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["", "http://api:8000", "https://app.example.test"])
 async def test_load_internal_url_authorizes_asset_without_network(
-    database, monkeypatch
+    database, monkeypatch, origin
 ):
+    monkeypatch.setattr(asset_url_import.settings, "API_BASE_URL", "http://api:8000")
+    await SiteSetting.set_value("site_url", "https://app.example.test")
     scope_id = uuid4()
     team_id = uuid4()
     asset = SimpleNamespace(
@@ -125,7 +139,7 @@ async def test_load_internal_url_authorizes_asset_without_network(
     monkeypatch.setattr(asset_url_import, "fetch_external_url", fetch)
 
     source = await load_url_document(
-        "/api/v1/upload/files/agent-attachments/2026/10/a.txt",
+        f"{origin}/api/v1/upload/files/agent-attachments/2026/10/a.txt",
         scope_type=AssetScopeType.CONVERSATION,
         scope_id=scope_id,
         user=None,
