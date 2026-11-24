@@ -1,6 +1,7 @@
 """In-process Redis substitute and physical sandbox runtime for service regressions."""
 
 import asyncio
+import sys
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -33,6 +34,8 @@ def sandbox_redis_clients():
 
 @pytest.fixture
 def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
+    # Keep workspace venvs consistent with the interpreter running the tests.
+    monkeypatch.setattr(settings, "SANDBOX_DEFAULT_PYTHON_BINARIES", [sys.executable])
     sync_client, client = sandbox_redis_clients
     loop = asyncio.new_event_loop()
     sessions, results, registry = (

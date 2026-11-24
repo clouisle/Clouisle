@@ -8,10 +8,12 @@ row the service must never persist.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+from tortoise import Tortoise
 
 from app.models.tool_approval import (
     ToolApprovalDecision,
@@ -25,6 +27,24 @@ from app.schemas.tool_approval import (
     ToolExecutionCancelReason,
     ToolExecutionStatus,
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _initialized_model_metadata():
+    """Populate model metadata before building unsaved rows.
+
+    Tortoise only fills in ``Model._meta`` - and with it the ``*_id``
+    attributes for foreign keys - once the app is initialized, so constructing
+    a ``ToolExecution`` elsewhere leaves attributes like ``effective_user_id``
+    missing. Connections stay off: these tests never touch a database.
+    """
+    asyncio.run(
+        Tortoise.init(
+            db_url="sqlite://:memory:",
+            modules={"models": ["app.models"]},
+            init_connections=False,
+        )
+    )
 
 
 def _digest(char: str = "a") -> str:
