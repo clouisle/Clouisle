@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -11,6 +11,11 @@ from app.api import deps
 from app.api.v1.admin.endpoints import permissions, roles
 from app.schemas.response import BusinessError, ResponseCode, error
 from app.schemas.user import PermissionCreate, RoleCreate
+
+# Fixed path ids keep the generated parametrize ids identical in every process;
+# pytest-xdist compares collected test ids across workers.
+ROLE_ID = UUID("3c1f0a36-4d0e-4a43-9f4c-6d0a2b7e8f11")
+PERMISSION_ID = UUID("8a5b7c92-31d4-4b6f-a0c8-2f5e9d1c7b34")
 
 
 class Query:
@@ -108,12 +113,12 @@ def admin_client():
     [
         ("get", "/roles", "admin:role:read"),
         ("post", "/roles", "admin:role:create"),
-        ("put", f"/roles/{uuid4()}", "admin:role:update"),
-        ("delete", f"/roles/{uuid4()}", "admin:role:delete"),
+        ("put", f"/roles/{ROLE_ID}", "admin:role:update"),
+        ("delete", f"/roles/{ROLE_ID}", "admin:role:delete"),
         ("get", "/permissions", "admin:permission:read"),
         ("post", "/permissions", "admin:permission:create"),
-        ("put", f"/permissions/{uuid4()}", "admin:permission:update"),
-        ("delete", f"/permissions/{uuid4()}", "admin:permission:delete"),
+        ("put", f"/permissions/{PERMISSION_ID}", "admin:permission:update"),
+        ("delete", f"/permissions/{PERMISSION_ID}", "admin:permission:delete"),
     ],
 )
 def test_routes_enforce_their_specific_permission(admin_client, method, path, required):

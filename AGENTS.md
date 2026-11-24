@@ -24,6 +24,7 @@ uv run ruff check .
 uv run ruff format .
 uv run mypy app/
 uv run pytest
+uv run pytest -n auto --dist loadfile   # parallel, same invocation as CI
 ```
 
 ### Frontend
@@ -46,6 +47,10 @@ docker-compose -f deploy/docker-compose.dev.yml up -d
 - Keep admin/platform boundaries isolated.
 - Record field-level before/after diffs in audit logs via `AuditLogService.snapshot`/`build_changes` (see `docs/dev/backend/audit-logging.md`).
 - Keep detailed implementation guidance in `docs/dev/`.
+- Parametrize values must be deterministic: `pytest-xdist` compares collected
+  test ids across workers, so a random value in `@pytest.mark.parametrize` (e.g.
+  `uuid4()`) breaks the CI run with a collection mismatch. Generate random data
+  inside the test body instead.
 - Update docs when architecture or conventions change.
 - Strict test coverage gates: Backend line & branch coverage >= 95.00% (`backend/scripts/check_coverage.py`), and Frontend function & line coverage gates.
 - License compliance: strictly avoid copyleft licenses (GPL/AGPL). Any indirect exception must be approved in `license-policy.yml`.

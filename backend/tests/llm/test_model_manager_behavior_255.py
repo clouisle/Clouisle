@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -22,6 +22,10 @@ from app.models.model import ModelProvider, ModelType
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.usage_tracker import QuotaExceededError
 
+# Fixed id keeps the generated parametrize ids identical in every process;
+# pytest-xdist compares collected test ids across workers.
+MODEL_ID = UUID("c4e78b02-5f31-4a96-8b2d-1e6c9d3f70a5")
+
 
 @pytest.fixture(autouse=True)
 def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -31,7 +35,7 @@ def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [
-        (str(uuid4()), "uuid"),
+        (str(MODEL_ID), "uuid"),
         ("openai/gpt-4o", "invalid"),
         ("openai/", "invalid"),
         ("gpt-4o", "invalid"),
