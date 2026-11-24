@@ -220,6 +220,29 @@ class McpConfigSchema(BaseModel):
     max_sampling_requests: int = Field(default=4, ge=0, le=20)
     max_elicitation_requests: int = Field(default=4, ge=0, le=20)
     sampling_max_tokens: int = Field(default=1024, ge=1, le=8192)
+    # 声明 tasks 能力后，长耗时工具会先创建服务器侧任务，再轮询取结果；
+    # 平台开关 MCP_TASKS_ENABLED 必须同时为真。
+    enable_tasks: bool = Field(
+        default=False, description="按 MCP 任务方式执行长耗时工具（声明 tasks 能力）"
+    )
+    tasks_timeout_seconds: float = Field(
+        default=120,
+        ge=1,
+        le=3600,
+        description="任务整体截止时间（秒），到期自动 tasks/cancel",
+    )
+    tasks_poll_interval_seconds: float = Field(
+        default=1,
+        ge=0.1,
+        le=30,
+        description="tasks/get 轮询间隔（秒）",
+    )
+    tasks_max_polls: int = Field(
+        default=60,
+        ge=1,
+        le=600,
+        description="tasks/get 最大轮询次数",
+    )
 
 
 # ============ Tool Output Schemas ============

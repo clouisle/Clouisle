@@ -46,7 +46,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
-from typing import Any, Generic, Literal, Protocol, TypeVar
+from typing import Any, Generic, Literal, Protocol, TypeVar, cast
 from urllib.parse import urlsplit
 
 import mcp.types as types
@@ -61,6 +61,11 @@ try:  # mcp >= 1.x: JSON-RPC errors reported by the server.
 except ImportError:  # pragma: no cover - the SDK always ships this module
     _SdkMcpError = None
 
+from app.llm.tools.mcp_tasks import (
+    call_tool_with_tasks,
+    resolve_task_policy,
+    task_session_class,
+)
 from app.services.error_messages import (
     exception_to_user_message,
     resolve_user_visible_error,
@@ -78,6 +83,8 @@ __all__ = [
     "DEFAULT_ENUMERATION_LIMITS",
     "DEFAULT_TIMEOUTS",
     "ElicitationHandler",
+    "LOG_LEVEL_META_MIN_PROTOCOL_VERSION",
+    "MAX_SERVER_LOG_PAYLOAD_CHARS",
     "McpCallbacks",
     "McpCallbackPolicy",
     "McpCapabilityUnavailable",
@@ -103,11 +110,14 @@ __all__ = [
     "McpRoot",
     "McpServerCapabilities",
     "McpServerError",
+    "McpServerLogging",
     "McpTimeout",
     "McpToolInfo",
+    "McpToolProgress",
     "McpToolResult",
     "McpTimeouts",
     "NotificationHandler",
+    "ProgressSink",
     "RootsHandler",
     "SamplingHandler",
     "complete_mcp_argument",
@@ -122,6 +132,7 @@ __all__ = [
     "probe_mcp_capabilities",
     "read_mcp_resource",
     "read_session_capabilities",
+    "server_logging_from_config",
     "translate_mcp_error",
 ]
 
@@ -133,6 +144,25 @@ DEFAULT_MAX_PAGES = 20
 DEFAULT_MAX_ITEMS = 500
 DEFAULT_MAX_CONTENT_BLOCK_BYTES = 1_000_000
 DEFAULT_MAX_CONTENT_TOTAL_BYTES = 4_000_000
+
+#: First protocol version whose log delivery is a per-request
+#: ``io.modelcontextprotocol/logLevel`` ``_meta`` opt-in. ``logging/setLevel``
+#: is deprecated from this version on (SEP-2577) and must not be sent to it.
+#: Versions are ISO dates, so they compare as strings.
+LOG_LEVEL_META_MIN_PROTOCOL_VERSION = "2026-07-28"
+#: MCP notification levels mapped to the level their record is logged at.
+_SERVER_LOG_LEVELS: dict[str, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "notice": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "critical": logging.CRITICAL,
+    "alert": logging.CRITICAL,
+    "emergency": logging.CRITICAL,
+}
+#: Upper bound for a server log payload echoed at DEBUG only.
+MAX_SERVER_LOG_PAYLOAD_CHARS = 2000
 
 _CALL = "tools/call"
 _READ_RESOURCE = "resources/read"
@@ -147,6 +177,10 @@ _COMPLETE = "completion/complete"
 _ELICITATION_REQUEST = "elicitation/create"
 _SAMPLING_REQUEST = "sampling/createMessage"
 _ROOTS_REQUEST = "roots/list"
+# First protocol version whose ``tools/call`` mirrors ``x-mcp-header`` tool
+# arguments into ``Mcp-Param-*`` request headers. Version strings are ISO dates,
+# so they compare as strings.
+_PARAM_HEADER_MIN_PROTOCOL_VERSION = "2026-07-28"
 
 _SENSITIVE_ELICITATION_FIELD = re.compile(
     r"(password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|"
@@ -443,6 +477,24 @@ class McpCallbackPolicy:
     roots_allowlist: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class McpServerLogging:
+    """Opt-in forwarding of a server's ``notifications/message`` records.
+
+    Setting this on :class:`McpCallbacks` is the whole opt-in: the adapter then
+    registers a logging callback and asks the server for ``level`` records.
+    Without it no callback is registered and no level is requested, so the
+    default log volume is unchanged.
+
+    ``subject`` is a correlation tag (for example ``tool:<uuid>``) attached to
+    every forwarded record so an operator can tell which tool/server
+    complained. It is never a secret and never carries payload.
+    """
+
+    level: str = "debug"
+    subject: str | None = None
+
+
 @dataclass
 class McpCallbacks:
     """Optional in-process hooks for server-initiated requests.
@@ -456,7 +508,26 @@ class McpCallbacks:
     elicitation: ElicitationHandler | None = None
     roots: RootsHandler | None = None
     notification: NotificationHandler | None = None
+    server_logging: McpServerLogging | None = None
     policy: McpCallbackPolicy = field(default_factory=McpCallbackPolicy)
+
+
+def server_logging_from_config(
+    config: Mapping[str, Any], *, subject: str | None = None
+) -> McpServerLogging | None:
+    """Read the opt-in ``server_log_level`` flag from a tool's MCP config.
+
+    Absent or unrecognised means "no server log forwarding": a typo must not
+    raise the platform's log volume, so it is logged and ignored.
+    """
+    raw = config.get("server_log_level")
+    if raw is None:
+        return None
+    level = str(raw).strip().lower()
+    if level not in _SERVER_LOG_LEVELS:
+        logger.warning("Ignoring unknown MCP server_log_level %r", raw)
+        return None
+    return McpServerLogging(level=level, subject=subject)
 
 
 # ---------------------------------------------------------------------------
@@ -934,6 +1005,21 @@ def _payload_bytes(value: Any) -> int:
         return len(str(plain).encode("utf-8"))
 
 
+def _truncated_log_payload(value: Any) -> str:
+    """Render a server log payload for a DEBUG record, bounded in length.
+
+    Server log bodies are untrusted and may carry user content or credentials,
+    so this rendering is only ever emitted at DEBUG and is capped.
+    """
+    try:
+        rendered = json.dumps(_jsonable(value), ensure_ascii=False, default=str)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        rendered = str(value)
+    if len(rendered) <= MAX_SERVER_LOG_PAYLOAD_CHARS:
+        return rendered
+    return rendered[:MAX_SERVER_LOG_PAYLOAD_CHARS] + "..."
+
+
 def _first_attr(source: Any, *names: str) -> Any:
     for name in names:
         value = getattr(source, name, None)
@@ -969,6 +1055,9 @@ _GET_PROMPT_ALLOWS_INPUT_REQUIRED = _accepts_keyword(
 _CALL_TOOL_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
     ClientSession.call_tool, "input_responses"
 )
+_CALL_TOOL_ACCEPTS_PROGRESS = _accepts_keyword(
+    ClientSession.call_tool, "progress_callback"
+)
 _READ_RESOURCE_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
     ClientSession.read_resource, "input_responses"
 )
@@ -980,6 +1069,9 @@ _GET_PROMPT_ACCEPTS_INPUT_RESPONSES = _accepts_keyword(
 _SAMPLING_TOOL_RESULT = getattr(types, "CreateMessageResultWithTools", None)
 _SSE_ACCEPTS_AUTH = _accepts_keyword(sse_client, "auth")
 _SSE_ACCEPTS_SESSION_OBSERVER = _accepts_keyword(sse_client, "on_session_created")
+# mcp 2.x carries the 2026-07-28 per-request log-level default; 1.x has no such
+# argument and therefore cannot opt into modern log delivery at all.
+_SESSION_ACCEPTS_LOG_LEVEL = _accepts_keyword(ClientSession.__init__, "log_level")
 
 
 def _build_client_info() -> types.Implementation:
@@ -1011,6 +1103,72 @@ class _Deadline:
 
     def remaining(self) -> float:
         return self._expires - asyncio.get_running_loop().time()
+
+
+# ---------------------------------------------------------------------------
+# Cancellation
+# ---------------------------------------------------------------------------
+
+#: Upper bound on the courtesy ``notifications/cancelled`` write. The caller is
+#: already failing; a dead transport must not delay that error any longer.
+CANCEL_NOTIFY_TIMEOUT_SECONDS = 2.0
+
+
+def _in_flight_request_id(session: Any) -> Any | None:
+    """Best-effort id of the single request this session is waiting on.
+
+    The SDK mints JSON-RPC ids internally and exposes no accessor, so the only
+    id a cancellation can name is one its dispatcher is still tracking. An
+    unknown session shape, or a pending set that is empty or ambiguous, returns
+    ``None``: a cancel naming a request the server never saw would be noise.
+    """
+    dispatcher = getattr(session, "_dispatcher", None)
+    pending = getattr(dispatcher, "_pending", None)  # mcp >= 2
+    if not isinstance(pending, Mapping):
+        pending = getattr(session, "_response_streams", None)  # mcp 1.x
+    if not isinstance(pending, Mapping) or len(pending) != 1:
+        return None
+    return next(iter(pending))
+
+
+def _cancelled_notification(request_id: Any, reason: str) -> Any | None:
+    """Build the cancellation notification, or ``None`` on an SDK without it."""
+    notification = getattr(types, "CancelledNotification", None)
+    params = getattr(types, "CancelledNotificationParams", None)
+    if notification is None or params is None:
+        return None
+    return notification(params=params(request_id=request_id, reason=reason))
+
+
+def _discard_task_result(task: asyncio.Future[Any]) -> None:
+    """Retrieve a fire-and-forget task's outcome so it never warns at GC."""
+    if not task.cancelled():
+        task.exception()
+
+
+async def _cancel_in_flight(session: Any, reason: str) -> None:
+    """Send ``notifications/cancelled`` for the in-flight request, never raising.
+
+    The caller is already failing (a timeout or an interrupt) and that error
+    must surface unchanged, so every failure here is swallowed: an unknown
+    request id, a session that is already closed, a transport that refuses the
+    write, or the cancelled-task context an interrupt arrives in. The write is
+    shielded so it still leaves while the surrounding task unwinds, and bounded
+    so teardown cannot hang on a dead transport.
+    """
+    request_id = _in_flight_request_id(session)
+    if request_id is None:
+        logger.debug("MCP cancel skipped: no single in-flight request")
+        return
+    notification = _cancelled_notification(request_id, reason)
+    if notification is None:
+        return
+    task = asyncio.ensure_future(session.send_notification(notification))
+    task.add_done_callback(_discard_task_result)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), CANCEL_NOTIFY_TIMEOUT_SECONDS)
+    except (Exception, asyncio.CancelledError):
+        logger.debug("MCP cancellation could not be delivered", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1251,6 +1409,42 @@ class _CallbackGuard:
         except Exception:
             logger.exception("MCP notification handler failed")
 
+    async def server_log(self, params: Any) -> None:
+        """Forward one server ``notifications/message`` to the application log.
+
+        Records carry the configured subject so an operator can correlate a
+        server-side complaint with the tool/server that owns the session. Only
+        structural metadata is logged at the server's own level; the payload is
+        echoed at DEBUG and truncated, because a server's log data is untrusted
+        and may contain user content or credentials.
+        """
+        config = self._callbacks.server_logging
+        if config is None:  # pragma: no cover - only registered when enabled
+            return
+        try:
+            level_name = str(getattr(params, "level", None) or "").lower()
+            logger.log(
+                _SERVER_LOG_LEVELS.get(level_name, logging.INFO),
+                "MCP server log notification level=%s logger=%s",
+                level_name or "unlisted",
+                getattr(params, "logger", None),
+                extra={
+                    "mcp_server": config.subject,
+                    "mcp_server_log_level": level_name or None,
+                },
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "MCP server log payload subject=%s data=%s",
+                    config.subject,
+                    _truncated_log_payload(getattr(params, "data", None)),
+                )
+        except Exception:
+            # A raising logging callback would otherwise fail the peer's send.
+            logger.warning(
+                "Forwarding an MCP server log notification failed", exc_info=True
+            )
+
 
 # ---------------------------------------------------------------------------
 # Negotiation
@@ -1340,6 +1534,45 @@ def read_session_capabilities(session: ClientSession) -> McpServerCapabilities:
     answer for a different server instance.
     """
     return _read_negotiated(session, None)
+
+
+def _log_level_uses_meta(protocol_version: str | None) -> bool:
+    """Whether this negotiated version opts into logs through request ``_meta``."""
+    return (
+        isinstance(protocol_version, str)
+        and protocol_version >= LOG_LEVEL_META_MIN_PROTOCOL_VERSION
+    )
+
+
+async def _request_server_log_level(
+    session: ClientSession,
+    capabilities: McpServerCapabilities,
+    level: str,
+) -> None:
+    """Ask a handshake-era server to emit log notifications at ``level``.
+
+    2026-07-28+ sessions read the level from the per-request
+    ``io.modelcontextprotocol/logLevel`` ``_meta`` the SDK stamps from
+    ``ClientSession(log_level=...)``; ``logging/setLevel`` is deprecated there
+    (SEP-2577) and this adapter never sends it to them. Older sessions only
+    emit logs after the explicit request, and only when they advertise the
+    ``logging`` capability, so the request cannot become a surprising JSON-RPC
+    error.
+
+    Observability must never fail an operation: a rejected level is logged and
+    the session goes on without server logs.
+    """
+    if _log_level_uses_meta(capabilities.protocol_version):
+        return
+    if not capabilities.logging:
+        logger.debug(
+            "MCP server does not advertise logging; level %r not requested", level
+        )
+        return
+    try:
+        await session.set_logging_level(cast(Any, level))
+    except Exception:
+        logger.warning("MCP server rejected log level %r", level, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1645,6 +1878,71 @@ def _enforce_content_limits(
 
 
 # ---------------------------------------------------------------------------
+# Tool-call progress
+# ---------------------------------------------------------------------------
+
+#: Minimum seconds between two updates forwarded to a progress sink. Servers may
+#: tick per item; a run event stream needs a coarser cadence than the wire does.
+PROGRESS_MIN_INTERVAL_SECONDS = 0.5
+
+
+@dataclass(frozen=True, slots=True)
+class McpToolProgress:
+    """One server ``notifications/progress`` update for a tool call.
+
+    ``total`` is absent when the server reports an indeterminate step count.
+    """
+
+    progress: float
+    total: float | None = None
+    message: str | None = None
+
+
+#: Receives throttled progress updates for one tool call. Awaited by the SDK's
+#: progress callback, so a sink must be cheap (queueing, not rendering).
+ProgressSink = Callable[[McpToolProgress], Awaitable[None]]
+
+
+class _ProgressReporter:
+    """Throttle SDK progress ticks into :class:`McpToolProgress` sink updates.
+
+    One instance per tool call. The first update is forwarded immediately so a
+    long call shows activity at once; afterwards at most one update per
+    :data:`PROGRESS_MIN_INTERVAL_SECONDS` passes, and a completion tick
+    (``progress >= total``) always passes. Repeated identical ticks are dropped.
+    A raising sink is logged instead of failing the call.
+    """
+
+    __slots__ = ("sink", "_last_emitted_at", "_last_tick")
+
+    def __init__(self, sink: ProgressSink) -> None:
+        self.sink = sink
+        self._last_emitted_at: float | None = None
+        self._last_tick: tuple[float, float | None, str | None] | None = None
+
+    async def __call__(
+        self, progress: float, total: float | None, message: str | None
+    ) -> None:
+        tick = (progress, total, message)
+        if tick == self._last_tick:
+            return
+        now = asyncio.get_running_loop().time()
+        completion = total is not None and progress >= total
+        if (
+            not completion
+            and self._last_emitted_at is not None
+            and now - self._last_emitted_at < PROGRESS_MIN_INTERVAL_SECONDS
+        ):
+            return
+        self._last_tick = tick
+        self._last_emitted_at = now
+        try:
+            await self.sink(McpToolProgress(*tick))
+        except Exception:
+            logger.debug("MCP progress sink failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
@@ -1697,6 +1995,9 @@ class McpClient:
         self.enumeration_limits = enumeration_limits or DEFAULT_ENUMERATION_LIMITS
         self.content_limits = content_limits or DEFAULT_CONTENT_LIMITS
         self.callbacks = callbacks or McpCallbacks()
+        # Declaring the tasks capability changes what the server does with
+        # every call, so it stays opt-in per server (see ``mcp_tasks``).
+        self.tasks = resolve_task_policy(config)
         self.headers: dict[str, str] = dict(headers or {})
         self.auth = auth
         self.on_session_created = on_session_created
@@ -1749,7 +2050,18 @@ class McpClient:
                     timeout_seconds=connect_budget,
                 ) from exc
 
-            session = ClientSession(
+            # Server log forwarding is opt-in: without it the adapter registers
+            # no logging callback, exactly like the SDK's default handler.
+            server_logging = self.callbacks.server_logging
+            session_kwargs: dict[str, Any] = {}
+            if server_logging is not None and _SESSION_ACCEPTS_LOG_LEVEL:
+                # The SDK stamps this into every request's ``_meta`` once a
+                # 2026-07-28 session is negotiated, which is the only way that
+                # version delivers logs. Handshake-era stamps ignore it, so the
+                # explicit ``logging/setLevel`` request below still exists.
+                session_kwargs["log_level"] = server_logging.level
+            session_cls = task_session_class(self.tasks) or ClientSession
+            session = session_cls(
                 read_stream,
                 write_stream,
                 read_timeout_seconds=max(
@@ -1769,7 +2081,11 @@ class McpClient:
                 message_handler=guard.notification
                 if self.callbacks.notification is not None
                 else None,
+                logging_callback=guard.server_log
+                if server_logging is not None
+                else None,
                 client_info=_CLIENT_INFO,
+                **session_kwargs,
             )
 
             init_budget = max(min(self.timeouts.connect, deadline.remaining()), 0.001)
@@ -1784,6 +2100,10 @@ class McpClient:
                 ) from exc
 
             capabilities = _read_negotiated(session, handshake)
+            if server_logging is not None:
+                await _request_server_log_level(
+                    session, capabilities, server_logging.level
+                )
             logger.debug(
                 "MCP session negotiated transport=%s protocol=%s tools=%s "
                 "resources=%s prompts=%s completions=%s",
@@ -2395,6 +2715,7 @@ class McpClient:
         input_responses: Mapping[str, Any] | None = None,
         request_state: str | None = None,
         resolve_input_required: bool = False,
+        progress: ProgressSink | None = None,
     ) -> McpToolResult:
         """Execute a tool on the MCP server.
 
@@ -2407,6 +2728,18 @@ class McpClient:
                 the parked call instead of parking it again.
             request_state: Opaque state echoed from that ``input_required``
                 result; only meaningful together with ``input_responses``.
+            progress: Optional sink for throttled server progress updates. The
+                SDK then sends a ``progressToken`` with this request and routes
+                ``notifications/progress`` back to the sink. Without a sink the
+                request is byte-identical to a call that never asked for
+                progress.
+
+        On protocol versions at or above 2026-07-28 the tool listing is fetched
+        on the same session before the call: the SDK mirrors arguments annotated
+        ``x-mcp-header`` into ``Mcp-Param-*`` headers using the annotations of
+        the tool's most recent ``tools/list`` entry. A listing truncated before
+        reaching ``tool_name`` fails closed rather than calling the tool without
+        the annotations the server expects.
 
         Returns:
             McpToolResult with success status and result/error
@@ -2418,18 +2751,80 @@ class McpClient:
             accepts_responses=_CALL_TOOL_ACCEPTS_INPUT_RESPONSES,
             accepts_input_required=_CALL_TOOL_ALLOWS_INPUT_REQUIRED,
         )
+        reporter: _ProgressReporter | None = None
+        if progress is not None and _CALL_TOOL_ACCEPTS_PROGRESS:
+            reporter = _ProgressReporter(progress)
+        # Kept apart from the round-trip kwargs, which are rebuilt for every MRTR
+        # continuation: a retried call keeps reporting progress.
+        progress_kwargs: dict[str, Any] = (
+            {"progress_callback": reporter} if reporter is not None else {}
+        )
 
         try:
             async with self._open(deadline) as (session, capabilities):
                 _require_capability(capabilities, "tools")
+                # The 2026-07-28 header mirroring reads its annotations from the
+                # tool's last ``tools/list`` entry on this very session, so the
+                # listing has to happen here; older protocols emit no such
+                # headers and must not pay for an extra round trip.
+                version = capabilities.protocol_version
+                if (
+                    isinstance(version, str)
+                    and version >= _PARAM_HEADER_MIN_PROTOCOL_VERSION
+                ):
+
+                    async def fetch_listed(
+                        cursor: str | None,
+                    ) -> tuple[list[Any], str | None]:
+                        page = await self._fetch_page(
+                            session.list_tools,
+                            cursor,
+                            uses_params=_LIST_TOOLS_USES_PARAMS,
+                            deadline=deadline,
+                        )
+                        return (
+                            list(getattr(page, "tools", None) or []),
+                            _next_cursor(page),
+                        )
+
+                    listing = await self._enumerate(
+                        fetch_listed,
+                        limits=self.enumeration_limits,
+                        deadline=deadline,
+                    )
+                    # An unlisted tool has no annotations to miss; a truncated
+                    # listing may simply not have reached this one yet, and an
+                    # incomplete annotation set would send the wrong headers.
+                    if listing.truncated and not any(
+                        getattr(listed, "name", None) == tool_name
+                        for listed in listing.items
+                    ):
+                        raise McpError(
+                            f"MCP {deadline.label} listing was truncated before "
+                            f"{tool_name!r}; x-mcp-header annotations would be "
+                            "incomplete",
+                            details={
+                                "tool": tool_name,
+                                "truncation_reason": listing.truncation_reason,
+                            },
+                        )
                 budget = self._request_budget(deadline)
                 try:
                     async with asyncio.timeout(budget):
                         guard = _CallbackGuard(self.callbacks)
                         remaining = self.callbacks.policy.max_elicitation_requests
                         while True:
-                            result = await session.call_tool(
-                                tool_name, arguments, **kwargs
+                            # Progress rides the same per-request options as the
+                            # MRTR answers, so the synchronous path inside
+                            # ``call_tool_with_tasks`` forwards it unchanged.
+                            result = await call_tool_with_tasks(
+                                session,
+                                tool_name,
+                                arguments,
+                                self.tasks,
+                                budget=budget,
+                                **kwargs,
+                                **progress_kwargs,
                             )
                             info = _input_required_info(_CALL, result)
                             if info is None or not resolve_input_required:
@@ -2469,10 +2864,16 @@ class McpClient:
                                 accepts_input_required=_CALL_TOOL_ALLOWS_INPUT_REQUIRED,
                             )
                 except TimeoutError as exc:
+                    await _cancel_in_flight(session, "tool call timed out")
                     raise McpTimeout(
                         f"Tool execution timed out after {timeout} seconds",
                         timeout_seconds=timeout,
                     ) from exc
+                except asyncio.CancelledError:
+                    # An interrupt (client disconnect, run stop) abandons the
+                    # request; tell the server before the session is torn down.
+                    await _cancel_in_flight(session, "tool call interrupted")
+                    raise
 
             info = _input_required_info(_CALL, result)
             if info is not None:
@@ -2637,6 +3038,7 @@ async def execute_mcp_tool(
     callbacks: McpCallbacks | None = None,
     timeouts: McpTimeouts | None = None,
     resolve_input_required: bool = False,
+    progress: ProgressSink | None = None,
 ) -> McpToolResult:
     """
     Execute an MCP tool.
@@ -2656,6 +3058,7 @@ async def execute_mcp_tool(
         auth: Optional transport auth object forwarded to HTTP transports.
         callbacks: In-process sampling/elicitation/roots hooks.
         timeouts: Optional connect/request budgets.
+        progress: Optional sink for throttled server progress updates.
 
     Returns:
         McpToolResult with success status and result/error
@@ -2667,6 +3070,12 @@ async def execute_mcp_tool(
         callbacks=callbacks,
         timeouts=timeouts,
     )
+    # Without a sink the call stays exactly what it was before progress existed,
+    # so every existing caller and assertion keeps its shape.
+    if progress is not None:
+        extra: dict[str, Any] = {"progress": progress}
+    else:
+        extra = {}
     return await client.execute_tool(
         tool_name,
         arguments,
@@ -2674,6 +3083,7 @@ async def execute_mcp_tool(
         input_responses=input_responses,
         request_state=request_state,
         resolve_input_required=resolve_input_required,
+        **extra,
     )
 
 

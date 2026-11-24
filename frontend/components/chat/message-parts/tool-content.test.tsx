@@ -6,6 +6,19 @@ const jsx = (type: unknown, props: Record<string, unknown>) => ({
   props,
 });
 
+// What the component asked the dictionary for, so a test can assert a number
+// that only ever reaches the user through an ICU argument.
+const translationCalls: Array<{
+  key: string;
+  values?: Record<string, unknown>;
+}> = [];
+
+function progressPercents(): Array<unknown> {
+  return translationCalls
+    .filter((call) => call.key === "progressPercent")
+    .map((call) => call.values?.percent);
+}
+
 mock.module("react/jsx-runtime", () => ({
   jsx,
   jsxs: jsx,
@@ -19,7 +32,10 @@ mock.module("react", () => ({
   useState: <T,>(initial: T) => [initial, () => undefined] as const,
 }));
 mock.module("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) => {
+    translationCalls.push({ key, values });
+    return key;
+  },
 }));
 mock.module("@/lib/utils", () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
@@ -102,5 +118,99 @@ describe("ToolContent", () => {
     expect(JSON.stringify(tree.props.children)).toContain("completed");
     expect(JSON.stringify(tree.props.children)).toContain("42");
     expect(tree.props.className).not.toContain("border-red-500/30");
+  });
+
+  test("shows a running call's completion percentage and server message", () => {
+    translationCalls.length = 0
+    const tree = render({
+      type: "tool-call",
+      toolCallId: "call-4",
+      toolName: "mcp_docs_index",
+      input: {},
+      state: "running",
+      progress: { progress: 2, total: 8, message: "indexing" },
+    });
+
+    expect(progressPercents()).toEqual([25, 25]);
+    expect(JSON.stringify(tree.props.children)).toContain("indexing");
+  });
+
+  test("clamps a reported percentage into the visible range", () => {
+    translationCalls.length = 0
+    render({
+      type: "tool-call",
+      toolCallId: "call-5",
+      toolName: "mcp_docs_index",
+      input: {},
+      state: "running",
+      progress: { progress: 12, total: 8 },
+    });
+
+    expect(progressPercents()).toEqual([100, 100]);
+  });
+
+  test("falls back to the raw step count when the server reports no total", () => {
+    translationCalls.length = 0
+    const tree = render({
+      type: "tool-call",
+      toolCallId: "call-6",
+      toolName: "mcp_docs_index",
+      input: {},
+      state: "running",
+      progress: { progress: 3 },
+    });
+
+    expect(progressPercents()).toEqual([]);
+    expect(JSON.stringify(tree.props.children)).toContain('"3"');
+  });
+
+  test("treats a zero total as indeterminate instead of dividing by zero", () => {
+    translationCalls.length = 0
+    const tree = render({
+      type: "tool-call",
+      toolCallId: "call-8",
+      toolName: "mcp_docs_index",
+      input: {},
+      state: "running",
+      progress: { progress: 4, total: 0 },
+    });
+
+    expect(progressPercents()).toEqual([]);
+    expect(JSON.stringify(tree.props.children)).toContain('"4"');
+  });
+
+  test("shows progress on a running MCP call too", () => {
+    translationCalls.length = 0
+    const tree = render(
+      {
+        type: "mcp-tool-call",
+        toolCallId: "call-9",
+        serverName: "docs",
+        toolName: "index",
+        input: {},
+        state: "running",
+        progress: { progress: 1, total: 4 },
+      },
+      { isMcp: true },
+    );
+
+    expect(progressPercents()).toEqual([25, 25]);
+    expect(JSON.stringify(tree.props.children)).toContain("@ ");
+  });
+
+  test("hides a finished call's last progress tick", () => {
+    translationCalls.length = 0
+    const tree = render({
+      type: "tool-call",
+      toolCallId: "call-7",
+      toolName: "mcp_docs_index",
+      input: {},
+      state: "done",
+      progress: { progress: 8, total: 8, message: "indexed" },
+    });
+
+    const json = JSON.stringify(tree.props.children);
+    expect(progressPercents()).toEqual([]);
+    expect(json).not.toContain("indexed");
   });
 });

@@ -67,6 +67,8 @@ export type ChatMessages = {
       result: string
       input: string
       output: string
+      progress: string
+      progressPercent: string
       mcp: string
     }
     source: {

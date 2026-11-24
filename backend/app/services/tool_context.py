@@ -3,8 +3,11 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 from uuid import UUID
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.llm.tools.mcp_client import ProgressSink
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +26,10 @@ class RuntimeToolIdentity:
     #: Stable prefix composed with the model tool-call id by callers that own
     #: the per-call boundary (a workflow Agent node, for example).
     tool_call_prefix: str | None = None
+    #: Live progress reporter for this call, supplied only by a runtime whose
+    #: user is watching (an Agent run streaming its events). Absent means the
+    #: execution stays silent; no tool path invents one.
+    progress: "ProgressSink | None" = None
 
 
 _identity: ContextVar[RuntimeToolIdentity | None] = ContextVar(

@@ -30,6 +30,18 @@ export interface ReasoningPart {
 }
 
 /**
+ * Progress reported by the tool server while a call is still running.
+ */
+export interface ToolCallProgress {
+  /** Units completed as reported by the server. */
+  progress: number
+  /** Total units, when the server reports a determinate amount of work. */
+  total?: number | null
+  /** Optional human-readable status from the server. */
+  message?: string | null
+}
+
+/**
  * Tool call part - for function/tool invocations
  */
 export interface ToolCallPart {
@@ -40,6 +52,8 @@ export interface ToolCallPart {
   toolDisplayName?: string
   input: Record<string, unknown>
   state?: 'pending' | 'running' | 'done' | 'error'
+  /** Latest server-reported progress; only present while the call runs. */
+  progress?: ToolCallProgress
 }
 
 /**
@@ -65,6 +79,8 @@ export interface McpToolCallPart {
   toolName: string
   input: Record<string, unknown>
   state?: 'pending' | 'running' | 'done' | 'error'
+  /** Latest server-reported progress; only present while the call runs. */
+  progress?: ToolCallProgress
 }
 
 /**

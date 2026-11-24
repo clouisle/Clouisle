@@ -986,6 +986,7 @@ class SSEEventType:
     REASONING_END = "reasoning_end"  # 思维链结束
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    TOOL_PROGRESS = "tool_progress"  # 工具执行进度（服务器上报）
     MEDIA_RESULT = "media_result"
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"

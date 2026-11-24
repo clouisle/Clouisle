@@ -33,6 +33,10 @@ class _Session:
         self.server_capabilities = (
             {"resources": {"subscribe": True}} if config.get("_subscribe") else {}
         )
+        self.pings = 0
+
+    async def send_ping(self) -> None:
+        self.pings += 1
 
     async def subscribe_resource(self, uri: str) -> None:
         raise AssertionError("legacy subscribe_resource used on a modern session")
@@ -44,10 +48,13 @@ class _Session:
 class _Client:
     def __init__(self, config, *, callbacks=None, **kwargs):
         self.config = config
+        self.callbacks = callbacks
+        type(self).last = self
 
     @asynccontextmanager
     async def connect(self, *, timeout=None):
-        yield _Session(self.config)
+        self.session = _Session(self.config)
+        yield self.session
 
 
 class _Stream:
@@ -68,16 +75,26 @@ class _Stream:
         return item
 
 
-def _fake_listen(items):
+class _SilentStream:
+    """A ``listen`` stream that never delivers: only the ping can wake us."""
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.Event().wait()
+
+
+def _fake_listen(items=None):
     @asynccontextmanager
     async def listen(session, *, resource_subscriptions=(), on_event=None):
         assert tuple(resource_subscriptions)  # the caller must name a URI
-        yield _Stream(items)
+        yield _SilentStream() if items is None else _Stream(items)
 
     return listen
 
 
-async def _open(monkeypatch, items, **config):
+async def _open(monkeypatch, items=None, **config):
     monkeypatch.setattr(subs, "McpClient", _Client)
     monkeypatch.setattr(subs, "_listen", _fake_listen(items))
     return subs.open_subscription(
@@ -236,3 +253,87 @@ async def test_a_full_queue_drops_updates_but_still_takes_the_close(monkeypatch)
 
     # The close signal made room by dropping the oldest pending update.
     assert drained == subs.MAX_QUEUED_UPDATES - 1
+
+
+# ---------------------------------------------------------------------------
+# Liveness pings (#499)
+# ---------------------------------------------------------------------------
+
+
+def test_ping_interval_is_a_fraction_of_the_ttl_budget():
+    assert subs.ping_interval_seconds(300.0) == 300.0 * subs.PING_INTERVAL_FRACTION
+    assert subs.ping_interval_seconds(300.0) < 300.0
+    # A rounded-to-zero budget must still yield a usable delay.
+    assert subs.ping_interval_seconds(0.0) == subs.MIN_PING_INTERVAL_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_a_long_lived_subscription_pings_at_the_ttl_fraction(monkeypatch):
+    monkeypatch.setattr(subs, "PING_INTERVAL_FRACTION", 0.004)  # 5s TTL -> 20ms
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(subs, "_listen", _fake_listen())
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28"},
+        uri="file:///a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+        ttl_seconds=5.0,
+    ) as handle:
+        await asyncio.sleep(0.15)
+        assert handle.close_reason is None
+
+    assert _Client.last.session.pings >= 2
+    assert _Client.last.session.protocol_version == "2026-07-28"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_ping_marks_the_subscription_connection_lost(monkeypatch):
+    monkeypatch.setattr(subs, "PING_INTERVAL_FRACTION", 0.004)
+
+    class _DeadSession(_Session):
+        async def send_ping(self) -> None:
+            raise RuntimeError("server stopped answering")
+
+    class _DeadClient(_Client):
+        @asynccontextmanager
+        async def connect(self, *, timeout=None):
+            self.session = _DeadSession(self.config)
+            yield self.session
+
+    monkeypatch.setattr(subs, "McpClient", _DeadClient)
+    monkeypatch.setattr(subs, "_listen", _fake_listen())
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28"},
+        uri="file:///a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+        ttl_seconds=5.0,
+    ) as handle:
+        # No resource update is ever delivered, so only the failed ping can end
+        # the stream; it must not wait for the TTL or a read timeout.
+        assert await _drain(handle) == []
+        assert handle.close_reason == subs.SubscriptionClosed.CONNECTION_LOST
+
+
+@pytest.mark.asyncio
+async def test_the_subscription_session_opts_into_server_logs_from_its_config(
+    monkeypatch,
+):
+    monkeypatch.setattr(subs, "McpClient", _Client)
+    monkeypatch.setattr(subs, "_listen", _fake_listen())
+
+    async with subs.open_subscription(
+        tool=SimpleNamespace(id=uuid4()),
+        config={"_version": "2026-07-28", "server_log_level": "debug"},
+        uri="file:///a",
+        user_id=uuid4(),
+        team_id=uuid4(),
+    ) as handle:
+        assert handle.close_reason is None
+
+    assert _Client.last.callbacks.server_logging.level == "debug"
+    assert _Client.last.callbacks.server_logging.subject.startswith("tool:")

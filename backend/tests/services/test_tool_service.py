@@ -154,6 +154,50 @@ class TestToolExecutor:
         assert args[2] == {"x": 1}
 
     @pytest.mark.anyio
+    async def test_execute_forwards_the_context_progress_sink_to_the_mcp_call(self):
+        executor = ToolExecutor()
+        tool = MagicMock()
+        tool.type = "mcp"
+        tool.team_id = None
+        tool.mcp_config = {}
+
+        async def sink(_update):
+            return None
+
+        context = MagicMock()
+        context.progress = sink
+
+        async def fake_run(_tool, _context, call_mcp, **_kwargs):
+            return await call_mcp(None)
+
+        with (
+            self._stored_boundary(),
+            patch(
+                "app.services.tool.execute_mcp_tool",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(to_dict=lambda: {"ok": True})
+                ),
+            ) as mock_execute_mcp,
+            patch(
+                "app.services.mcp_interactions.run_with_mcp_callbacks",
+                new=fake_run,
+            ),
+            patch(
+                "app.services.mcp_interactions.mcp_call_timeout_seconds",
+                return_value=5.0,
+            ),
+        ):
+            result = await executor.execute(
+                tool=tool,
+                arguments={"x": 1},
+                context=context,
+                operation="op",
+            )
+
+        assert result == {"ok": True}
+        assert mock_execute_mcp.await_args.kwargs["progress"] is sink
+
+    @pytest.mark.anyio
     async def test_execute_custom_http_tool_uses_shared_executor_signature(self):
         executor = ToolExecutor()
         tool = MagicMock()

@@ -14,7 +14,10 @@ subscription to the lifetime of one streaming API request:
    * older sessions use ``resources/subscribe`` when the server advertises it;
 
 3. updates are queued in memory for the owning request only;
-4. the request's TTL or client disconnect closes the session and performs a
+4. the session pings the server at a fraction of the TTL budget, so a server
+   that silently dropped it ends the stream as ``connection_lost`` instead of
+   surfacing as a read timeout at the very end of the budget;
+5. the request's TTL or client disconnect closes the session and performs a
    best-effort ``unsubscribe`` (legacy path only; ``listen`` ends with its
    stream).
 
@@ -55,6 +58,7 @@ from app.llm.tools.mcp_client import (
     McpCapabilityUnavailable,
     McpClient,
     read_session_capabilities,
+    server_logging_from_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +66,10 @@ logger = logging.getLogger(__name__)
 MAX_QUEUED_UPDATES = 100
 HEARTBEAT_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 15.0
+# One ping per half of the TTL budget: a session the server silently dropped is
+# noticed in half the budget rather than at the read timeout at the very end.
+PING_INTERVAL_FRACTION = 0.5
+MIN_PING_INTERVAL_SECONDS = 0.01
 # First protocol version that removes ``resources/subscribe`` in favour of
 # ``subscriptions/listen``. Versions are ISO dates, so they compare as strings.
 LISTEN_MIN_PROTOCOL_VERSION = "2026-07-28"
@@ -69,6 +77,11 @@ LISTEN_MIN_PROTOCOL_VERSION = "2026-07-28"
 
 def subscription_ttl_seconds() -> float:
     return float(settings.MCP_SUBSCRIPTION_TTL_SECONDS)
+
+
+def ping_interval_seconds(ttl: float) -> float:
+    """Delay between liveness pings for a subscription of ``ttl`` seconds."""
+    return max(float(ttl) * PING_INTERVAL_FRACTION, MIN_PING_INTERVAL_SECONDS)
 
 
 class SubscriptionClosed(str):
@@ -245,6 +258,31 @@ async def _pump_listen(subscription: Any, handle: SubscriptionHandle) -> None:
         handle.enqueue_close()
 
 
+async def _ping_session(
+    session: Any, handle: SubscriptionHandle, interval: float
+) -> None:
+    """Ping the server on ``interval``; a failure ends the subscription.
+
+    A subscription session lives for minutes and owns no reconnection, so a
+    dead server would otherwise only be noticed at the next update or the TTL
+    deadline. A failing ping is the liveness signal: mark the subscription
+    ``connection_lost`` and let the consumer stop waiting.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await session.send_ping()
+        except Exception:
+            logger.warning(
+                "MCP subscription ping failed for tool %s; the session is lost",
+                handle.tool_id,
+                exc_info=True,
+            )
+            handle.close_reason = SubscriptionClosed.CONNECTION_LOST
+            handle.enqueue_close()
+            return
+
+
 @asynccontextmanager
 async def open_subscription(
     *,
@@ -273,6 +311,7 @@ async def open_subscription(
     )
     callbacks = McpCallbacks(
         notification=_NotificationCollector(handle),
+        server_logging=server_logging_from_config(config, subject=f"tool:{tool.id}"),
         policy=McpCallbackPolicy(max_callback_seconds=min(10.0, ttl)),
     )
     client = McpClient(dict(config), callbacks=callbacks)
@@ -291,12 +330,17 @@ async def open_subscription(
         if listen is None and not capabilities.resources_subscribe:
             raise McpCapabilityUnavailable("resources.subscribe")
 
+        ping = asyncio.create_task(
+            _ping_session(session, handle, ping_interval_seconds(ttl))
+        )
+        stack.push_async_callback(_stop_task, ping)
+
         if listen is not None:
             subscription = await stack.enter_async_context(
                 listen(session, resource_subscriptions=(uri,))
             )
             pump = asyncio.create_task(_pump_listen(subscription, handle))
-            stack.push_async_callback(_stop_pump, pump)
+            stack.push_async_callback(_stop_task, pump)
             yield handle
             return
 
@@ -320,16 +364,18 @@ async def open_subscription(
                 )
 
 
-async def _stop_pump(pump: asyncio.Task[None]) -> None:
-    pump.cancel()
-    await asyncio.gather(pump, return_exceptions=True)
+async def _stop_task(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 __all__ = [
     "LISTEN_MIN_PROTOCOL_VERSION",
     "MAX_QUEUED_UPDATES",
+    "PING_INTERVAL_FRACTION",
     "SubscriptionClosed",
     "SubscriptionHandle",
     "open_subscription",
+    "ping_interval_seconds",
     "subscription_ttl_seconds",
 ]

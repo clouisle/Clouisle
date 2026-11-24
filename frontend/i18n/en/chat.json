@@ -65,6 +65,8 @@
       "result": "Result",
       "input": "Input",
       "output": "Output",
+      "progress": "Progress",
+      "progressPercent": "{percent}%",
       "mcp": "MCP Tool"
     },
     "source": {

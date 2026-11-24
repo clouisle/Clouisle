@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/collapsible'
 import type {
   ToolCallPart,
+  ToolCallProgress,
   ToolResultPart,
   McpToolCallPart,
   McpToolResultPart,
@@ -60,6 +61,19 @@ function getServerName(part: ToolPart): string | undefined {
   return undefined
 }
 
+/**
+ * Completed percentage for a determinate progress update, or null when the
+ * server reported no usable total.
+ */
+function getProgressPercent(progress: ToolCallProgress | undefined): number | null {
+  const total = progress?.total
+  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) {
+    return null
+  }
+  const ratio = (progress?.progress ?? 0) / total
+  return Math.min(100, Math.max(0, Math.round(ratio * 100)))
+}
+
 export function ToolContent({
   part,
   className,
@@ -73,6 +87,11 @@ export function ToolContent({
   const serverName = getServerName(part)
   const isCall = part.type === 'tool-call' || part.type === 'mcp-tool-call'
   const isResult = part.type === 'tool-result' || part.type === 'mcp-tool-result'
+  // Progress only decorates a call that is still running: a finished call's
+  // last tick is noise next to its result.
+  const progress =
+    state === 'running' && 'progress' in part ? part.progress : undefined
+  const progressPercent = getProgressPercent(progress)
 
   const StateIcon = {
     pending: Clock,
@@ -137,6 +156,11 @@ export function ToolContent({
           <StateIcon
             className={cn('h-3.5 w-3.5', state === 'running' && 'animate-spin')}
           />
+          {progressPercent !== null && (
+            <span className="tabular-nums">
+              {t('progressPercent', { percent: progressPercent })}
+            </span>
+          )}
           <span>{getStatusText()}</span>
         </div>
 
@@ -150,6 +174,25 @@ export function ToolContent({
 
       <CollapsibleContent>
         <div className="px-3 pb-3 space-y-2">
+          {/* Progress */}
+          {progress && (
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {t('progress')}
+              </div>
+              <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
+                <span className="tabular-nums">
+                  {progressPercent !== null
+                    ? t('progressPercent', { percent: progressPercent })
+                    : String(progress.progress)}
+                </span>
+                {progress.message && (
+                  <span className="truncate">{progress.message}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Input */}
           {isCall && 'input' in part && (
             <div className="space-y-1">

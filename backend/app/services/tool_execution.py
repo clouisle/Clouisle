@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from app.models.tool import Tool
@@ -31,6 +31,9 @@ from app.services.tool_connections import (
     ResolvedConnection,
     ToolConnectionService,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.llm.tools.mcp_client import ProgressSink
 
 #: Entrypoints that invoke a model-driven Agent tool call. Interactivity does
 #: not matter: a non-interactive Agent run (API key, schedule, channel, embed,
@@ -142,6 +145,10 @@ class ToolCallContext:
     interactive: bool = False
     execution_id: UUID | None = None
     require_approval: bool = False
+    #: Where this call reports live progress, when its runtime owns a stream
+    #: the user is watching. ``None`` (the default) keeps execution silent, so
+    #: direct callers such as the MCP tool test endpoint are unchanged.
+    progress: "ProgressSink | None" = None
 
 
 @dataclass(frozen=True, slots=True)

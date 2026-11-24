@@ -115,6 +115,7 @@ export {
   type SSEIterationCapReached,
   type SSEError,
   type SSEToolCall,
+  type SSEToolProgress,
   type SSEToolResult,
   type SSEMediaResult,
   type AgentVideoGenerationStatus,

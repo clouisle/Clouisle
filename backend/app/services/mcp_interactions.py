@@ -16,6 +16,9 @@ This module supplies those handlers:
   hosts.
 * **roots** are returned from the explicitly configured ``mcp_config.roots``
   allowlist. Nothing is derived from the host filesystem.
+* **server logs** are forwarded to the application logger when the tool opts in
+  with ``mcp_config.server_log_level``, tagged with the tool id so an operator
+  can correlate a server-side complaint with the session that saw it.
 
 Capabilities are advertised only when the tool explicitly enables them
 (``enable_sampling`` / ``enable_elicitation``) and roots are configured, so a
@@ -46,6 +49,7 @@ from app.llm.tools.mcp_client import (
     McpCallbacks,
     McpRoot,
     SamplingHandler,
+    server_logging_from_config,
 )
 from app.models.tool import Tool
 from app.models.tool_interaction import (
@@ -754,8 +758,9 @@ def build_mcp_callbacks(
         session=None,
         policy=policy,
     )
-    enabled_sampling = _bool_flag(_mapping(tool.mcp_config), "enable_sampling")
-    enabled_elicitation = _bool_flag(_mapping(tool.mcp_config), "enable_elicitation")
+    config = _mapping(tool.mcp_config)
+    enabled_sampling = _bool_flag(config, "enable_sampling")
+    enabled_elicitation = _bool_flag(config, "enable_elicitation")
     sampling: SamplingHandler | None = bridge.sampling if enabled_sampling else None
     elicitation: ElicitationHandler | None = (
         bridge.elicitation if enabled_elicitation else None
@@ -765,6 +770,7 @@ def build_mcp_callbacks(
         elicitation=elicitation,
         roots=None,
         notification=None,
+        server_logging=server_logging_from_config(config, subject=f"tool:{tool.id}"),
         policy=policy,
     )
 
@@ -792,6 +798,7 @@ def _owned_callbacks(
         ),
         roots=None,
         notification=None,
+        server_logging=server_logging_from_config(config, subject=f"tool:{tool.id}"),
         policy=policy,
     )
 

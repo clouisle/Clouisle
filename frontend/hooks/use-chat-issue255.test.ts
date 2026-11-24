@@ -190,6 +190,55 @@ describe('useChat issue 255 branches', () => {
     }
   })
 
+  test('attaches server progress to the running tool call', async () => {
+    streamEvents = [
+      {
+        event: 'tool_call',
+        data: { tool_call_id: 'call-1', tool_name: 'mcp_docs_index', arguments: {} },
+      },
+      {
+        event: 'tool_progress',
+        data: {
+          tool_call_id: 'call-1',
+          tool_name: 'mcp_docs_index',
+          progress: 2,
+          total: 8,
+          message: 'indexing',
+        },
+      },
+      // A tick for a call this message never saw carries nothing to render.
+      {
+        event: 'tool_progress',
+        data: { tool_call_id: 'orphan', tool_name: 'other', progress: 1 },
+      },
+      {
+        event: 'tool_result',
+        data: {
+          tool_call_id: 'call-1',
+          tool_name: 'mcp_docs_index',
+          result: '{"ok":true}',
+          is_error: false,
+        },
+      },
+      { event: 'message_end', data: {} },
+    ]
+    chatStream.mockReturnValue({ stream: ok(), abort: mock() })
+
+    await render().sendMessage('question')
+    const parts = render().messages[1].parts
+    const toolCalls = parts.filter((part) => part.type === 'tool-call')
+
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0]).toEqual(
+      expect.objectContaining({
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        state: 'done',
+        progress: { progress: 2, total: 8, message: 'indexing' },
+      }),
+    )
+  })
+
   test('stops after backend ID recovery and calls stream end once', async () => {
     let reject!: (error: Error) => void
     const blocked = new Promise<Event>((_, rejectPromise) => { reject = rejectPromise })

@@ -583,6 +583,7 @@ export type SSEEventType =
   | 'reasoning_end'
   | 'tool_call'
   | 'tool_result'
+  | 'tool_progress'
   | 'media_result'
   | 'rag_start'
   | 'rag_context'
@@ -655,6 +656,15 @@ export interface SSEToolResult {
   tool_display_name?: string
   result: string
   is_error?: boolean
+}
+
+/** Server-reported progress for a tool call that is still running. */
+export interface SSEToolProgress {
+  tool_call_id: string
+  tool_name: string
+  progress: number
+  total?: number | null
+  message?: string | null
 }
 
 export interface SSEMediaResult {

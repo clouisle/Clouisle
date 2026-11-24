@@ -36,7 +36,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
@@ -45,6 +45,7 @@ from app.api.v1.endpoints.chat_helpers import (
 from app.api.v1.endpoints.chat_sse import (
     build_media_result_sse_event,
     build_tool_call_sse_event,
+    build_tool_progress_sse_event,
     build_tool_result_sse_event,
 )
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
@@ -68,6 +69,9 @@ from app.services.sandbox.recovery import (
     sandbox_execution_scope,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.llm.tools.mcp_client import McpToolProgress, ProgressSink
+
 logger = logging.getLogger(__name__)
 
 # Event names (public SSE names, aligned with ``SSEEventType``).
@@ -78,6 +82,7 @@ REASONING_DELTA = "reasoning_delta"
 REASONING_END = "reasoning_end"
 TOOL_CALL = "tool_call"
 TOOL_RESULT = "tool_result"
+TOOL_PROGRESS = "tool_progress"
 MEDIA_RESULT = "media_result"
 COMPRESSION_START = "compression_start"
 COMPRESSION_END = "compression_end"
@@ -608,6 +613,30 @@ class AgentLoop:
             arguments=_safe_arguments(getattr(tc.function, "arguments", None)),
         )
 
+    def _tool_progress_sink(self, tc: Any, tool_name: str) -> "ProgressSink | None":
+        """Report one call's progress into the run event stream.
+
+        Progress is presentation, so it exists only where a formatter delivers
+        events. ``None`` keeps every silent path (non-stream runs, and callers
+        with no user watching) identical to a run that never asked for progress.
+        """
+        if self.context.formatter is None:
+            return None
+
+        async def report(update: "McpToolProgress") -> None:
+            sse = build_tool_progress_sse_event(
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                progress=update.progress,
+                total=update.total,
+                message=update.message,
+            )
+            # The transport formatter queues the event synchronously, so a tick
+            # always lands before the result of the call it describes.
+            self._emit(TOOL_PROGRESS, {"sse": sse})
+
+        return report
+
     async def _execute_one_tool(
         self,
         *,
@@ -724,6 +753,7 @@ class AgentLoop:
                         entrypoint_id=ctx.tool_entrypoint_id or str(ctx.agent.id),
                         api_key_id=ctx.tool_api_key_id,
                         interactive=entrypoint_is_interactive(ctx.tool_entrypoint),
+                        progress=self._tool_progress_sink(tc, tool_name),
                     )
                 ),
                 capture_workspace_resets() as reset_notices,

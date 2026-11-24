@@ -49,6 +49,14 @@ class _Session:
         self.result = result
         self.calls: list[tuple[str, dict]] = []
 
+    async def list_tools(self, *, params=None):
+        # 2026-07-28 sessions are listed before a call so the SDK can mirror
+        # ``x-mcp-header`` arguments; the listing itself is not under test here,
+        # so it stays out of ``calls``.
+        return types.ListToolsResult(
+            tools=[types.Tool(name="search", inputSchema={"type": "object"})]
+        )
+
     async def call_tool(self, name, arguments, **kwargs):
         self.calls.append(("call_tool", kwargs))
         return self.result
