@@ -3426,9 +3426,10 @@ async def init_db():
             "is_system_role": True,
         },
     )
+    # Repair roles created by an interrupted startup as well as new roles.
+    all_perm = await Permission.get(code="*")
+    await super_admin_role.permissions.add(all_perm)
     if created:
-        all_perm = await Permission.get(code="*")
-        await super_admin_role.permissions.add(all_perm)
         logger.info(f"Created system role: {SUPER_ADMIN_ROLE}")
 
     admin_permissions = [

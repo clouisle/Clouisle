@@ -171,6 +171,27 @@ msgstr "Git 仓库地址无效"
 msgid "skill_import_installed"
 msgstr "Skills 导入成功"
 
+msgid "skill_package_sync_failed"
+msgstr "Skill 包未能同步到沙箱工作区"
+
+msgid "skill_package_sync_too_large"
+msgstr "Skill 包体积过大，无法同步到沙箱工作区"
+
+msgid "skill_execution_extension_deprecated"
+msgstr "已忽略 x-clouisle.execution：捆绑脚本由沙箱工具执行"
+
+msgid "skill_name_invalid"
+msgstr "Skill 名称只能使用小写字母、数字和单个连字符"
+
+msgid "skill_name_too_long"
+msgstr "Skill 名称不能超过 64 个字符"
+
+msgid "skill_name_directory_mismatch"
+msgstr "Skill 名称与所在目录名不一致"
+
+msgid "skill_description_too_long"
+msgstr "Skill 描述不能超过 1024 个字符"
+
 msgid "clouisle_checksum_mismatch"
 msgstr "包校验和验证失败"
 
@@ -2082,6 +2103,9 @@ msgstr "角色更新成功"
 
 msgid "role_with_name_exists"
 msgstr "该角色名已存在"
+
+msgid "wildcard_permission_superuser_only"
+msgstr "只有超级管理员可以授予通配符权限"
 
 msgid "pika_request_timeout"
 msgstr "Pika 请求超时"

@@ -629,7 +629,12 @@
           "invalidPackage": "无效的 Skill 包",
           "packageNotInSession": "该包不属于当前导入会话",
           "packagePathInvalid": "包路径无效",
-          "nameExists": "已存在同名 Skill"
+          "nameExists": "已存在同名 Skill",
+          "nameInvalid": "Skill 名称只能使用小写字母、数字和单个连字符",
+          "nameTooLong": "Skill 名称不能超过 64 个字符",
+          "descriptionTooLong": "Skill 描述不能超过 1024 个字符",
+          "directoryNameMismatch": "Skill 名称与所在目录名不一致",
+          "executionExtensionDeprecated": "已忽略 x-clouisle.execution：捆绑脚本由沙箱工具执行"
         }
       }
     },

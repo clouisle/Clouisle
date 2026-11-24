@@ -47,7 +47,7 @@ async def test_skill_selection_exposes_sandbox_tools():
 
     names = {tool["function"]["name"] for tool in tools}
     assert any(name.startswith("skill_demo_skill_") for name in names)
-    assert {"bash", "edit", "read", "write"}.issubset(names)
+    assert {"bash", "edit", "read", "write", "artifact"}.issubset(names)
 
 
 @pytest.mark.anyio

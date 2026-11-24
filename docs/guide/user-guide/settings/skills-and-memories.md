@@ -1,6 +1,6 @@
 # Skills & Capabilities User Guide
 
-Skills allow users to extend Agent problem-solving capabilities with custom tool packages, Python code snippets, and reusable workflow abilities.
+Skills follow the open [Agent Skills specification](https://agentskills.io/specification): a Skill is a directory holding a `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` files. Clouisle imports Skill packages and lets Agents read, run, and adapt those files inside the sandbox.
 
 ---
 
@@ -8,24 +8,54 @@ Skills allow users to extend Agent problem-solving capabilities with custom tool
 
 In Clouisle, Capabilities include:
 - **Built-in Tools**: Web search, calculation, file parsers, and system utilities.
-- **Custom Skills**: Custom-written Python scripts and package bundles that can be invoked dynamically by agents.
+- **Skills**: Imported `SKILL.md` packages whose instructions and bundled files the Agent uses on demand.
 - **MCP Servers**: Live Model Context Protocol connections exposing dynamic external tool catalogues.
 - **Database Tools**: Read-only structured querying tools for PostgreSQL, MySQL, and SQLite.
 
 ---
 
-## 2. Managing Skills
+## 2. Writing a Skill
+
+`SKILL.md` carries YAML frontmatter plus Markdown instructions:
+
+```markdown
+---
+name: pdf-tools
+description: Extract text and tables from PDF files. Use when the user mentions PDFs, forms, or document extraction.
+license: Apache-2.0
+compatibility: Requires Python 3.11
+allowed-tools: Bash Read
+---
+
+Run `scripts/extract.py <file>` and summarise the result.
+```
+
+- `name` and `description` are required. `name` uses lowercase letters, digits, and single hyphens, is at most 64 characters, and should match the package directory name (a mismatch is an import warning, not an error); `description` is at most 1024 characters.
+- `license`, `compatibility`, `metadata`, and `allowed-tools` are optional. `allowed-tools` is a space-separated list of the tools the Skill expects to use; Clouisle passes it to the model as guidance.
+- There is no execution declaration. Scripts are run by the Agent with its sandbox tools (`bash`, `read`, `write`, `artifact`), exactly as the specification intends.
+- Older packages may still carry an `x-clouisle.execution` block. It is ignored and reported as an import warning.
+
+---
+
+## 3. Managing Skills
 
 Navigate to **Capabilities > Skills** from the workspace navigation:
 
-1. **Import Skill** — skills are created only by importing a package; there is no manual code editor:
-   - **Import from ZIP**: Upload a structured skill ZIP bundle containing `manifest.json`, `index.py`, and dependencies.
-   - **Import from Git**: Provide a public or authenticated Git repository URL containing standard Clouisle skill packages.
-2. **Test and Verify**:
-   - Use the **Test Skill** interactive runner to test execution within an isolated runtime sandbox before attaching to production agents.
-3. **Attach to Agent**:
-   - Open your target Agent editor under **Apps > Agents > Edit**.
-   - Enable the skill in the **Tools & Skills** selector.
+1. **Import Skill** — Skills are created only by importing a package; there is no manual editor:
+   - **Import from ZIP**: upload a `.zip` bundle; every directory containing `SKILL.md` is previewed separately.
+   - **Import from Git**: point at a public HTTPS repository and branch, tag, or commit; the whole checkout is scanned for `SKILL.md`.
+2. **Select and install**: pick the scanned Skills, resolve conflicts with update/skip, then install.
+3. **Attach to Agent**: open the Agent editor under **Apps > Agents > Edit** and enable the Skill in the **Tools & Skills** selector. The sandbox tools the Skill needs (`read`, `edit`, `write`, `bash`, `artifact`) are added to the Agent automatically once it has a Skill, so there is nothing else to enable.
+
+---
+
+## 4. How Skills reach the sandbox
+
+When a chat or Agent run starts, [REDACTED] creates a sandbox session and pushes each enabled Skill package into that session's workspace through the sandbox job API as the first sandbox round begins. The worker node receives the package bytes in the job payload; it never reads shared or distributed storage. Files land under `/workspace/skills/<name>-<id>/`, where the id suffix keeps two Skills that share a name (a system Skill and a team Skill, for example) in separate directories:
+
+- The first Skill call returns the `SKILL.md` body, the file inventory, and the Skill root path.
+- The Agent then reads `references/`, runs `scripts/`, and writes results to `/workspace/output`, where the `artifact` tool generates download links.
+- A workspace reset, or a checkpoint rollback that replaces the workspace content, invalidates the copy, and the next Skill call pushes the package again. This is verified in a two-worker local setup; cross-host failover is not yet covered by tests.
 
 ---
 

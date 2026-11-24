@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.timezone import now
 
-from .models import SandboxBinding, SandboxSession
+from .models import SandboxBinding, SandboxSession, SandboxSkillSyncState
 
 STANDALONE_ROUND = "standalone"
 
@@ -77,10 +77,42 @@ class SandboxSessionStore:
     def _workspace_round_key(self, session_id: str) -> str:
         return f"sandbox:workspace-round:{session_id}"
 
+    def _skill_sync_key(self, session_id: str) -> str:
+        return f"sandbox:skill-sync:{session_id}"
+
     async def get_binding(self, session_id: str) -> SandboxBinding | None:
         redis = await get_redis()
         payload = await redis.get(self._binding_key(session_id))
         return SandboxBinding.model_validate_json(payload) if payload else None
+
+    async def get_skill_sync(self, session_id: str) -> SandboxSkillSyncState | None:
+        redis = await get_redis()
+        payload = await redis.get(self._skill_sync_key(session_id))
+        return SandboxSkillSyncState.model_validate_json(payload) if payload else None
+
+    async def clear_skill_sync(self, session_id: str) -> None:
+        """Forget recorded Skill pushes after the workspace content is replaced.
+
+        A checkpoint rollback restores older content without changing the
+        binding generation, so the generation check alone cannot tell that the
+        staged Skill directories are gone.
+        """
+        redis = await get_redis()
+        await redis.delete(self._skill_sync_key(session_id))
+
+    async def set_skill_sync(
+        self,
+        session_id: str,
+        state: SandboxSkillSyncState,
+        *,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        redis = await get_redis()
+        await redis.set(
+            self._skill_sync_key(session_id),
+            state.model_dump_json(),
+            ex=ttl_seconds or _ttl_seconds(),
+        )
 
     async def get_worker(self, session_id: str) -> str | None:
         binding = await self.get_binding(session_id)
@@ -640,12 +672,12 @@ class SandboxSessionStore:
             if ARGV[3] ~= '' then
                 redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[6])
             end
-            redis.call('DEL', KEYS[1], KEYS[3], KEYS[4], KEYS[7])
+            redis.call('DEL', KEYS[1], KEYS[3], KEYS[4], KEYS[7], KEYS[10])
             redis.call('ZREM', KEYS[5], ARGV[5]); redis.call('ZREM', KEYS[6], ARGV[5])
             redis.call('ZREM', KEYS[8], ARGV[5]); redis.call('ZREM', KEYS[9], ARGV[5])
             return 1
             """,
-                9,
+                10,
                 self._key(session_id),
                 self._binding_key(session_id),
                 self._active_round_key(session_id),
@@ -655,6 +687,7 @@ class SandboxSessionStore:
                 self._recovery_key(session_id),
                 self.PENDING_CLEANUP_INDEX_KEY,
                 self.PENDING_EVICTION_INDEX_KEY,
+                self._skill_sync_key(session_id),
                 binding.model_dump_json() if binding else "",
                 "1" if expired_only else "0",
                 tombstone.model_dump_json() if tombstone else "",

@@ -334,6 +334,8 @@ async def prepare_workspace(
                     allow_empty=session.disk_usage_bytes == 0,
                     force=interrupted,
                 )
+                if interrupted:
+                    await sandbox_session_store.clear_skill_sync(session_id)
             else:
                 # First generation may use its logical ID; resets never reuse data.
                 if workspace_id != session_id and (
@@ -484,6 +486,8 @@ async def checkpoint_session(
                 workspace_manager.restore_session(
                     binding.workspace_id, allow_empty=False, force=interrupted
                 )
+                if interrupted:
+                    await sandbox_session_store.clear_skill_sync(session_id)
             saved = workspace_manager.save_checkpoint(binding.workspace_id)
             await guard_job(job_id, session_id, binding, deadline_at)
             await sandbox_session_store.clear_workspace_round(
@@ -563,6 +567,7 @@ def evict_sandbox_session_task(
                 workspace_manager.restore_session(
                     binding.workspace_id, allow_empty=False, force=True
                 )
+                await sandbox_session_store.clear_skill_sync(session_id)
             # Recheck after checkpoint construction; a superseded workspace must not
             # delete or mutate metadata belonging to its replacement.
             saved = workspace_manager.save_checkpoint(binding.workspace_id)

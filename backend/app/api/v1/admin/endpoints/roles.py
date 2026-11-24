@@ -28,6 +28,26 @@ class RolePermissionsUpdate(BaseModel):
     permissions: List[str]  # List of permission codes
 
 
+WILDCARD_PERMISSION = "*"
+
+
+def _reject_wildcard_for_non_superuser(
+    permission_codes: List[str], current_user: User
+) -> None:
+    """Keep the global wildcard off roles granted through the role API.
+
+    ``*`` satisfies every permission check, so allowing it here would let a
+    holder of ``admin:role:update`` (deliberately weaker than a superuser)
+    grant full system access to any non-system role, including their own.
+    """
+    if WILDCARD_PERMISSION in permission_codes and not current_user.is_superuser:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="wildcard_permission_superuser_only",
+            status_code=403,
+        )
+
+
 @router.get("", response_model=Response[PageData[RoleSchema]])
 async def read_roles(
     page: int = 1,
@@ -77,6 +97,9 @@ async def create_role(
             code=ResponseCode.ROLE_NAME_EXISTS,
             msg_key="role_with_name_exists",
         )
+
+    if role_in.permissions:
+        _reject_wildcard_for_non_superuser(role_in.permissions, current_user)
 
     role = await Role.create(
         name=role_in.name,
@@ -180,6 +203,8 @@ async def update_role_permissions(
             code=ResponseCode.CANNOT_MODIFY_SYSTEM_ROLE,
             msg_key="cannot_modify_system_role_permissions",
         )
+
+    _reject_wildcard_for_non_superuser(permissions_in.permissions, current_user)
 
     # Clear existing permissions
     await role.permissions.clear()

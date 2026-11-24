@@ -73,7 +73,7 @@ Skill detail responses extend the object above with the package contents:
 | `instructions` | `string` | Instructions extracted from the package |
 | `frontmatter` | `object` | Parsed `SKILL.md` frontmatter |
 | `package_manifest` | `object` | Package manifest |
-| `execution_config` | `object` | Execution configuration |
+| `execution_config` | `object` | Reserved; always empty for standard Skills (the `x-clouisle.execution` extension is deprecated) |
 | `config_schema` | `object` | JSON Schema of the skill configuration |
 
 ---
@@ -248,12 +248,12 @@ Content-Type: application/zip
 | `icon` | `string \| null` | Icon |
 | `valid` | `boolean` | `false` for packages that cannot be installed |
 | `errors` | `array` of `string` | Message keys describing why a package is invalid (e.g. `skill_md_not_found`) |
-| `warnings` | `array` of `string` | Message keys such as `skill_name_conflict` or `skill_duplicate_name_in_source` |
+| `warnings` | `array` of `string` | Message keys such as `skill_name_conflict`, `skill_duplicate_name_in_source`, `skill_name_directory_mismatch` or `skill_execution_extension_deprecated` |
 | `conflict` | `object \| null` | `{"type": "existing_team_skill", "skill_id": null, "message": null}` when a skill of the same name already exists in the target team |
 | `file_count` | `integer` | Files in the package |
 | `package_hash` | `string \| null` | Package content hash |
 
-Packages with `valid: false` are returned in `invalid` instead of `skills`; `errors`/`warnings` entries are i18n message keys.
+Packages with `valid: false` are returned in `invalid` instead of `skills`; `errors`/`warnings` entries are i18n message keys. Name validation errors are `skill_name_required`, `skill_name_invalid`, `skill_name_too_long` and `skill_description_too_long`; a `name` that does not match its containing directory is reported as `skill_name_directory_mismatch` in `warnings` and does not block installation.
 
 ### Errors
 
@@ -487,7 +487,7 @@ Authorization: Bearer <token>
 
 ## Test Skill
 
-Executes the skill once in the code sandbox with the supplied arguments. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
+Stages the Skill package into a throwaway sandbox session and returns what the Agent receives: the `SKILL.md` instructions, the bundled file inventory under `/workspace/skills/<name>-<id>/`, and `allowed-tools`. No script is executed on the caller's behalf, so `stdout`, `stderr` and `artifacts` are always empty and `duration_ms` is always `null`. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
 
 ```http
 POST /api/v1/skills/a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d/test HTTP/1.1
@@ -514,25 +514,33 @@ Content-Type: application/json
   "code": 0,
   "data": {
     "success": true,
-    "result": {"rows": 1200, "columns": 8},
+    "result": {
+      "type": "skill_instructions",
+      "skill": {
+        "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "name": "pdf-tools",
+        "display_name": "PDF Tools",
+        "description": "Extract text from PDFs",
+        "version": "1.0.0",
+        "package_path": "skills/a1b2c3d4/1.0.0.zip",
+        "package_hash": "sha256:..."
+      },
+      "instructions": "# PDF Tools\n\nRun `scripts/extract.py <file>` ...",
+      "arguments": {"dataset": "sales.csv"},
+      "config": {"max_rows": 100},
+      "skill_root": "/workspace/skills/pdf-tools-a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d",
+      "files": [{"path": "SKILL.md", "size": 412}],
+      "file_count": 3,
+      "files_staged": true,
+      "allowed_tools": ["Bash", "Read"],
+      "artifact_guidance": "If this Skill creates user-facing files, ...",
+      "status": "loaded"
+    },
     "error": null,
-    "stdout": "processed sales.csv\n",
+    "stdout": "",
     "stderr": "",
-    "artifacts": [
-      {
-        "path": "/workspace/report.html",
-        "optional": false,
-        "description": "Generated report",
-        "file_type": "file",
-        "size": 20480,
-        "checksum": "sha256:...",
-        "content_type": "text/html",
-        "storage_path": "skills/artifacts/report.html",
-        "url": null,
-        "filename": "report.html"
-      }
-    ],
-    "duration_ms": 842
+    "artifacts": [],
+    "duration_ms": null
   },
   "msg": "success"
 }
@@ -540,15 +548,20 @@ Content-Type: application/json
 
 | Field | Type | Description |
 |---|---|---|
-| `success` | `boolean` | Whether the skill run succeeded |
-| `result` | `any` | Skill return value |
-| `error` | `string \| null` | Error message when the run failed |
-| `stdout` | `string` | Captured standard output |
-| `stderr` | `string` | Captured standard error |
-| `artifacts` | `array` | Artifacts produced by the run |
-| `duration_ms` | `integer \| null` | Run duration in milliseconds |
-
-A failed skill run is reported as `200 OK` with `code: 0`, `data.success: false`, and the reason in `data.error`.
+| `success` | `boolean` | Always `true` for a staged package; delivery failures raise instead |
+| `result.type` | `string` | Always `skill_instructions` |
+| `result.instructions` | `string` | The `SKILL.md` body handed to the model |
+| `result.skill_root` | `string` | Absolute workspace path holding the staged files |
+| `result.files` | `array` | Bundled file inventory relative to `skill_root` (first 200 entries) |
+| `result.file_count` | `integer` | Files in the package manifest |
+| `result.files_staged` | `boolean` | `false` when the package carries no files to stage |
+| `result.allowed_tools` | `array` | Parsed `allowed-tools`, passed to the model as guidance |
+| `result.artifact_guidance` | `string` | Instruction telling the model how to publish output files |
+| `result.status` | `string` | Always `loaded` |
+| `error` | `string \| null` | Delivery error, when staging failed |
+| `stdout` / `stderr` | `string` | Always empty — no script runs here |
+| `artifacts` | `array` | Always empty — no script runs here |
+| `duration_ms` | `null` | No job runs for the Skill itself |
 
 ### Errors
 
@@ -558,6 +571,8 @@ A failed skill run is reported as `200 OK` with `code: 0`, `data.success: false`
 | `403` | `3000` | `operation_not_permitted` (caller lacks the global `skill:execute` permission) or `skill_system_admin_required` (system skill and the caller is not a superuser) |
 | `403` | `3002` | `not_team_member` — team skill and the caller is not a member of the owning team |
 | `403` | `3003` | `team_admin_required` — team skill and the caller is a member but not an owner/admin |
+| `502` | `5000` | `skill_package_sync_failed` — the package could not be delivered to the sandbox workspace |
+| `400` | `1002` | `skill_package_sync_too_large` — the encoded package exceeds `SKILL_SYNC_MAX_TOTAL_BYTES` |
 
 ---
 

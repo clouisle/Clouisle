@@ -87,3 +87,12 @@ def test_default_cors_origins_cover_both_loopback_spellings():
     assert "127.0.0.1" in hosts
     assert "localhost" in hosts
     assert len(settings.BACKEND_CORS_ORIGINS) == len(set(settings.BACKEND_CORS_ORIGINS))
+
+def test_skill_sync_timeout_matches_sandbox_limits_floor():
+    """A sub-second timeout passes settings but fails job construction."""
+    from app.services.sandbox.models import SandboxLimits
+
+    assert Settings.model_fields["SKILL_SYNC_TIMEOUT_SECONDS"].metadata
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SKILL_SYNC_TIMEOUT_SECONDS=0.5)
+    assert SandboxLimits(timeout_seconds=1.0).timeout_seconds == 1.0

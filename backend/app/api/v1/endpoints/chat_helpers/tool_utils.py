@@ -10,6 +10,9 @@ from app.schemas.tool import BUILTIN_TOOLS_METADATA
 from app.services.skill import SkillService
 
 
+SKILL_SANDBOX_TOOLS = ["read", "edit", "write", "bash", "artifact"]
+
+
 async def get_agent_tools(agent: Agent) -> list[dict]:
     """Get all custom tools configured for an agent."""
     tools_config = list(agent.tools_config or [])
@@ -50,9 +53,7 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
 
     if has_skills:
         existing_names = {tool["name"] for tool in tools}
-        for tool_info in tool_registry.get_sandbox_tool_infos(
-            ["read", "edit", "write", "bash"]
-        ):
+        for tool_info in tool_registry.get_sandbox_tool_infos(SKILL_SANDBOX_TOOLS):
             if tool_info.name in existing_names:
                 continue
             tools.append(

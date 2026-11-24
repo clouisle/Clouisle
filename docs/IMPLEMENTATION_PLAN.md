@@ -415,14 +415,17 @@
   - [x] 5. Admin Skills tab on `/admin/skills` APIs
   - [x] 6. Validation and regression checks
 
-- **agent-skills** — In progress. Redesign Agent Skills around zip/Git package import: scan multiple `SKILL.md` roots, preview/install selected Skills, keep Agent-scoped function calling, and run only declared script Skills in sandbox. See `docs/plan/agent-skills.md`
+- **agent-skills** — In progress. Import Agent Skills as standard `SKILL.md` packages (zip or Git), preview/install selected packages, keep Agent-scoped function calling, and mount each package into the session workspace so the Agent runs bundled scripts with its sandbox tools. See `docs/plan/agent-skills.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend package-driven Skill model and schemas
   - [x] 3. Zip/Git scanning, package parsing, and import sessions
   - [x] 4. Skills import API, permissions, audit, and i18n
-  - [x] 5. Skill tool definition and instructions/script execution
-  - [x] 6. Frontend import, preview, install, detail, and test UI
-  - [ ] 7. Agent selection and end-to-end security/regression tests
+  - [x] 5. Skill tool definition and instructions execution
+  - [x] 6. Frontend import, preview, install, and detail UI
+  - [x] 7. Agent selection and security/regression tests (backend suite only; cross-host failover and script execution for Git-imported Skills remain unverified)
+  - [x] 8. Standard alignment: spec frontmatter, `allowed-tools`, and deprecation of `x-[REDACTED].execution`
+  - [x] 9. Workspace sync of Skill packages through the sandbox job payload, including reset and checkpoint-rollback invalidation
+  - [x] 10. Frontend Skill test panel and documentation refresh
 
 - **sandbox-runtime-migration** — In progress. Migrate subprocess-based code execution to a long-running sandbox worker runtime that supports Python/JS package installation, CLI and custom command execution, skill compilation, and compatibility bridges for tools, chat, and workflow code nodes. See `docs/plan/sandbox-runtime-migration.md`
   - [ ] 1. Runtime contracts, policies, and compatibility schema
