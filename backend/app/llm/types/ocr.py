@@ -97,6 +97,12 @@ class OCRResponse(BaseModel):
     pages: list[OCRPage] = Field(
         default_factory=list, description="Recognized pages in source order"
     )
+    pages_processed: int | None = Field(
+        default=None,
+        ge=0,
+        strict=True,
+        description="Page count reported by the provider, if available",
+    )
     usage: Usage = Field(default_factory=Usage, description="使用统计")
 
     @property

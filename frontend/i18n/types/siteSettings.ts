@@ -574,6 +574,7 @@ export type SiteSettingsMessages = {
       visionModelDesc: string
       ocrModel: string
       ocrModelDesc: string
+      legacyOcrModel: string
       ocrModelNone: string
       modelNone: string
       modelRequired: string

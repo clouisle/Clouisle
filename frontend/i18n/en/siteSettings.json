@@ -572,6 +572,7 @@
       "visionModelDesc": "Choose an enabled chat model that supports image input.",
       "ocrModel": "OCR Model (Optional)",
       "ocrModelDesc": "Choose an enabled model of type OCR. Leave empty to use the vision model for both OCR and description.",
+      "legacyOcrModel": "You can keep the existing vision model. If you replace it, choose a dedicated OCR model.",
       "ocrModelNone": "Use the vision model",
       "modelNone": "No model selected",
       "modelRequired": "Choose a vision model or an OCR model before enabling image understanding.",

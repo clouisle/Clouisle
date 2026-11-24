@@ -86,9 +86,9 @@ def _as_block(raw: Any) -> OCRBlock | None:
     )
 
 
-def _as_page(raw: Any, fallback_index: int) -> OCRPage | None:
-    if not isinstance(raw, dict):
-        return None
+def _as_page(raw: Any, fallback_index: int) -> OCRPage:
+    if not isinstance(raw, dict) or not isinstance(raw.get("markdown"), str):
+        raise ValueError("malformed OCR page")
     dimensions = raw.get("dimensions")
     width: float | None = None
     height: float | None = None
@@ -100,9 +100,11 @@ def _as_page(raw: Any, fallback_index: int) -> OCRPage | None:
             width = height = None
     index = raw.get("index")
     blocks = raw.get("blocks")
+    if blocks is not None and not isinstance(blocks, list):
+        raise ValueError("malformed OCR blocks")
     return OCRPage(
         index=index if isinstance(index, int) else fallback_index,
-        markdown=str(raw.get("markdown") or ""),
+        markdown=raw["markdown"],
         blocks=[
             block
             for block in (_as_block(item) for item in (blocks or []))
@@ -170,19 +172,17 @@ class MistralOCRAdapter(BaseOCRAdapter):
 
     def _parse_response(self, data: dict[str, Any], request: OCRRequest) -> OCRResponse:
         raw_pages = data.get("pages")
-        pages = [
-            page
-            for page in (
-                _as_page(raw, index)
-                for index, raw in enumerate(
-                    raw_pages if isinstance(raw_pages, list) else []
-                )
-            )
-            if page is not None
-        ]
+        if not isinstance(raw_pages, list) or not raw_pages:
+            raise ValueError("missing OCR pages")
+        pages = [_as_page(raw, index) for index, raw in enumerate(raw_pages)]
+        usage_info = data.get("usage_info")
+        pages_processed = (
+            usage_info.get("pages_processed") if isinstance(usage_info, dict) else None
+        )
         return OCRResponse(
             model=str(data.get("model") or request.model or self.model_config.model_id),
             pages=pages,
+            pages_processed=pages_processed,
             # Mistral bills per page and reports no token usage.
             usage=Usage(),
         )
@@ -200,7 +200,6 @@ class MistralOCRAdapter(BaseOCRAdapter):
                     json=self._build_payload(request),
                 )
                 response.raise_for_status()
-                data = response.json()
         except httpx.HTTPStatusError as exc:
             raise map_http_error(exc, provider, model) from exc
         except httpx.TimeoutException as exc:
@@ -217,10 +216,4 @@ class MistralOCRAdapter(BaseOCRAdapter):
                 model=model,
             ) from exc
 
-        if not isinstance(data, dict):
-            raise ProviderError(
-                message="Mistral OCR returned an unexpected response body",
-                provider=provider,
-                model=model,
-            )
-        return self._parse_response(data, request)
+        return self._parse_http_response(response, request)

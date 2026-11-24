@@ -44,12 +44,14 @@ def _as_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "".join(
-            str(part.get("text") or "")
+        parts = [
+            part.get("text")
             for part in content
             if isinstance(part, dict) and part.get("type") in (None, "text")
-        )
-    return ""
+        ]
+        if parts and all(isinstance(part, str) for part in parts):
+            return "".join(parts)
+    raise ValueError("missing or malformed completion text")
 
 
 def _as_usage(raw: Any) -> Usage:
@@ -115,16 +117,14 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
 
     def _parse_response(self, data: dict[str, Any], request: OCRRequest) -> OCRResponse:
         choices = data.get("choices")
-        text = ""
-        if isinstance(choices, list) and choices:
-            message = (
-                choices[0].get("message") if isinstance(choices[0], dict) else None
-            )
-            if isinstance(message, dict):
-                text = _as_text(message.get("content")).strip()
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("missing completion choices")
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if not isinstance(message, dict):
+            raise ValueError("malformed completion message")
         return OCRResponse(
             model=str(data.get("model") or request.model or self.model_config.model_id),
-            pages=[OCRPage(index=0, markdown=text)],
+            pages=[OCRPage(index=0, markdown=_as_text(message.get("content")).strip())],
             usage=_as_usage(data.get("usage")),
         )
 
@@ -141,7 +141,6 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
                     json=self._build_payload(request),
                 )
                 response.raise_for_status()
-                data = response.json()
         except httpx.HTTPStatusError as exc:
             raise map_http_error(exc, provider, model) from exc
         except httpx.TimeoutException as exc:
@@ -158,10 +157,4 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
                 model=model,
             ) from exc
 
-        if not isinstance(data, dict):
-            raise ProviderError(
-                message="OCR provider returned an unexpected response body",
-                provider=provider,
-                model=model,
-            )
-        return self._parse_response(data, request)
+        return self._parse_http_response(response, request)

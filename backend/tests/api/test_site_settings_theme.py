@@ -1044,8 +1044,7 @@ async def test_kb_image_ocr_model_requires_the_dedicated_ocr_type(monkeypatch):
     )
     await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
 
-    # A vision chat model transcribes text, but the OCR slot is reserved for the
-    # dedicated OCR type so the call path never depends on which one is configured.
+    # A vision chat model can remain in the slot, but cannot be chosen as a new value.
     vision_model = SimpleNamespace(
         capabilities={"input_modalities": ["text", "image"]},
         is_enabled=True,
@@ -1058,6 +1057,61 @@ async def test_kb_image_ocr_model_requires_the_dedicated_ocr_type(monkeypatch):
     with pytest.raises(BusinessError) as exc_info:
         await _validate_setting_value("kb_image_ocr_model_id", str(uuid4()))
     assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_bulk_parsing_save_preserves_an_existing_vision_chat_ocr_model(
+    monkeypatch,
+):
+    ocr_id = uuid4()
+    key = "kb_image_ocr_model_id"
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "filter",
+        lambda **kwargs: Query(
+            setting(key, str(ocr_id)) if kwargs["key"] == key else None
+        ),
+    )
+    monkeypatch.setattr(
+        site_settings.Model,
+        "filter",
+        lambda **kwargs: Query(
+            SimpleNamespace(
+                capabilities={"input_modalities": ["text", "image"]},
+                model_type="chat",
+                is_enabled=True,
+                provider="openai",
+            )
+            if kwargs["id"] == ocr_id
+            else None
+        ),
+    )
+    write = AsyncMock()
+    monkeypatch.setattr(site_settings.SiteSetting, "set_value", write)
+    monkeypatch.setattr(
+        site_settings.SiteSetting, "get_all_by_category", AsyncMock(return_value={})
+    )
+    audit = AsyncMock()
+    monkeypatch.setattr(site_settings.AuditLogService, "log", audit)
+
+    await site_settings.bulk_update_settings(
+        request=MagicMock(),
+        data=SiteSettingBulkUpdate(
+            settings={
+                "kb_image_understanding_enabled": True,
+                "kb_image_understanding_allow_external": True,
+                "kb_image_understanding_model_id": "",
+                key: str(ocr_id),
+            }
+        ),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+
+    assert any(
+        call.kwargs["key"] == key and call.kwargs["value"] == str(ocr_id)
+        for call in write.await_args_list
+    )
+    assert key not in audit.await_args.kwargs["changes"]["after"]["values"]
 
 
 @pytest.mark.asyncio

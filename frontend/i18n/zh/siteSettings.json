@@ -572,6 +572,7 @@
       "visionModelDesc": "选择一个已启用且支持图片输入的聊天模型。",
       "ocrModel": "OCR 模型（可选）",
       "ocrModelDesc": "选择一个已启用的 OCR 类型模型。留空则复用视觉模型同时完成 OCR 与描述。",
+      "legacyOcrModel": "可以继续使用当前的视觉模型。更换时，请选择专用的 OCR 模型。",
       "ocrModelNone": "复用视觉模型",
       "modelNone": "未选择模型",
       "modelRequired": "启用图片理解前请选择视觉模型或 OCR 模型。",

@@ -21,7 +21,7 @@ from app.llm.errors import (
 )
 from app.llm.errors import TimeoutError as LLMTimeoutError
 from app.llm.manager import ModelManager
-from app.llm.types import MediaContent, OCRRequest, Usage
+from app.llm.types import MediaContent, OCRPage, OCRRequest, OCRResponse, Usage
 from app.models.model import ModelProvider
 
 PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -245,25 +245,20 @@ def test_mistral_parses_pages_blocks_and_dimensions() -> None:
     assert page.blocks[1].bbox == (0.0, 30.0, 100.0, 50.0)
 
 
-def test_mistral_parse_skips_non_mapping_pages() -> None:
-    adapter = MistralOCRAdapter(build_config())
-    response = adapter._parse_response({"pages": ["nope", None]}, build_request())
-    assert response.pages == []
-
-
 def test_mistral_parse_tolerates_malformed_blocks() -> None:
     adapter = MistralOCRAdapter(build_config())
     response = adapter._parse_response(
         {
             "pages": [
                 {
+                    "markdown": "",
                     "blocks": [
                         "not-a-block",
                         {"bbox": [1, 2, 3]},
                         {"bbox": {"top_left_x": "bad"}},
                         {"confidence": 5},
                         {"type": 7, "text": 9},
-                    ]
+                    ],
                 }
             ]
         },
@@ -289,8 +284,14 @@ def test_mistral_normalizes_out_of_range_confidence() -> None:
 
 def test_mistral_parse_falls_back_to_requested_model() -> None:
     adapter = MistralOCRAdapter(build_config(model_id="configured"))
-    response = adapter._parse_response({}, build_request(model="override"))
+    response = adapter._parse_response(
+        {"pages": [{"markdown": ""}], "usage_info": {"pages_processed": 3}},
+        build_request(model="override"),
+    )
     assert response.model == "override"
+    assert response.pages == [OCRPage(index=0, markdown="")]
+    assert response.pages_processed == 3
+    assert response.usage == Usage()
 
 
 @pytest.mark.asyncio
@@ -325,7 +326,7 @@ async def test_mistral_recognize_rejects_non_mapping_body() -> None:
     with patch("app.llm.adapters.ocr.mistral_adapter.httpx.AsyncClient") as client_cls:
         client_cls.return_value.__aenter__ = AsyncMock(return_value=client)
         client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-        with pytest.raises(ProviderError, match="unexpected response body"):
+        with pytest.raises(ProviderError, match="Invalid OCR provider response"):
             await adapter.recognize(build_request())
 
 
@@ -464,24 +465,60 @@ def test_chat_parse_flattens_content_parts() -> None:
     assert response.text == "ab"
 
 
-def test_chat_parse_handles_missing_choices() -> None:
+def test_chat_parse_accepts_blank_transcription() -> None:
     adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
-    response = adapter._parse_response({}, build_request(model="override"))
-
-    assert response.text == ""
+    response = adapter._parse_response(
+        {"choices": [{"message": {"content": ""}}]}, build_request(model="override")
+    )
     assert response.model == "override"
-    assert response.pages[0].index == 0
+    assert response.pages == [OCRPage(index=0, markdown="")]
+    assert response.usage == Usage()
 
 
-def test_chat_parse_tolerates_malformed_choices() -> None:
-    adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
-    assert adapter._parse_response({"choices": ["nope"]}, build_request()).text == ""
-    assert adapter._parse_response({"choices": []}, build_request()).text == ""
-
-
-def test_chat_usage_defaults_when_absent() -> None:
-    adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
-    assert adapter._parse_response({}, build_request()).usage == Usage()
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "body"),
+    [
+        (ModelProvider.QWEN, b"not JSON"),
+        (ModelProvider.MISTRAL, b"not JSON"),
+        (ModelProvider.QWEN, {}),
+        (ModelProvider.QWEN, {"choices": []}),
+        (ModelProvider.QWEN, {"choices": ["nope"]}),
+        (ModelProvider.QWEN, {"choices": [{}]}),
+        (ModelProvider.QWEN, {"choices": [{"message": {}}]}),
+        (ModelProvider.QWEN, {"choices": [{"message": {"content": [{"text": 3}]}}]}),
+        (
+            ModelProvider.QWEN,
+            {
+                "choices": [{"message": {"content": "text"}}],
+                "usage": {"total_tokens": "bad"},
+            },
+        ),
+        (ModelProvider.MISTRAL, {}),
+        (ModelProvider.MISTRAL, {"pages": []}),
+        (ModelProvider.MISTRAL, {"pages": [None]}),
+        (ModelProvider.MISTRAL, {"pages": [{}]}),
+        (ModelProvider.MISTRAL, {"pages": [{"markdown": "", "blocks": 5}]}),
+    ],
+)
+async def test_recognize_rejects_invalid_success_response(provider, body) -> None:
+    adapter = create_ocr_adapter(build_config(provider=provider))
+    response = httpx.Response(
+        200,
+        content=body if isinstance(body, bytes) else None,
+        json=body if isinstance(body, dict) else None,
+        request=httpx.Request("POST", "https://x.test/ocr"),
+    )
+    with patch("httpx.AsyncClient") as client_cls:
+        client_cls.return_value.__aenter__ = AsyncMock(
+            return_value=SimpleNamespace(post=AsyncMock(return_value=response))
+        )
+        with pytest.raises(
+            ProviderError, match="Invalid OCR provider response"
+        ) as error:
+            await adapter.recognize(build_request(model="override"))
+    assert error.value.provider == provider.value
+    assert error.value.model == "override"
 
 
 @pytest.mark.asyncio
@@ -519,7 +556,7 @@ async def test_chat_recognize_rejects_non_mapping_body() -> None:
     ) as client_cls:
         client_cls.return_value.__aenter__ = AsyncMock(return_value=client)
         client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-        with pytest.raises(ProviderError, match="unexpected response body"):
+        with pytest.raises(ProviderError, match="Invalid OCR provider response"):
             await adapter.recognize(build_request())
 
 
@@ -620,41 +657,26 @@ def build_team_model_config() -> SimpleNamespace:
     )
 
 
-def build_ocr_response(usage: Usage) -> SimpleNamespace:
-    page = SimpleNamespace(index=0, markdown="# Invoice")
-    return SimpleNamespace(model="mistral-ocr-latest", pages=[page], usage=usage)
-
-
-def test_team_ocr_records_reported_usage() -> None:
+@pytest.mark.parametrize(
+    ("tokens", "pages_processed", "returned_pages", "expected"),
+    [(320, 3, 2, 320), (0, 3, 2, 3000), (0, None, 2, 2000), (0, 0, 0, 1000)],
+)
+def test_team_ocr_records_tokens_or_estimates_from_pages(
+    tokens, pages_processed, returned_pages, expected
+) -> None:
     manager = ModelManager()
-    model_config = build_team_model_config()
     adapter = SimpleNamespace(
         recognize=AsyncMock(
-            return_value=build_ocr_response(Usage(prompt_tokens=300, total_tokens=320))
+            return_value=OCRResponse(
+                model="mistral-ocr-latest",
+                usage=Usage(total_tokens=tokens),
+                pages_processed=pages_processed,
+                pages=[
+                    OCRPage(index=i, markdown="# Invoice")
+                    for i in range(returned_pages)
+                ],
+            )
         )
-    )
-    record = AsyncMock()
-
-    with (
-        patch.object(
-            ModelManager,
-            "_get_team_model",
-            AsyncMock(return_value=(model_config, SimpleNamespace(id="tm-1"))),
-        ),
-        patch("app.llm.manager.usage_tracker.check_quota_with_model", AsyncMock()),
-        patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
-        patch.object(ModelManager, "_check_and_record_usage", record),
-    ):
-        result = asyncio.run(manager.team_ocr("team-1", build_request()))
-
-    assert result.usage.total_tokens == 320
-    record.assert_awaited_once_with(team_id="team-1", model_id="m-1", tokens_used=320)
-
-
-def test_team_ocr_bills_per_page_when_provider_reports_no_tokens() -> None:
-    manager = ModelManager()
-    adapter = SimpleNamespace(
-        recognize=AsyncMock(return_value=build_ocr_response(Usage()))
     )
     record = AsyncMock()
 
@@ -670,10 +692,12 @@ def test_team_ocr_bills_per_page_when_provider_reports_no_tokens() -> None:
         patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
         patch.object(ModelManager, "_check_and_record_usage", record),
     ):
-        asyncio.run(manager.team_ocr("team-1", build_request()))
+        result = asyncio.run(manager.team_ocr("team-1", build_request()))
 
-    # Document endpoints bill per page, so the page count keeps quota advancing.
-    record.assert_awaited_once_with(team_id="team-1", model_id="m-1", tokens_used=1)
+    assert result.usage.total_tokens == tokens
+    record.assert_awaited_once_with(
+        team_id="team-1", model_id="m-1", tokens_used=expected
+    )
 
 
 def test_team_ocr_accepts_payload_dicts_and_preserves_llm_errors() -> None:

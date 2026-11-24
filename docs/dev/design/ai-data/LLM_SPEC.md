@@ -384,6 +384,7 @@ class OCRPage(BaseModel):
 class OCRResponse(BaseModel):
     model: str                            # 产生识别结果的模型
     pages: list[OCRPage] = []             # 按源文档顺序排列
+    pages_processed: int | None = None    # 供应商报告的处理页数（如果有）
     usage: Usage
 
     @property
@@ -396,6 +397,14 @@ class OCRResponse(BaseModel):
 streaming、JSON mode 等对话专属开关。目前实现的供应商：
 `mistral`（`/v1/ocr`，图像 + PDF）、`qwen` 与 `custom`（OpenAI 兼容
 chat completions，仅图像）。
+
+团队 OCR 配额优先使用供应商上报的 token 数。未上报时（例如 Mistral 只返回
+`usage_info.pages_processed`），按供应商上报的页数折算；若没有正的页数，则用
+返回的页数（至少一页）。折算率固定为每页 1,000 token，仅用于内部配额估算，
+不代表供应商计费或实测 token 数。
+
+知识库 OCR 槽位允许保留已保存且仍启用、支持图像的旧 `chat` 模型。新选或更换
+模型时必须使用专用 `ocr` 类型。
 
 写入时会按模型类型校验声明的模态（`app/schemas/model.py` 的
 `_MODEL_TYPE_MODALITIES`），而不只校验词表，因此 OCR 模型无法声明

@@ -131,6 +131,14 @@ test('surfaces a legacy chat model saved in the OCR-only slot', async () => {
     ...imageSettings,
     kb_image_ocr_model_id: 'legacy-chat',
   })
+  getModels.mockResolvedValueOnce({
+    items: [
+      { id: 'ocr-1', name: 'Ocr Only', provider: 'mistral', model_type: 'ocr', is_enabled: true, capabilities: { input_modalities: ['image'] } },
+    ],
+    total: 1,
+    page: 1,
+    pageSize: 100,
+  })
   getModel.mockResolvedValueOnce({
     id: 'legacy-chat',
     name: 'Legacy Chat',
@@ -141,10 +149,19 @@ test('surfaces a legacy chat model saved in the OCR-only slot', async () => {
     capabilities: { input_modalities: ['text', 'image'] },
   })
   renderer = await render()
-  // Saving again must be rejected by the API, but the admin still needs to see
-  // which model the slot points at instead of an empty trigger.
   expect(getModel).toHaveBeenCalledWith('legacy-chat')
   expect(renderer.root.findAll((node) => node.children.includes('Acme / Legacy Chat')).length).toBeGreaterThan(0)
+  expect(renderer.root.findAll((node) => node.children.includes('parsingSettings.legacyOcrModel')).length).toBe(1)
+  await act(async () => saveButton(renderer!).props.onClick())
+  expect(updateKnowledgeBaseImages).toHaveBeenCalledWith(expect.objectContaining({
+    kb_image_ocr_model_id: 'legacy-chat',
+  }))
+  await act(async () => selectOption(renderer!, 'ocr-1').props.onClick())
+  await act(async () => saveButton(renderer!).props.onClick())
+  expect(updateKnowledgeBaseImages).toHaveBeenLastCalledWith(expect.objectContaining({
+    kb_image_ocr_model_id: 'ocr-1',
+  }))
+  expect(renderer.root.findAll((node) => node.children.includes('Acme / Legacy Chat'))).toHaveLength(0)
 })
 
 test('does not save defaults after settings fail to load', async () => {

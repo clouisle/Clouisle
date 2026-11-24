@@ -98,7 +98,7 @@ export default function SiteSettingsParsingPage() {
     if (modelsResult.status === 'fulfilled') {
       // The description slot needs a chat model that understands images; the OCR
       // slot needs a dedicated OCR model, which takes the image alone and never
-      // a prompt. A vision chat model cannot occupy the OCR slot.
+      // a prompt. A previously saved vision chat model can be kept unchanged.
       const imageCapable = (modelsResult.value.items || []).filter((model) => {
         const modalities = model.capabilities?.input_modalities
         return Boolean(IMAGE_INPUT_PROVIDERS[model.provider])
@@ -170,6 +170,9 @@ export default function SiteSettingsParsingPage() {
     try {
       setSaving(true)
       await siteSettingsApi.updateKnowledgeBaseImages(settings)
+      setOcrModels((models) => models.filter(
+        (model) => model.model_type === 'ocr' || model.id === settings.kb_image_ocr_model_id,
+      ))
       toast.success(t('saveSuccess'))
     } catch (error: unknown) {
       const keys = [
@@ -269,6 +272,9 @@ export default function SiteSettingsParsingPage() {
           <div className="space-y-2">
             <Label htmlFor="kb-image-ocr-model">{t('parsingSettings.ocrModel')}</Label>
             <p className="text-xs text-muted-foreground">{t('parsingSettings.ocrModelDesc')}</p>
+            {selectedOcrModel?.model_type === 'chat' && (
+              <p className="text-xs text-muted-foreground">{t('parsingSettings.legacyOcrModel')}</p>
+            )}
             <Select
               value={selectedOcrModel?.id ?? NO_MODEL_VALUE}
               onValueChange={(value) => {

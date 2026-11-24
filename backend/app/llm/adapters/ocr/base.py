@@ -72,6 +72,26 @@ class BaseOCRAdapter(ABC):
     def __init__(self, model_config: Any):
         self.model_config = model_config
 
+    def _parse_http_response(
+        self, response: httpx.Response, request: OCRRequest
+    ) -> OCRResponse:
+        """Map invalid successful responses without masking request errors."""
+        try:
+            data = response.json()
+            if not isinstance(data, dict):
+                raise ValueError("unexpected response body")
+            return self._parse_response(data, request)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ProviderError(
+                message="Invalid OCR provider response",
+                provider=provider_value(self.model_config) or None,
+                model=request.model or getattr(self.model_config, "model_id", None),
+            ) from exc
+
+    @abstractmethod
+    def _parse_response(self, data: dict[str, Any], request: OCRRequest) -> OCRResponse:
+        raise NotImplementedError
+
     @abstractmethod
     async def recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
         """识别图像或文档中的文字，按页返回结果。"""

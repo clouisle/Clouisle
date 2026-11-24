@@ -93,6 +93,10 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
+# Quota estimate for providers that do not report tokens. This is a fixed
+# policy rate, not measured token usage or the provider's billing rate.
+_OCR_TOKENS_PER_PAGE = 1000
+
 
 class ModelManager:
     """
@@ -1341,9 +1345,9 @@ class ModelManager:
 
             total_tokens = result.usage.total_tokens if result.usage else 0
             if total_tokens <= 0:
-                # Document endpoints bill per page and report no token usage;
-                # record the request so quota accounting still advances.
-                total_tokens = max(len(result.pages), 1)
+                # Convert billed pages into the token units quota accounting uses.
+                page_count = result.pages_processed or max(len(result.pages), 1)
+                total_tokens = page_count * _OCR_TOKENS_PER_PAGE
 
             await self._check_and_record_usage(
                 team_id=team_id,
