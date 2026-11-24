@@ -124,6 +124,11 @@ class McpRoundTripIn(McpOperationIn):
                 raise ValueError("mcp_input_responses_empty")
             if self.request_state is not None:
                 raise ValueError("mcp_input_responses_required_with_request_state")
+        elif self.request_state is None:
+            # Both halves are needed: the answers alone cannot identify the
+            # parked request, so they would replay a question the server
+            # already asked. Reject rather than drop them silently.
+            raise ValueError("mcp_request_state_required_with_input_responses")
         return self
 
 

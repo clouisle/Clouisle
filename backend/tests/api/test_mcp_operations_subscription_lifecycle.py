@@ -22,6 +22,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp import types
+from pydantic import ValidationError
 from tortoise import Tortoise
 
 from app.api import deps
@@ -835,3 +836,19 @@ async def test_a_resource_read_keeps_answer_values_out_of_the_approval_preview(
     assert "q" in arguments["input_responses"]
     # ...but the reviewer's preview carries the URI only.
     assert captured["preview"] == {"uri": "file:///a.txt"}
+
+
+def test_round_trip_requires_both_halves():
+    """Answers without the server's state cannot resume a parked request.
+
+    ``McpRoundTripIn`` already rejected state without answers and an empty
+    answer map; the third case — answers with no state — was accepted, so the
+    answers were forwarded without the token that identifies what they answer.
+    """
+    payload = {"q": {"method": "elicitation/create", "result": {"action": "accept"}}}
+
+    with pytest.raises(ValidationError):
+        tool_mcp.McpToolCallIn(name="t", input_responses=payload)
+
+    # Both halves together still pass.
+    tool_mcp.McpToolCallIn(name="t", input_responses=payload, request_state="state-1")
