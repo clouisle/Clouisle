@@ -1,5 +1,6 @@
 """Tests for the OCR adapters, factory, manager routing and admin probe."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -608,3 +609,193 @@ def test_provider_value_reads_enum_and_string() -> None:
     assert provider_value(build_config(provider=ModelProvider.MISTRAL)) == "mistral"
     assert provider_value(build_config(provider="qwen")) == "qwen"
     assert provider_value(SimpleNamespace()) == ""
+
+
+# ------------------------------------------------------------- team_ocr
+
+
+def build_team_model_config() -> SimpleNamespace:
+    return SimpleNamespace(
+        id="m-1", model_id="mistral-ocr-latest", provider=ModelProvider.MISTRAL
+    )
+
+
+def build_ocr_response(usage: Usage) -> SimpleNamespace:
+    page = SimpleNamespace(index=0, markdown="# Invoice")
+    return SimpleNamespace(model="mistral-ocr-latest", pages=[page], usage=usage)
+
+
+def test_team_ocr_records_reported_usage() -> None:
+    manager = ModelManager()
+    model_config = build_team_model_config()
+    adapter = SimpleNamespace(
+        recognize=AsyncMock(
+            return_value=build_ocr_response(Usage(prompt_tokens=300, total_tokens=320))
+        )
+    )
+    record = AsyncMock()
+
+    with (
+        patch.object(
+            ModelManager,
+            "_get_team_model",
+            AsyncMock(return_value=(model_config, SimpleNamespace(id="tm-1"))),
+        ),
+        patch("app.llm.manager.usage_tracker.check_quota_with_model", AsyncMock()),
+        patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
+        patch.object(ModelManager, "_check_and_record_usage", record),
+    ):
+        result = asyncio.run(manager.team_ocr("team-1", build_request()))
+
+    assert result.usage.total_tokens == 320
+    record.assert_awaited_once_with(team_id="team-1", model_id="m-1", tokens_used=320)
+
+
+def test_team_ocr_bills_per_page_when_provider_reports_no_tokens() -> None:
+    manager = ModelManager()
+    adapter = SimpleNamespace(
+        recognize=AsyncMock(return_value=build_ocr_response(Usage()))
+    )
+    record = AsyncMock()
+
+    with (
+        patch.object(
+            ModelManager,
+            "_get_team_model",
+            AsyncMock(
+                return_value=(build_team_model_config(), SimpleNamespace(id="tm-1"))
+            ),
+        ),
+        patch("app.llm.manager.usage_tracker.check_quota_with_model", AsyncMock()),
+        patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
+        patch.object(ModelManager, "_check_and_record_usage", record),
+    ):
+        asyncio.run(manager.team_ocr("team-1", build_request()))
+
+    # Document endpoints bill per page, so the page count keeps quota advancing.
+    record.assert_awaited_once_with(team_id="team-1", model_id="m-1", tokens_used=1)
+
+
+def test_team_ocr_accepts_payload_dicts_and_preserves_llm_errors() -> None:
+    manager = ModelManager()
+    adapter = SimpleNamespace(
+        recognize=AsyncMock(side_effect=ProviderError(message="provider down"))
+    )
+
+    with (
+        patch.object(
+            ModelManager,
+            "_get_team_model",
+            AsyncMock(
+                return_value=(build_team_model_config(), SimpleNamespace(id="tm-1"))
+            ),
+        ),
+        patch("app.llm.manager.usage_tracker.check_quota_with_model", AsyncMock()),
+        patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
+    ):
+        with pytest.raises(ProviderError):
+            asyncio.run(
+                manager.team_ocr(
+                    "team-1",
+                    {"source": MediaContent(base64=PNG_BASE64, mime_type="image/png")},
+                )
+            )
+
+    assert isinstance(adapter.recognize.await_args.args[0], OCRRequest)
+
+
+def test_team_ocr_wraps_unexpected_errors() -> None:
+    manager = ModelManager()
+    adapter = SimpleNamespace(
+        recognize=AsyncMock(side_effect=RuntimeError("rate limit exceeded"))
+    )
+
+    with (
+        patch.object(
+            ModelManager,
+            "_get_team_model",
+            AsyncMock(
+                return_value=(build_team_model_config(), SimpleNamespace(id="tm-1"))
+            ),
+        ),
+        patch("app.llm.manager.usage_tracker.check_quota_with_model", AsyncMock()),
+        patch("app.llm.manager.create_ocr_adapter", return_value=adapter),
+    ):
+        with pytest.raises(RateLimitError):
+            asyncio.run(manager.team_ocr("team-1", build_request()))
+
+
+def test_team_ocr_reports_quota_exceeded() -> None:
+    manager = ModelManager()
+    from app.llm.errors import QuotaExceededError as LLMQuotaExceededError
+    from app.services.usage_tracker import QuotaExceededError
+
+    with (
+        patch.object(
+            ModelManager,
+            "_get_team_model",
+            AsyncMock(
+                return_value=(build_team_model_config(), SimpleNamespace(id="tm-1"))
+            ),
+        ),
+        patch(
+            "app.llm.manager.usage_tracker.check_quota_with_model",
+            AsyncMock(
+                side_effect=QuotaExceededError(
+                    "daily token quota exceeded", "daily_tokens"
+                )
+            ),
+        ),
+    ):
+        with pytest.raises(LLMQuotaExceededError) as exc_info:
+            asyncio.run(manager.team_ocr("team-1", build_request()))
+
+    assert exc_info.value.quota_type == "daily_tokens"
+
+
+# -------------------------------------------------------- admin probe
+
+
+class TestAdminOCRProbe:
+    def test_probe_reports_empty_pages(self) -> None:
+        from app.api.v1.admin.endpoints.models import _test_ocr_model
+        from app.schemas.response import BusinessError
+
+        adapter = SimpleNamespace(
+            recognize=AsyncMock(
+                return_value=SimpleNamespace(model="mistral-ocr-latest", pages=[])
+            )
+        )
+
+        with patch("app.llm.adapters.ocr.create_ocr_adapter", return_value=adapter):
+            with pytest.raises(BusinessError) as exc_info:
+                asyncio.run(
+                    _test_ocr_model(
+                        ModelProvider.MISTRAL, "mistral-ocr-latest", "key", None, {}
+                    )
+                )
+
+        assert exc_info.value.msg_key == "model_test_empty_ocr_result"
+
+    def test_probe_accepts_recognized_pages(self) -> None:
+        from app.api.v1.admin.endpoints.models import _test_ocr_model
+
+        adapter = SimpleNamespace(
+            recognize=AsyncMock(
+                return_value=SimpleNamespace(
+                    model="mistral-ocr-latest",
+                    pages=[SimpleNamespace(index=0, markdown="hello")],
+                )
+            )
+        )
+
+        with patch("app.llm.adapters.ocr.create_ocr_adapter", return_value=adapter):
+            asyncio.run(
+                _test_ocr_model(
+                    ModelProvider.MISTRAL, "mistral-ocr-latest", "key", None, {}
+                )
+            )
+
+        sent_request = adapter.recognize.await_args.args[0]
+        assert isinstance(sent_request, OCRRequest)
+        assert sent_request.source.mime_type == "image/png"
