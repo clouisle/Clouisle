@@ -2394,6 +2394,7 @@ class McpClient:
         *,
         input_responses: Mapping[str, Any] | None = None,
         request_state: str | None = None,
+        resolve_input_required: bool = False,
     ) -> McpToolResult:
         """Execute a tool on the MCP server.
 
@@ -2424,7 +2425,49 @@ class McpClient:
                 budget = self._request_budget(deadline)
                 try:
                     async with asyncio.timeout(budget):
-                        result = await session.call_tool(tool_name, arguments, **kwargs)
+                        guard = _CallbackGuard(self.callbacks)
+                        remaining = self.callbacks.policy.max_elicitation_requests
+                        while True:
+                            result = await session.call_tool(
+                                tool_name, arguments, **kwargs
+                            )
+                            info = _input_required_info(_CALL, result)
+                            if info is None or not resolve_input_required:
+                                break
+                            # MRTR is a continuation of this same authorized call,
+                            # not a new tool execution. Never replay after disconnect.
+                            if not info.requests or len(info.requests) > remaining:
+                                raise McpInputRequired(info)
+                            remaining -= len(info.requests)
+                            parsed_requests = {}
+                            for key, request in info.requests.items():
+                                if (
+                                    not isinstance(request, Mapping)
+                                    or request.get("method") != _ELICITATION_REQUEST
+                                    or self.callbacks.elicitation is None
+                                ):
+                                    raise McpInputRequired(info)
+                                try:
+                                    params = types.ElicitRequest.model_validate(
+                                        request
+                                    ).params
+                                except Exception as exc:
+                                    raise McpInvalidRequest(
+                                        "Invalid MCP input request"
+                                    ) from exc
+                                parsed_requests[key] = params
+                            responses = {}
+                            for key, params in parsed_requests.items():
+                                response = await guard.elicitation(None, params)
+                                if not isinstance(response, types.ElicitResult):
+                                    raise McpInputRequired(info)
+                                responses[key] = response
+                            kwargs = _round_trip_kwargs(
+                                responses,
+                                info.request_state,
+                                accepts_responses=_CALL_TOOL_ACCEPTS_INPUT_RESPONSES,
+                                accepts_input_required=_CALL_TOOL_ALLOWS_INPUT_REQUIRED,
+                            )
                 except TimeoutError as exc:
                     raise McpTimeout(
                         f"Tool execution timed out after {timeout} seconds",
@@ -2593,6 +2636,7 @@ async def execute_mcp_tool(
     auth: Any | None = None,
     callbacks: McpCallbacks | None = None,
     timeouts: McpTimeouts | None = None,
+    resolve_input_required: bool = False,
 ) -> McpToolResult:
     """
     Execute an MCP tool.
@@ -2629,6 +2673,7 @@ async def execute_mcp_tool(
         timeout,
         input_responses=input_responses,
         request_state=request_state,
+        resolve_input_required=resolve_input_required,
     )
 
 

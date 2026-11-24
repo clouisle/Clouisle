@@ -13,6 +13,7 @@ import app.services  # noqa: F401  # Initialize service exports before the uploa
 
 from app.api import deps
 from app.api.v1.endpoints import upload
+from app.core.config import settings
 from app.schemas.response import BusinessError, error
 
 
@@ -223,7 +224,7 @@ def test_upload_sandbox_artifact_allows_internal_signature_without_auth_header(
     filename = "result.txt"
     timestamp = str(int(time.time()))
     signature = hmac.new(
-        b"changethis-to-a-secure-random-secret-key",
+        settings.SECRET_KEY.encode("utf-8"),
         f"{timestamp}:{filename}:{hashlib.sha256(content).hexdigest()}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()

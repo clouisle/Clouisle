@@ -136,7 +136,9 @@ async def test_launch_mounts_workspace_at_logical_root(
         "app.services.sandbox.process_launcher.shutil.which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else "/usr/bin/prlimit",
     )
-    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+    launcher = SandboxProcessLauncher(
+        filesystem_isolation_enabled=True, isolation_binary="bwrap"
+    )
 
     result = await launcher.launch(
         [str(workspace / ".venv/bin/python"), str(workspace / "script.py")],
@@ -204,7 +206,9 @@ async def test_isolated_launch_fails_closed_without_prlimit(
         "app.services.sandbox.process_launcher.shutil.which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
     )
-    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+    launcher = SandboxProcessLauncher(
+        filesystem_isolation_enabled=True, isolation_binary="bwrap"
+    )
 
     with pytest.raises(SandboxIsolationError, match="resource limiter not found"):
         await launcher.launch(
@@ -232,7 +236,9 @@ async def test_allowlisted_launch_uses_network_namespace_and_bridge(
         "app.services.sandbox.process_launcher.shutil.which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else "/usr/bin/prlimit",
     )
-    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+    launcher = SandboxProcessLauncher(
+        filesystem_isolation_enabled=True, isolation_binary="bwrap"
+    )
 
     async with SandboxEgressProxy(job_id="job-1", allowed_hosts=["pypi.org"]) as proxy:
         reader, writer = await asyncio.open_unix_connection(str(proxy.socket_path))
@@ -294,7 +300,9 @@ async def test_unrestricted_launch_drops_network_namespace_but_keeps_limits(
         "app.services.sandbox.process_launcher.shutil.which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else "/usr/bin/prlimit",
     )
-    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+    launcher = SandboxProcessLauncher(
+        filesystem_isolation_enabled=True, isolation_binary="bwrap"
+    )
 
     result = await launcher.launch(
         ["python3", "-c", "print('ok')"],

@@ -98,6 +98,96 @@ async def test_execute_tool_returns_the_requests_and_state(monkeypatch):
     assert result.input_required.requests["q1"]["method"] == "elicitation/create"
 
 
+async def test_interactive_tool_resolves_input_on_same_session(monkeypatch):
+    seen = []
+
+    async def elicit(_context, params):
+        seen.append(params.message)
+        return types.ElicitResult(action="accept", content={"choice": "beta"})
+
+    class Session(_Session):
+        async def call_tool(self, name, arguments, **kwargs):
+            self.calls.append((name, kwargs))
+            if len(self.calls) == 1:
+                return _parked()
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text="ok")]
+            )
+
+    session = Session(None)
+    client = mcp.McpClient({}, callbacks=mcp.McpCallbacks(elicitation=elicit))
+    _install(monkeypatch, client, session)
+    result = await client.execute_tool("search", {}, resolve_input_required=True)
+
+    assert result.success
+    assert seen == ["Which environment?"]
+    assert session.calls[1][1]["request_state"] == "state-1"
+    assert session.calls[1][1]["input_responses"]["q1"].content == {"choice": "beta"}
+
+
+async def test_interactive_tool_bounds_repeated_requests(monkeypatch):
+    async def elicit(_context, _params):
+        return types.ElicitResult(action="cancel")
+
+    session = _Session(_parked())
+    callbacks = mcp.McpCallbacks(
+        elicitation=elicit, policy=mcp.McpCallbackPolicy(max_elicitation_requests=1)
+    )
+    client = mcp.McpClient({}, callbacks=callbacks)
+    _install(monkeypatch, client, session)
+    result = await client.execute_tool("search", {}, resolve_input_required=True)
+
+    assert result.input_required is not None
+    assert len(session.calls) == 2
+
+
+async def test_interactive_tool_without_handler_does_not_retry(monkeypatch):
+    session = _Session(_parked())
+    client = mcp.McpClient({})
+    _install(monkeypatch, client, session)
+
+    result = await client.execute_tool("search", {}, resolve_input_required=True)
+
+    assert result.input_required is not None
+    assert len(session.calls) == 1
+
+
+async def test_interactive_tool_rejects_mixed_requests_before_prompting(monkeypatch):
+    asked = []
+
+    async def elicit(_context, params):
+        asked.append(params)
+        return types.ElicitResult(action="accept")
+
+    parked = _parked()
+    parked.input_requests["other"] = types.ListRootsRequest()
+    session = _Session(parked)
+    client = mcp.McpClient({}, callbacks=mcp.McpCallbacks(elicitation=elicit))
+    _install(monkeypatch, client, session)
+
+    result = await client.execute_tool("search", {}, resolve_input_required=True)
+
+    assert result.input_required is not None
+    assert asked == []
+    assert len(session.calls) == 1
+
+
+async def test_interactive_tool_invalid_request_fails_without_prompt(monkeypatch):
+    async def elicit(_context, _params):
+        pytest.fail("invalid request must not be presented")
+
+    class InvalidResult:
+        result_type = "input_required"
+        input_requests = {"q1": {"method": "elicitation/create", "params": {}}}
+        request_state = "state"
+
+    client = mcp.McpClient({}, callbacks=mcp.McpCallbacks(elicitation=elicit))
+    _install(monkeypatch, client, _Session(InvalidResult()))
+    result = await client.execute_tool("search", {}, resolve_input_required=True)
+    assert not result.success
+    assert result.input_required is None
+
+
 # ---------------------------------------------------------------------------
 # Forwarding the answers
 # ---------------------------------------------------------------------------
@@ -233,7 +323,11 @@ async def test_module_helper_forwards_answers(monkeypatch):
         {}, "search", {}, input_responses=answers, request_state="state-1"
     )
 
-    assert captured == {"input_responses": answers, "request_state": "state-1"}
+    assert captured == {
+        "input_responses": answers,
+        "request_state": "state-1",
+        "resolve_input_required": False,
+    }
 
 
 # ---------------------------------------------------------------------------
