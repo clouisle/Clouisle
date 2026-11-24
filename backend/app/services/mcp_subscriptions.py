@@ -1,21 +1,33 @@
 """Request-scoped live MCP resource subscriptions.
 
-MCP resource subscriptions are session-scoped: a server only emits
-``notifications/resources/updated`` while the JSON-RPC session that called
-``resources/subscribe`` stays open. This module therefore ties a subscription
-to the lifetime of one streaming API request:
+MCP resource subscriptions are session-scoped: updates only arrive while the
+JSON-RPC session that asked for them stays open. This module therefore ties a
+subscription to the lifetime of one streaming API request:
 
-1. the request opens one live ``McpClient`` session;
-2. the negotiated ``resources.subscribe`` capability is required before the
-   subscribe call (fail closed, never a fabricated success);
-3. update notifications are queued in memory for the owning request only;
-4. the request's TTL or client disconnect closes the session and performs a
-   best-effort ``unsubscribe_resource``.
+1. the request opens one negotiated ``McpClient`` session;
+2. the negotiated session is checked before anything is subscribed (fail
+   closed, never a fabricated success). The negotiated *version* decides,
+   because 2026-07-28 removed ``resources/subscribe`` outright:
+
+   * 2026-07-28 sessions use ``subscriptions/listen``, even when the server
+     still reports a stale ``resources.subscribe`` capability flag;
+   * older sessions use ``resources/subscribe`` when the server advertises it;
+
+3. updates are queued in memory for the owning request only;
+4. the session pings the server at a fraction of the TTL budget, so a server
+   that silently dropped it ends the stream as ``connection_lost`` instead of
+   surfacing as a read timeout at the very end of the budget;
+5. the request's TTL or client disconnect closes the session and performs a
+   best-effort ``unsubscribe`` (legacy path only; ``listen`` ends with its
+   stream).
+
+Both paths filter on the exact subscribed URI, so the SSE contract does not
+depend on the negotiated version.
 
 There is deliberately no background listener, registry, daemon or durable
 subscription: process death ends the stream, and reconnecting creates a new
-subscription. Unsubscribe is a read-side cleanup and is never routed through
-the tool approval/outcome machinery.
+subscription. Cleanup is read-side and never routed through the tool
+approval/outcome machinery.
 """
 
 from __future__ import annotations
@@ -31,6 +43,13 @@ from uuid import UUID, uuid4
 
 import mcp.types as types
 
+try:  # mcp >= 2: the 2026-07-28 subscription stream.
+    from mcp.client.subscriptions import listen as _listen
+    from mcp.client.subscriptions import ResourceUpdated as _ResourceUpdated
+except ImportError:  # pragma: no cover - mcp 1.x has no listen at all
+    _listen = None
+    _ResourceUpdated = None
+
 from app.core.config import settings
 from app.core.timezone import now_utc
 from app.llm.tools.mcp_client import (
@@ -38,6 +57,8 @@ from app.llm.tools.mcp_client import (
     McpCallbackPolicy,
     McpCapabilityUnavailable,
     McpClient,
+    read_session_capabilities,
+    server_logging_from_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,10 +66,26 @@ logger = logging.getLogger(__name__)
 MAX_QUEUED_UPDATES = 100
 HEARTBEAT_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 15.0
+# One ping per half of the TTL budget: a session the server silently dropped is
+# noticed in half the budget rather than at the read timeout at the very end.
+PING_INTERVAL_FRACTION = 0.5
+MIN_PING_INTERVAL_SECONDS = 0.01
+# A ping inherits the session read timeout otherwise, which is longer than the
+# subscription itself: an unanswering server would then only be noticed once the
+# TTL expires, recording ``ttl_expired`` instead of the loss the ping exists for.
+PING_TIMEOUT_FRACTION = 0.5
+# First protocol version that removes ``resources/subscribe`` in favour of
+# ``subscriptions/listen``. Versions are ISO dates, so they compare as strings.
+LISTEN_MIN_PROTOCOL_VERSION = "2026-07-28"
 
 
 def subscription_ttl_seconds() -> float:
     return float(settings.MCP_SUBSCRIPTION_TTL_SECONDS)
+
+
+def ping_interval_seconds(ttl: float) -> float:
+    """Delay between liveness pings for a subscription of ``ttl`` seconds."""
+    return max(float(ttl) * PING_INTERVAL_FRACTION, MIN_PING_INTERVAL_SECONDS)
 
 
 class SubscriptionClosed(str):
@@ -97,6 +134,27 @@ class SubscriptionHandle:
             "expires_at": self.expires_at.isoformat(),
         }
 
+    def _offer(self, item: dict[str, Any] | None) -> None:
+        """Queue one item, dropping the oldest when a slow client fills us.
+
+        Nothing in this queue path awaits, so a drop always frees the slot the
+        second ``put_nowait`` needs; the warning is a backstop that cannot fire
+        while offers stay single-task.
+        """
+        try:
+            self._queue.put_nowait(item)
+            return
+        except asyncio.QueueFull:
+            pass
+        try:
+            self._queue.get_nowait()
+        except asyncio.QueueEmpty:  # pragma: no cover - defensive
+            pass
+        try:
+            self._queue.put_nowait(item)
+        except asyncio.QueueFull:  # pragma: no cover - defensive
+            logger.warning("Dropping MCP subscription event for %s", self.id)
+
     def enqueue_update(self, uri: str) -> None:
         self._sequence += 1
         event = {
@@ -105,19 +163,13 @@ class SubscriptionHandle:
             "sequence": self._sequence,
             "received_at": now_utc().isoformat(),
         }
-        try:
-            self._queue.put_nowait(event)
-        except asyncio.QueueFull:
-            # Bounded queue: drop the oldest pending update, never block the
-            # SDK read loop for a slow HTTP client.
-            try:
-                self._queue.get_nowait()
-            except asyncio.QueueEmpty:  # pragma: no cover - defensive
-                pass
-            try:
-                self._queue.put_nowait(event)
-            except asyncio.QueueFull:  # pragma: no cover - defensive
-                logger.warning("Dropping MCP resource update for %s", self.uri)
+        # Bounded queue: drop the oldest pending update rather than block the
+        # SDK read loop for a slow HTTP client.
+        self._offer(event)
+
+    def enqueue_close(self) -> None:
+        """End the consumer's stream after the server stopped delivering."""
+        self._offer(None)
 
     async def events(self) -> AsyncIterator[dict[str, Any] | None]:
         """Yield queued updates; ``None`` is a heartbeat tick.
@@ -146,12 +198,21 @@ class SubscriptionHandle:
 
 
 class _NotificationCollector:
-    """Filters this subscription's resource-update notifications."""
+    """Filters this subscription's resource-update notifications.
+
+    Only the legacy ``resources/subscribe`` path needs it. The SDK tees every
+    frame to ``message_handler`` — including the events of a ``listen`` stream —
+    so leaving delivery on for a modern session would enqueue each update twice,
+    once here and once from ``_pump_listen``, with two sequence numbers.
+    """
 
     def __init__(self, handle: SubscriptionHandle) -> None:
         self.handle = handle
+        self.enabled = True
 
     async def __call__(self, message: Any) -> None:
+        if not self.enabled:
+            return
         payload = message
         root = getattr(payload, "root", None)
         if root is not None:
@@ -175,6 +236,90 @@ class _NotificationCollector:
         self.handle.enqueue_update(uri)
 
 
+def _ack_covers_uri(honored: Any, uri: str) -> bool:
+    """Whether a ``listen`` acknowledgment admits updates for ``uri``.
+
+    The server answers with the subset of the requested filter it agreed to
+    deliver, and the SDK admits an update only when at least one resource
+    subscription was honored. A parent URI therefore covers its children (the
+    spec lets the stamped URI be a sub-resource); an unrelated URI covers
+    nothing, and the stream would stay silent for the lifetime of the handle.
+    """
+    uris = getattr(honored, "resource_subscriptions", None) or ()
+    for candidate in uris:
+        if not isinstance(candidate, str):
+            continue
+        if candidate == uri or uri.startswith(candidate.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def _listen_factory(protocol_version: str | None) -> Any | None:
+    """Return the ``listen`` entry point for this negotiated version, if any."""
+    if _listen is None:
+        return None
+    if not isinstance(protocol_version, str):
+        return None
+    if protocol_version < LISTEN_MIN_PROTOCOL_VERSION:
+        return None
+    return _listen
+
+
+async def _pump_listen(subscription: Any, handle: SubscriptionHandle) -> None:
+    """Forward one ``listen`` event stream into the handle's queue.
+
+    The stream is filtered to the exact subscribed URI so a modern session
+    delivers the same events a legacy ``resources/subscribe`` session would.
+    """
+    try:
+        async for event in subscription:
+            uri = getattr(event, "uri", None)
+            if _ResourceUpdated is not None and not isinstance(event, _ResourceUpdated):
+                continue
+            if isinstance(uri, str) and uri == handle.uri:
+                handle.enqueue_update(uri)
+    except asyncio.CancelledError:  # pragma: no cover - normal teardown
+        raise
+    except Exception:
+        logger.warning(
+            "MCP listen stream ended for tool %s", handle.tool_id, exc_info=True
+        )
+        handle.close_reason = SubscriptionClosed.CONNECTION_LOST
+    finally:
+        handle.enqueue_close()
+
+
+async def _ping_session(
+    session: Any, handle: SubscriptionHandle, interval: float
+) -> None:
+    """Ping the server on ``interval``; a failure ends the subscription.
+
+    A subscription session lives for minutes and owns no reconnection, so a
+    dead server would otherwise only be noticed at the next update or the TTL
+    deadline. A failing ping is the liveness signal: mark the subscription
+    ``connection_lost`` and let the consumer stop waiting.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        remaining = (handle.expires_at - now_utc()).total_seconds()
+        if remaining <= 0:
+            return
+        try:
+            async with asyncio.timeout(
+                max(remaining * PING_TIMEOUT_FRACTION, MIN_PING_INTERVAL_SECONDS)
+            ):
+                await session.send_ping()
+        except Exception:
+            logger.warning(
+                "MCP subscription ping failed for tool %s; the session is lost",
+                handle.tool_id,
+                exc_info=True,
+            )
+            handle.close_reason = SubscriptionClosed.CONNECTION_LOST
+            handle.enqueue_close()
+            return
+
+
 @asynccontextmanager
 async def open_subscription(
     *,
@@ -188,7 +333,7 @@ async def open_subscription(
     account_label: str | None = None,
     ttl_seconds: float | None = None,
 ) -> AsyncIterator[SubscriptionHandle]:
-    """Open one negotiated session, require subscribe support, then subscribe."""
+    """Open one negotiated session and subscribe by the server's own mechanism."""
     ttl = max(5.0, float(ttl_seconds or subscription_ttl_seconds()))
     handle = SubscriptionHandle(
         id=uuid4(),
@@ -201,22 +346,46 @@ async def open_subscription(
         account_label=account_label,
         expires_at=now_utc() + timedelta(seconds=ttl),
     )
+    collector = _NotificationCollector(handle)
     callbacks = McpCallbacks(
-        notification=_NotificationCollector(handle),
+        notification=collector,
+        server_logging=server_logging_from_config(config, subject=f"tool:{tool.id}"),
         policy=McpCallbackPolicy(max_callback_seconds=min(10.0, ttl)),
     )
     client = McpClient(dict(config), callbacks=callbacks)
-
-    capabilities = await client.get_capabilities(
-        timeout=min(CONNECT_TIMEOUT_SECONDS, ttl)
-    )
-    if not capabilities.resources_subscribe:
-        raise McpCapabilityUnavailable("resources.subscribe")
 
     async with AsyncExitStack() as stack:
         session = await stack.enter_async_context(
             client.connect(timeout=min(CONNECT_TIMEOUT_SECONDS, ttl))
         )
+        # Capabilities come from the session we actually subscribe on: a probe
+        # on a second connection could answer for a different server instance.
+        capabilities = read_session_capabilities(session)
+        # Version first: 2026-07-28 removed ``resources/subscribe`` outright, so
+        # a modern session must use ``listen`` even if the server still reports
+        # a stale ``resources.subscribe`` capability flag (the SDK server does).
+        listen = _listen_factory(capabilities.protocol_version)
+        if listen is None and not capabilities.resources_subscribe:
+            raise McpCapabilityUnavailable("resources.subscribe")
+
+        ping = asyncio.create_task(
+            _ping_session(session, handle, ping_interval_seconds(ttl))
+        )
+        stack.push_async_callback(_stop_task, ping)
+
+        if listen is not None:
+            # A modern session delivers through the pump alone.
+            collector.enabled = False
+            subscription = await stack.enter_async_context(
+                listen(session, resource_subscriptions=(uri,))
+            )
+            if not _ack_covers_uri(getattr(subscription, "honored", None), uri):
+                raise McpCapabilityUnavailable("resources.subscribe")
+            pump = asyncio.create_task(_pump_listen(subscription, handle))
+            stack.push_async_callback(_stop_task, pump)
+            yield handle
+            return
+
         try:
             await session.subscribe_resource(uri)
         except Exception:
@@ -237,10 +406,18 @@ async def open_subscription(
                 )
 
 
+async def _stop_task(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 __all__ = [
+    "LISTEN_MIN_PROTOCOL_VERSION",
     "MAX_QUEUED_UPDATES",
+    "PING_INTERVAL_FRACTION",
     "SubscriptionClosed",
     "SubscriptionHandle",
     "open_subscription",
+    "ping_interval_seconds",
     "subscription_ttl_seconds",
 ]

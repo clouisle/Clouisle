@@ -52,6 +52,34 @@ def build_tool_call_sse_event(
     )
 
 
+def build_tool_progress_sse_event(
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    progress: float,
+    total: float | None = None,
+    message: str | None = None,
+) -> str:
+    """构建工具执行进度 SSE 事件
+
+    Emitted between a tool's call and result events, so a long call shows
+    activity without changing the call/result contract.
+    """
+    from app.schemas.agent import SSEEventType
+
+    payload: dict[str, Any] = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "progress": progress,
+        "total": total,
+        "message": message,
+    }
+    return (
+        f"event: {SSEEventType.TOOL_PROGRESS}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    )
+
+
 def build_tool_result_sse_event(
     *,
     tool_call_id: str,

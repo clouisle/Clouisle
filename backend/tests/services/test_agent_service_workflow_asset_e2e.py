@@ -34,10 +34,11 @@ from app.services.upload_storage import LocalUploadStorage
 
 
 @pytest_asyncio.fixture
-async def database():
+async def database(tmp_path):
     async with TortoiseContext() as context:
         await context.init(
-            db_url="sqlite://:memory:", modules={"models": ["app.models"]}
+            db_url=f"sqlite://{tmp_path / 'workflow-assets.sqlite3'}",
+            modules={"models": ["app.models"]},
         )
         await context.generate_schemas()
         yield

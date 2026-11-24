@@ -42,6 +42,7 @@ mock.module("@/components/ui/trace", () => {
     TraceLine: ({ children, ...props }: React.ComponentProps<"span"> & { status?: string }) => <span {...props}>{children}</span>,
     TraceIcon: ({ children, ...props }: React.ComponentProps<"span">) => <span {...props}>{children}</span>,
     TraceTitle: ({ children, ...props }: React.ComponentProps<"span">) => <span {...props}>{children}</span>,
+    TraceDescription: ({ children, ...props }: React.ComponentProps<"span">) => <span {...props}>{children}</span>,
   };
 });
 mock.module("lucide-react", () => ({
@@ -110,6 +111,29 @@ describe("Tool", () => {
     act(() => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(container.textContent).toContain("Forecast");
+  });
+
+  it("shows determinate progress only while the call runs", () => {
+    const running = render(
+      <Tool>
+        <ToolHeader type="tool-weather" state="input-available" progress={{ progress: 3, total: 4 }} />
+      </Tool>
+    );
+    expect(running.querySelector("button")!.textContent).toContain("75%");
+
+    const finished = render(
+      <Tool>
+        <ToolHeader type="tool-weather" state="output-available" progress={{ progress: 3, total: 4 }} />
+      </Tool>
+    );
+    expect(finished.querySelector("button")!.textContent).not.toContain("75%");
+
+    const indeterminate = render(
+      <Tool>
+        <ToolHeader type="tool-weather" state="input-available" progress={{ progress: 3 }} />
+      </Tool>
+    );
+    expect(indeterminate.querySelector("button")!.textContent).not.toMatch(/\d+%/);
   });
 
   it("keeps sibling tool disclosures independent", () => {

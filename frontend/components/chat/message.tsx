@@ -5,6 +5,7 @@ import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
 import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare, BookOpen, Terminal, FileText, FilePen, FolderOpen, Calculator, ImageIcon, Download, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getToolProgressPercent } from '@/lib/utils/tool-progress'
 import {
   Block,
   Streamdown,
@@ -992,7 +993,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             defaultOpen={false}
             className="my-2"
           >
-            <ToolHeader title={toolName} type="tool-call" state={state} />
+            <ToolHeader title={toolName} type="tool-call" state={state} progress={part.progress} />
             <AIToolContent>
               <ToolInput input={part.input} />
               {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
@@ -1462,14 +1463,29 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           const result = toolResultsByCallIndex.get(index)
           if (hideToolCalls) return
 
+          // Progress decorates only a still-running call, and only when the
+          // server reported a determinate total.
+          const progressPercent =
+            part.state === 'running' ? getToolProgressPercent(part.progress) : null
+          const stepLabel =
+            isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
+              ? t('askUserSkipped')
+              : getToolCallLabel(part)
+
           steps.push(
             <ChainOfThoughtStep
               key={`tool-${part.toolCallId}-${index}`}
               collapsible
               iconContent={getTraceToolIcon(part.toolName, isMcpToolCallPart(part), part.input, isToolCallPart(part) ? part.toolDisplayName : undefined)}
-              label={isToolCallPart(part) && part.toolName === 'ask_user' && result && isToolResultPart(result) && result.output && typeof result.output === 'object' && 'skipped' in result.output && result.output.skipped === true
-                ? t('askUserSkipped')
-                : getToolCallLabel(part)}
+              label={stepLabel}
+              description={
+                progressPercent === null ? undefined : (
+                  // Polite live region: the trace line has no other status
+                  // semantics, so a screen reader would otherwise never hear
+                  // the tick advance.
+                  <span role="status" aria-live="polite">{progressPercent}%</span>
+                )
+              }
               status={getToolCallStepStatus(part.state)}
             >
               <ToolInput input={part.input} />

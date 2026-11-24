@@ -22,6 +22,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp import types
+from pydantic import ValidationError
 from tortoise import Tortoise
 
 from app.api import deps
@@ -653,6 +654,9 @@ async def test_notification_collector_unwraps_root_and_mappings():
 class _FakeSession:
     def __init__(self, client: "_FakeClient") -> None:
         self.client = client
+        # Capabilities are read from the subscribed session itself.
+        self.protocol_version = "2025-11-25"
+        self.server_capabilities = {"resources": {"subscribe": True}}
 
     async def subscribe_resource(self, uri: str) -> None:
         self.client.subscribed.append(uri)
@@ -778,3 +782,91 @@ async def test_open_subscription_unsubscribe_failure_is_best_effort(monkeypatch)
         assert handle.uri == "file:///a"
 
     assert handle.close_reason is None
+
+
+# ---------------------------------------------------------------------------
+# Approval preview projection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_resource_read_keeps_answer_values_out_of_the_approval_preview(
+    monkeypatch,
+):
+    """The preview is the reviewer's business input, not the resumed answers.
+
+    ``input_responses`` rides in the execution parameters so the digest binds
+    them, but the stored approval preview must stay URI-only — otherwise the
+    answers a caller supplied at continuation time become visible to whoever
+    reviews the request.
+    """
+    captured: dict[str, object] = {}
+
+    async def fake_execute(tool, operation, arguments, context, invoke, **kwargs):
+        captured["arguments"] = dict(arguments)
+        captured["preview"] = kwargs.get("preview_parameters")
+        return {"contents": []}
+
+    tool = SimpleNamespace(
+        id=uuid4(), identity_policy="none", connection_fields=[], is_enabled=True
+    )
+    monkeypatch.setattr(tool_mcp, "execute_stored_tool", fake_execute)
+    monkeypatch.setattr(tool_mcp, "_load_mcp_tool", AsyncMock(return_value=tool))
+    monkeypatch.setattr(
+        tool_mcp,
+        "_call_context",
+        lambda *args, **kwargs: SimpleNamespace(execution_id=None),
+    )
+
+    payload = tool_mcp.McpResourceReadIn(
+        uri="file:///a.txt",
+        input_responses={
+            "q": {"method": "elicitation/create", "result": {"action": "accept"}}
+        },
+        request_state="state-1",
+    )
+    await tool_mcp.read_mcp_resource_contents(
+        uuid4(), payload, team_id=uuid4(), current_user=SimpleNamespace(id=uuid4())
+    )
+
+    # Execution keeps the answers so the digest binds them...
+    arguments = captured["arguments"]
+    assert arguments["uri"] == "file:///a.txt"
+    assert arguments["request_state"] == "state-1"
+    assert "q" in arguments["input_responses"]
+    # ...but the reviewer's preview carries the URI only.
+    assert captured["preview"] == {"uri": "file:///a.txt"}
+
+
+@pytest.mark.parametrize(
+    "schema,extra",
+    [
+        (tool_mcp.McpToolCallIn, {"name": "search"}),
+        (tool_mcp.McpResourceReadIn, {"uri": "file:///a.txt"}),
+        (tool_mcp.McpPromptGetIn, {"name": "weather"}),
+    ],
+)
+def test_every_round_trip_route_rejects_answers_without_state(schema, extra):
+    """All three MRTR routes reject half a round trip at the same boundary."""
+    answers = {"q": {"method": "elicitation/create", "result": {"action": "accept"}}}
+
+    with pytest.raises(ValidationError):
+        schema(**extra, input_responses=answers)
+
+    schema(**extra, input_responses=answers, request_state="state-1")
+
+
+def test_round_trip_requires_both_halves():
+    """Answers without the server's state cannot resume a parked request.
+
+    ``McpRoundTripIn`` already rejected state without answers and an empty
+    answer map; the third case — answers with no state — was accepted, so the
+    answers were forwarded without the token that identifies what they answer.
+    """
+    payload = {"q": {"method": "elicitation/create", "result": {"action": "accept"}}}
+
+    with pytest.raises(ValidationError):
+        tool_mcp.McpToolCallIn(name="t", input_responses=payload)
+
+    # Both halves together still pass.
+    tool_mcp.McpToolCallIn(name="t", input_responses=payload, request_state="state-1")

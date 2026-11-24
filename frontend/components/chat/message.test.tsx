@@ -104,12 +104,12 @@ mock.module('@/components/ai-elements/chain-of-thought', () => ({
   ChainOfThought: ({ children, isStreaming, open, onOpenChange }: { children: React.ReactNode; isStreaming?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) => <div data-chat-thought-process="true" data-streaming={String(Boolean(isStreaming))} data-open={String(Boolean(open))}><button type="button" onClick={() => onOpenChange?.(!open)}>toggle reasoning</button>{children}</div>,
   ChainOfThoughtContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ChainOfThoughtHeader: ({ title }: { title: string }) => <h3>{title}</h3>,
-  ChainOfThoughtStep: ({ children, label, status }: { children?: React.ReactNode; label: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{children}</div>,
+  ChainOfThoughtStep: ({ children, label, description, status }: { children?: React.ReactNode; label: React.ReactNode; description?: React.ReactNode; status?: string }) => <div data-step-status={status}>{label}{description}{children}</div>,
 }))
 mock.module('@/components/ai-elements/tool', () => ({
   Tool: ({ children, defaultOpen, className }: { children: React.ReactNode; defaultOpen?: boolean; className?: string }) => <div data-chat-tool-node="true" data-tool-default-open={String(Boolean(defaultOpen))} className={className}>{children}</div>,
   ToolContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  ToolHeader: ({ title, state }: { title: string; state?: string }) => <h4 data-tool-state={state}>{title}</h4>,
+  ToolHeader: ({ title, state, progress }: { title: string; state?: string; progress?: { progress: number; total?: number | null } }) => <h4 data-tool-state={state} data-tool-progress={progress ? `${progress.progress}/${progress.total ?? ''}` : undefined}>{title}</h4>,
   ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>,
   ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => <pre>{errorText ?? JSON.stringify(output)}</pre>,
 }))
@@ -691,6 +691,34 @@ describe('message behavior', () => {
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('shows determinate progress on a running tool step and drops it when the call finishes', () => {
+    const renderWith = (state: 'running' | 'done', progress?: { progress: number; total?: number | null }) =>
+      render(
+        <Message
+          message={{
+            id: `progress-${state}`,
+            role: 'assistant',
+            parts: [
+              { type: 'mcp-tool-call', toolCallId: 'slow', serverName: 'demo', toolName: 'slow_echo', input: {}, state, progress },
+            ],
+          }}
+          chainOfThoughtOpen
+        />
+      )
+
+    // A running call reports the completed share of a known total.
+    const running = renderWith('running', { progress: 1, total: 4 })
+    expect(running.textContent).toContain('25%')
+
+    // A finished call shows its result, not a stale tick.
+    const done = renderWith('done', { progress: 3, total: 4 })
+    expect(done.textContent).not.toContain('75%')
+
+    // An indeterminate call (no total) has nothing honest to show.
+    const indeterminate = renderWith('running', { progress: 2 })
+    expect(indeterminate.textContent).not.toMatch(/\d+%/)
   })
 
   test('groups non-reasoning tool activity in the collapsed execution trace', () => {

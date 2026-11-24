@@ -97,6 +97,9 @@ def map_mcp_error(
             code=ResponseCode.BAD_REQUEST,
             msg_key="mcp_input_required",
             status_code=409,
+            # The pending requests and the opaque state are what makes the
+            # operation resumable: without them a caller can only fail.
+            data={"input_required": typed.info.to_dict()},
         )
     if isinstance(typed, McpError):
         return BusinessError(

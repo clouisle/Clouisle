@@ -71,6 +71,27 @@ def test_settings_prefers_nonempty_internal_token_file(tmp_path):
     assert settings.get_internal_api_token() == "from-file"
 
 
+def test_default_cors_origins_cover_both_loopback_spellings(monkeypatch):
+    """The dev server answers on both spellings; the default must allow both.
+
+    Opening the app on the spelling missing from CORS makes every browser API
+    call fail with "Disallowed CORS origin", which hides real UI behaviour
+    behind a blank page.
+    """
+    # ``_env_file=None`` skips the file, not the process environment: a developer
+    # who exported an override would otherwise fail a test about the default.
+    monkeypatch.delenv("BACKEND_CORS_ORIGINS", raising=False)
+    settings = Settings(_env_file=None)
+
+    hosts = {
+        origin.rsplit(":", 1)[0].removeprefix("http://")
+        for origin in settings.BACKEND_CORS_ORIGINS
+    }
+    assert "127.0.0.1" in hosts
+    assert "localhost" in hosts
+    assert len(settings.BACKEND_CORS_ORIGINS) == len(set(settings.BACKEND_CORS_ORIGINS))
+
+
 def test_skill_sync_timeout_matches_sandbox_limits_floor():
     """A sub-second timeout passes settings but fails job construction."""
     from app.services.sandbox.models import SandboxLimits

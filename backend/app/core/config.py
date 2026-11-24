@@ -82,8 +82,13 @@ class Settings(BaseSettings):
     RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS: float = 2.0
 
     # CORS
+    # Local-development convenience only: every deployment overrides this via
+    # BACKEND_CORS_ORIGINS (deploy/.env.example, k8s, helm). Both loopback
+    # spellings are listed because the dev server answers on either, and a
+    # browser opened on the other one gets every API call rejected.
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js dev server
+        "http://127.0.0.1:3000",
     ]
 
     # External API Keys
@@ -134,6 +139,11 @@ class Settings(BaseSettings):
     # Live MCP resource subscriptions are request-scoped; this bounds how long
     # one SSE request may hold the session before sending ttl_expired.
     MCP_SUBSCRIPTION_TTL_SECONDS: int = Field(default=300, ge=10, le=3600)
+    # Client-side MCP tasks (`tasks/get|result|cancel`). Off by default:
+    # declaring the `tasks` capability changes what every configured server does
+    # with a call, so it is switched on per server (`enable_tasks`) after this
+    # platform-wide flag is on.
+    MCP_TASKS_ENABLED: bool = False
 
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from app.api.v1.endpoints.chat_sse import (
     build_media_result_sse_event,
+    build_tool_progress_sse_event,
     build_tool_result_sse_event,
     extract_media_display_payload,
     infer_tool_result_is_error,
@@ -82,3 +83,36 @@ def compression(**overrides):
 def test_final_and_error_event_type_contracts():
     assert SSEEventType.MESSAGE_END == "message_end"
     assert SSEEventType.ERROR == "error"
+
+
+def test_tool_progress_event_reports_a_tick_for_one_call():
+    event = build_tool_progress_sse_event(
+        tool_call_id="call-1",
+        tool_name="mcp_server_index",
+        progress=3.0,
+        total=8.0,
+        message="indexing",
+    )
+
+    assert parse_sse(event) == (
+        SSEEventType.TOOL_PROGRESS,
+        {
+            "tool_call_id": "call-1",
+            "tool_name": "mcp_server_index",
+            "progress": 3.0,
+            "total": 8.0,
+            "message": "indexing",
+        },
+    )
+
+
+def test_tool_progress_event_keeps_an_indeterminate_tick_explicit():
+    event = build_tool_progress_sse_event(
+        tool_call_id="call-2",
+        tool_name="mcp_server_index",
+        progress=1.0,
+    )
+
+    payload = parse_sse(event)[1]
+    assert payload["total"] is None
+    assert payload["message"] is None

@@ -1,6 +1,6 @@
 # MCP 连接与审批
 
-本指南面向配置已保存 MCP 服务器、并管理其调用身份与审批的团队管理员和运维人员，介绍连接、OAuth、审批、资源、提示词以及实时资源订阅。字段级请求/响应说明见 [工具 API](../../api-reference/endpoints/tools.md#saved-mcp-server-protocol)。
+本指南面向配置已保存 MCP 服务器、并管理其调用身份与审批的团队管理员和运维人员，介绍连接、OAuth、审批、资源、提示词、实时资源订阅以及服务器日志与保活。字段级请求/响应说明见 [工具 API](../../api-reference/endpoints/tools.md#saved-mcp-server-protocol)。
 
 ## 已保存的服务器，而不是客户端凭据
 
@@ -143,6 +143,16 @@ MCP 调用名、参数和结果收纳在可展开的思考过程内，不再轮�
 | `MCP_INTERACTION_TTL_SECONDS` | 300 | 10–900 | sampling/elicitation 最长等待时间，以及 MCP 回调窗口上限 |
 
 协议预算对调用方固定：连接 10 秒，元数据列表/能力 20 秒，资源读取与提示词获取 30 秒。工具调用至少 60 秒，并随服务器配置的 `mcp_config.callback_timeout_seconds`（默认 120 秒，受交互 TTL 约束）增长。内容默认限制为单块 1,000,000 字节、总计 4,000,000 字节。
+
+## 服务器日志与保活
+
+会话打开期间，MCP 服务器可以发送 `notifications/message`。这类记录默认关闭，因为服务器日志正文不可信、可能夹带用户内容。管理员用 `mcp_config.server_log_level`（如 `debug`、`warning`）为单个服务器开启：
+
+- 会话据此向服务器索取该级别：`2026-07-28` 之前的版本用 `logging/setLevel`，`2026-07-28` 及以后改用每请求的 `io.modelcontextprotocol/logLevel` 元数据（旧请求在该版本已弃用）；
+- 每条记录按对应应用级别记录，并带 `mcp_server`（如 `tool:<uuid>`）与 `mcp_server_log_level` 字段，便于把服务器侧的抱怨对上具体工具；
+- 日志正文只在 debug 级别输出并做截断，普通日志不含服务器负载。
+
+长生命周期的资源订阅会话还会按 TTL 预算的一半发送 `ping`。`ping` 失败即把订阅标记为 `connection_lost` 并结束事件流，而不是等到截止时间或读超时；不重连、不重放。
 
 ## 故障排查
 

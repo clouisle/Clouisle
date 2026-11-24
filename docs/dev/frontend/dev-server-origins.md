@@ -34,6 +34,19 @@ hostnames or wildcard patterns and restart the dev server:
 DEV_ALLOWED_ORIGINS="my-mac.local,10.20.30.40" bun run dev
 ```
 
+## The other half: backend CORS
+
+`allowedDevOrigins` only governs the Next.js dev server's own assets and HMR.
+The browser also calls the FastAPI backend directly, and that origin must be in
+`BACKEND_CORS_ORIGINS` (`backend/app/core/config.py`). A page opened on one
+localhost spelling while CORS lists only the other loads, then fails every API
+call with `Disallowed CORS origin` - the UI shows a generic load error, and any
+DOM-based debugging sees a blank page instead of a bug.
+
+The default already lists `localhost:3000` and `127.0.0.1:3000`. Deployments
+override the list through `BACKEND_CORS_ORIGINS`, so add the origin you actually
+browse from when it differs.
+
 ## Notes
 
 - The dev server must also listen on the LAN interface: `next dev -H 0.0.0.0`

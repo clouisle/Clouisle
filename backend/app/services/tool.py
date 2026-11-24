@@ -198,6 +198,9 @@ class ToolExecutor:
                         parameters,
                         timeout=call_timeout,
                         callbacks=callbacks,
+                        progress=context.progress,
+                        resolve_input_required=context.interactive
+                        and context.run_id is not None,
                     )
 
                 result = await run_with_mcp_callbacks(

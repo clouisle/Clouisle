@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw } from 'lucide-react'
+import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw, AlertCircle } from 'lucide-react'
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 import { renderToolIcon } from '@/components/tools/tool-icons'
 
@@ -537,7 +537,12 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                         {result.duration_ms}ms
                       </Badge>
                     )}
-                    {result.success ? (
+                    {result.input_required ? (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                        <AlertCircle className="mr-1 h-3 w-3" />
+                        {t('testPanel.inputRequiredTitle')}
+                      </Badge>
+                    ) : result.success ? (
                       <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
                         <CheckCircle className="mr-1 h-3 w-3" />
                         {t('success')}
@@ -553,7 +558,24 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
 
                 <Card>
                   <CardContent className="p-3 relative">
-                    {result.success ? (
+                    {result.input_required ? (
+                      <div className="space-y-2">
+                        <p className="text-sm">{t('testPanel.inputRequiredHint')}</p>
+                        {result.input_required.request_state ? (
+                          <div className="space-y-1">
+                            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              request_state
+                            </div>
+                            <pre className="text-xs overflow-auto max-h-[80px]">
+                              {result.input_required.request_state}
+                            </pre>
+                          </div>
+                        ) : null}
+                        <pre className="text-xs overflow-auto max-h-[240px]">
+                          {JSON.stringify(result.input_required.requests ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                    ) : result.success ? (
                       <>
                         <Button
                           variant="ghost"

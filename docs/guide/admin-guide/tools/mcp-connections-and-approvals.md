@@ -2,8 +2,8 @@
 
 This guide is for team administrators and operators who configure saved MCP
 servers and review the identities and approvals used to call them. It covers
-connections, OAuth, approvals, resources, prompts and live resource
-subscriptions. For request/response fields, see the [Tools API](../../api-reference/endpoints/tools.md#saved-mcp-server-protocol).
+connections, OAuth, approvals, resources, prompts, live resource subscriptions,
+server logs and keepalive. For request/response fields, see the [Tools API](../../api-reference/endpoints/tools.md#saved-mcp-server-protocol).
 
 ## Saved servers, not client credentials
 
@@ -331,6 +331,28 @@ least 60 s and grow with the server's configured
 `mcp_config.callback_timeout_seconds` (default 120 s, bounded by the interaction
 TTL). Content limits default to 1,000,000 bytes per block and 4,000,000 bytes
 total.
+
+## Server logs and keepalive
+
+MCP servers can send `notifications/message` records while a session is open.
+They are off by default, because a server's log bodies are untrusted and may
+carry user content. An administrator can opt a server in with
+`mcp_config.server_log_level` (an MCP level such as `debug` or `warning`):
+
+- the session asks the server for that level — via `logging/setLevel` on
+  protocol versions before 2026-07-28, and via the per-request
+  `io.modelcontextprotocol/logLevel` metadata on 2026-07-28 and later, where the
+  old request is deprecated;
+- each record is logged at the matching application level with `mcp_server`
+  (for example `tool:<uuid>`) and `mcp_server_log_level` fields, so a
+  server-side complaint can be correlated with the tool that saw it;
+- the message body is only written at debug level and is truncated, so normal
+  logs never contain server payload.
+
+Long-lived resource-subscription sessions also ping the server at half of their
+TTL budget. A failing ping marks the subscription `connection_lost` and ends the
+event stream instead of waiting for the deadline or a read timeout; nothing is
+reconnected or replayed.
 
 ## Troubleshooting
 

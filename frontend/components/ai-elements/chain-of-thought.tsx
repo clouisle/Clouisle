@@ -7,6 +7,7 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
+  TraceDescription,
   TraceIcon,
   TraceLine,
   TraceTitle,
@@ -215,6 +216,8 @@ export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
   icon?: LucideIcon;
   iconContent?: ReactNode;
   label: string;
+  /** Trailing metadata shown after the label, e.g. determinate progress. */
+  description?: ReactNode;
   status?: StepStatus;
   collapsible?: boolean;
 };
@@ -232,6 +235,7 @@ export const ChainOfThoughtStep = memo(
     icon: Icon,
     iconContent,
     label,
+    description,
     status = "pending",
     collapsible = false,
     children,
@@ -245,6 +249,7 @@ export const ChainOfThoughtStep = memo(
             <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
               <TraceIcon className={cn(status === "error" && "text-destructive", status === "active" && "text-primary")}>{stepIcon}</TraceIcon>
               <TraceTitle>{label}</TraceTitle>
+              {description != null && <TraceDescription>{description}</TraceDescription>}
             </TraceLine>
           </TraceCollapsibleTrigger>
           <TraceCollapsibleContent>{children}</TraceCollapsibleContent>
@@ -256,6 +261,7 @@ export const ChainOfThoughtStep = memo(
         <TraceLine status={status === "active" ? "running" : status === "complete" ? undefined : status}>
           <TraceIcon className={cn(status === "error" && "text-destructive", status === "active" && "text-primary")}>{stepIcon}</TraceIcon>
           <TraceTitle className="text-xs">{label}</TraceTitle>
+          {description != null && <TraceDescription>{description}</TraceDescription>}
         </TraceLine>
         {children && <div className="ml-5 mt-1.5">{children}</div>}
       </div>

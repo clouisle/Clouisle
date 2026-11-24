@@ -6,6 +6,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from app.core.config import settings
 from app.services.sandbox.artifacts import SandboxArtifactStore, artifact_manifest
 from app.services.sandbox.models import SandboxArtifactLimits, SandboxArtifactSpec
 from app.services.sandbox.workspace import SandboxWorkspaceManager
@@ -69,7 +70,7 @@ async def test_collect_uploads_file_artifact_via_http(tmp_path: Path):
     timestamp = captured["headers"]["X-Sandbox-Artifact-Timestamp"]
     signature = captured["headers"]["X-Sandbox-Artifact-Signature"]
     expected = hmac.new(
-        b"changethis-to-a-secure-random-secret-key",
+        settings.SECRET_KEY.encode("utf-8"),
         f"{timestamp}:{filename}:{hashlib.sha256(content).hexdigest()}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()

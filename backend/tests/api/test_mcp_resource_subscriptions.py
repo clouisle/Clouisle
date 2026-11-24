@@ -39,6 +39,13 @@ from app.services.mcp_subscriptions import open_subscription
 class _FakeSession:
     def __init__(self, client: "_FakeClient") -> None:
         self.client = client
+        # The session we subscribe on is the source of truth for what the
+        # server advertised; a probe on another connection would be a lie.
+        self.protocol_version = client.config.get("_version", "2025-11-25")
+        if client.config.get("_capability") is False:
+            self.server_capabilities: dict = {}
+        else:
+            self.server_capabilities = {"resources": {"subscribe": True}}
 
     async def subscribe_resource(self, uri: str) -> None:
         self.client.subscribed.append(uri)
@@ -252,9 +259,19 @@ async def test_subscribe_without_server_capability_is_rejected(sub_app, monkeypa
     team = await _team(sub_app.actor)
     tool = await _tool(team, policy={"default_decision": "allow"})
 
+    class _NoSubscribeSession(_FakeSession):
+        def __init__(self, client: "_FakeClient") -> None:
+            super().__init__(client)
+            self.server_capabilities = {}
+            self.protocol_version = "2025-11-25"
+
     class _NoSubscribeClient(_FakeClient):
-        async def get_capabilities(self, *, timeout=None):
-            return SimpleNamespace(resources_subscribe=False)
+        @asynccontextmanager
+        async def connect(self, *, timeout=None):
+            try:
+                yield _NoSubscribeSession(self)
+            finally:
+                self.closed = True
 
     monkeypatch.setattr("app.services.mcp_subscriptions.McpClient", _NoSubscribeClient)
     response = await sub_app.client.get(

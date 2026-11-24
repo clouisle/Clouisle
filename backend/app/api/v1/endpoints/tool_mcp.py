@@ -50,6 +50,7 @@ from app.llm.tools.mcp_client import (
     McpContentLimits,
     McpEnumeration,
     McpEnumerationLimits,
+    McpInvalidRequest,
     McpPromptInfo,
     McpResourceInfo,
     McpResourceTemplateInfo,
@@ -63,6 +64,7 @@ from app.llm.tools.mcp_client import (
     enumerate_mcp_tools,
     execute_mcp_tool,
     get_mcp_prompt,
+    parse_input_responses,
     probe_mcp_capabilities,
     read_mcp_resource,
     translate_mcp_error,
@@ -423,6 +425,57 @@ def _metadata_parameters(max_items: int, cursor: str | None) -> dict[str, Any]:
     return {"max_items": max_items, "cursor": cursor or None}
 
 
+def _round_trip_parameters(payload: Any) -> dict[str, Any]:
+    """Approval-bound MRTR continuation fields, omitting empty ones.
+
+    A request that is not resuming an ``input_required`` result adds nothing,
+    so digests of already-parked executions stay valid across the deploy.
+    ``input_responses`` never reaches the approval preview: its values are
+    answers a reviewer would have to read against another response.
+    """
+    if not payload.input_responses:
+        return (
+            {"request_state": payload.request_state}
+            if payload.request_state is not None
+            else {}
+        )
+    return {
+        "request_state": payload.request_state,
+        "input_responses": {
+            key: response.model_dump()
+            for key, response in payload.input_responses.items()
+        },
+    }
+
+
+def _validated_round_trip(parameters: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse the answers exactly as they will be sent, before the approval gate.
+
+    A malformed answer must not park an execution that no approval can turn
+    into a working call.
+    """
+    return parse_input_responses(parameters.get("input_responses"))
+
+
+def _require_pinned_connection(tool: Tool, payload: Any) -> None:
+    """Refuse to resume under a different external account than the first leg.
+
+    Only tools that run under an external identity can drift: without one the
+    two legs cannot borrow different credentials, so those tools stay
+    resumable without forcing callers to name a connection.
+    """
+    if not payload.input_responses or payload.connection_id is not None:
+        return
+    identity_policy = str(getattr(tool, "identity_policy", "none") or "none")
+    if identity_policy == "none" and not (tool.connection_fields or []):
+        return
+    raise BusinessError(
+        code=ResponseCode.TOOL_CONNECTION_REQUIRED,
+        msg_key="tool_connection_required",
+        status_code=409,
+    )
+
+
 # ============ Metadata execution ============
 
 
@@ -712,8 +765,17 @@ async def call_mcp_tool(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     operation = f"{OP_TOOL_PREFIX}{payload.name}"
-    parameters = {"name": payload.name, "arguments": payload.arguments}
+    parameters = {
+        "name": payload.name,
+        "arguments": payload.arguments,
+        **_round_trip_parameters(payload),
+    }
+    try:
+        _validated_round_trip(parameters)
+    except McpInvalidRequest as exc:
+        raise _mcp_business_error(exc, operation=operation, tool=tool) from exc
 
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
@@ -727,6 +789,8 @@ async def call_mcp_tool(
                 approved["name"],
                 approved.get("arguments") or {},
                 timeout=call_timeout,
+                input_responses=_validated_round_trip(approved),
+                request_state=approved.get("request_state"),
                 timeouts=MCP_CONTENT_TIMEOUTS,
                 callbacks=callbacks,
             )
@@ -787,9 +851,14 @@ async def read_mcp_resource_contents(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     uri = _validate_resource_uri(payload.uri)
     operation = OP_RESOURCE_READ
-    parameters = {"uri": uri}
+    parameters = {"uri": uri, **_round_trip_parameters(payload)}
+    try:
+        _validated_round_trip(parameters)
+    except McpInvalidRequest as exc:
+        raise _mcp_business_error(exc, operation=operation, tool=tool) from exc
 
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
@@ -800,6 +869,8 @@ async def read_mcp_resource_contents(
             return await read_mcp_resource(
                 config,
                 approved["uri"],
+                input_responses=_validated_round_trip(approved),
+                request_state=approved.get("request_state"),
                 timeout=MCP_CONTENT_TIMEOUT_SECONDS,
                 limits=MCP_CONTENT_LIMITS,
                 timeouts=MCP_CONTENT_TIMEOUTS,
@@ -827,6 +898,10 @@ async def read_mcp_resource_contents(
             parameters,
             context,
             invoke,
+            # The URI identifies the read; resumed answer values are the
+            # caller's input, not the reviewer's business. Keep them out of the
+            # stored approval preview, exactly as the tool and prompt paths do.
+            preview_parameters={"uri": uri},
         )
     except BusinessError:
         raise
@@ -966,8 +1041,17 @@ async def get_mcp_prompt_result(
         execution_id=payload.execution_id,
     )
     tool = await _load_mcp_tool(tool_id, context)
+    _require_pinned_connection(tool, payload)
     operation = f"{OP_PROMPT_PREFIX}{payload.name}"
-    parameters = {"name": payload.name, "arguments": payload.arguments}
+    parameters = {
+        "name": payload.name,
+        "arguments": payload.arguments,
+        **_round_trip_parameters(payload),
+    }
+    try:
+        _validated_round_trip(parameters)
+    except McpInvalidRequest as exc:
+        raise _mcp_business_error(exc, operation=operation, tool=tool) from exc
 
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
@@ -979,6 +1063,8 @@ async def get_mcp_prompt_result(
                 config,
                 approved["name"],
                 approved.get("arguments"),
+                input_responses=_validated_round_trip(approved),
+                request_state=approved.get("request_state"),
                 timeout=MCP_CONTENT_TIMEOUT_SECONDS,
                 limits=MCP_CONTENT_LIMITS,
                 timeouts=MCP_CONTENT_TIMEOUTS,

@@ -132,6 +132,7 @@ async def execute_agent_stored_tool(
             else None,
             interactive=runtime.interactive if runtime else False,
             require_approval=bool(config.get("require_approval", False)),
+            progress=runtime.progress if runtime else None,
         )
         result = await _with_tool_guidance(
             tool,

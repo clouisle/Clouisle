@@ -14,6 +14,7 @@ mock.module('@/components/ui/trace', () => {
     TraceIcon: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-icon" {...props}>{children}</span>,
     TraceLine: ({ children, status, ...props }: React.ComponentProps<'span'> & { status?: string }) => <span data-slot="trace-line" data-status={status} {...props}>{children}</span>,
     TraceTitle: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-title" {...props}>{children}</span>,
+    TraceDescription: ({ children, ...props }: React.ComponentProps<'span'>) => <span data-slot="trace-description" {...props}>{children}</span>,
   }
 })
 mock.module('@/components/ui/badge', () => ({ Badge: ({ children, ...props }: React.ComponentProps<'span'> & { variant?: string }) => { delete props.variant; return <span {...props}>{children}</span> } }))

@@ -19,6 +19,7 @@ import {
   type SSEMessageEnd,
   type SSEIterationCapReached,
   type SSEToolCall,
+  type SSEToolProgress,
   type SSEToolResult,
   type SSEMediaResult,
 } from '@/lib/api'
@@ -2429,6 +2430,23 @@ function applyAssistantStreamEvent(
       state.taskState.toolCallCount = state.segments.filter(
         segment => segment.type === 'tool' && Boolean(segment.toolCall)
       ).length
+      return true
+    }
+
+    case 'tool_progress': {
+      const data = event.data as SSEToolProgress
+      // Progress decorates a call that is already on screen. A tick with no
+      // matching call carries nothing the user could see.
+      const segment = findToolSegment(state.segments, data.tool_call_id)
+      if (!segment?.toolCall) return false
+      segment.toolCall = {
+        ...segment.toolCall,
+        progress: {
+          progress: data.progress,
+          total: data.total ?? null,
+          message: data.message ?? null,
+        },
+      }
       return true
     }
 

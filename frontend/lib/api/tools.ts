@@ -257,6 +257,12 @@ export interface ToolExecuteRequest {
   execution_id?: string
 }
 
+export interface McpInputRequired {
+  method?: string
+  request_state?: string
+  requests?: Record<string, { method?: string; params?: Record<string, unknown> }>
+}
+
 export interface ToolExecuteResponse {
   name: string
   success: boolean
@@ -267,6 +273,7 @@ export interface ToolExecuteResponse {
   duration_ms?: number
   pending_approval?: boolean
   execution_id?: string
+  input_required?: McpInputRequired
 }
 
 export interface CodeExecuteRequest {

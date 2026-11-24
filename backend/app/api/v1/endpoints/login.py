@@ -765,7 +765,12 @@ async def register(
         "force_password_change_first_login", False
     )
 
-    registration_locale = normalize_language(user_in.locale) if user_in.locale else None
+    registration_locale = normalize_language(
+        # ``users.locale`` is NOT NULL: writing NULL fails the whole
+        # registration, so an omitted locale falls back to the site default
+        # instead of being stored as "no preference".
+        user_in.locale or await SiteSetting.get_value("default_language", "en")
+    )
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)

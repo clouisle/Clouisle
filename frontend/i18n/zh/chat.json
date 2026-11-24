@@ -65,6 +65,8 @@
       "result": "结果",
       "input": "输入",
       "output": "输出",
+      "progress": "进度",
+      "progressPercent": "{percent}%",
       "mcp": "MCP 工具"
     },
     "source": {
