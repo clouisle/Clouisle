@@ -2,19 +2,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+API_V1_PREFIX = "/api/v1"
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Clouisle"
-    API_V1_STR: str = "/api/v1"
-
-    # Internal service URL; use PUBLIC_API_URL for browser-visible links.
+    # Internal service URL; public links use the site setting.
     API_BASE_URL: str = "http://localhost:8000"
-    PUBLIC_API_URL: str | None = None
 
-    # Frontend URL (used for SSO redirects)
+    # Seeds the public site_url setting; not used at runtime.
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Timezone
@@ -23,7 +21,6 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = "changethis-to-a-secure-random-secret-key"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 
     # Tool-domain envelope encryption keyring (connections, approvals, OAuth,
     # interactions). Comma-separated ``key_id:fernet_key`` entries; Fernet keys
@@ -32,7 +29,8 @@ class Settings(BaseSettings):
     TOOL_SECRET_KEYS: str = ""
     TOOL_SECRET_PRIMARY_KEY_ID: str = ""
 
-    # Database
+    # Database. ``DATABASE_URL`` takes precedence over the ``POSTGRES_*``
+    # parts; leave it unset to let ``resolve_database_url`` assemble it.
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "password"
@@ -68,8 +66,7 @@ class Settings(BaseSettings):
     WECHAT_POLL_CONCURRENCY: int = Field(default=16, ge=1, le=128)
     WECHAT_POLL_MAX_BATCHES: int = Field(default=8, ge=1, le=128)
 
-    # Vector DB (Qdrant)
-    VECTOR_BACKEND: str = "qdrant"
+    # Vector DB (Qdrant is the only supported backend)
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: str | None = None
     QDRANT_COLLECTION_PREFIX: str = "kb_dim"
@@ -105,13 +102,22 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
-    @field_validator("DATABASE_URL", mode="before")
-    @classmethod
-    def assemble_db_connection(cls, v: str, info: ValidationInfo) -> str:
-        if isinstance(v, str) and v:
-            return v
-        data = info.data
-        return f"postgres://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_SERVER')}:{data.get('POSTGRES_PORT')}/{data.get('POSTGRES_DB')}"
+    @model_validator(mode="after")
+    def resolve_database_url(self) -> "Settings":
+        """Resolve the one connection string the whole backend runs against.
+
+        An explicit ``DATABASE_URL`` wins so operators can point the app at a
+        managed database; otherwise the URL is assembled from the
+        ``POSTGRES_*`` parts. Runtime entry points (API lifespan, Celery
+        worker init, migrations, secret rotation) read this resolved value
+        instead of re-deriving it.
+        """
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = (
+                f"postgres://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        return self
 
     # Streaming timeouts (seconds)
     STREAM_GLOBAL_TIMEOUT: int = 3600  # 60 minutes
@@ -145,8 +151,7 @@ class Settings(BaseSettings):
     # platform-wide flag is on.
     MCP_TASKS_ENABLED: bool = False
 
-    # Sandbox runtime flags
-    SANDBOX_RUNTIME_ENABLED: bool = True
+    # Sandbox runtime
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
     SANDBOX_WORKER_ID: str = ""
     SANDBOX_NODE_ID: str = ""

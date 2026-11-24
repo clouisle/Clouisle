@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL, UPLOAD_FILES_PATH } from '@/lib/constants'
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Copy, Check, ExternalLink, Key, AlertCircle } from 'lucide-react'
@@ -83,16 +84,19 @@ function Section({
 export function WorkflowApiContent({ workflow }: WorkflowApiContentProps) {
   const t = useTranslations('workflow.api')
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const [origin, setOrigin] = React.useState('')
+  React.useEffect(() => setOrigin(window.location.origin), [])
 
   const sampleInputs = workflow.variables?.reduce((acc, v) => ({
     ...acc,
     [v.name]: v.type === 'number' ? 0 : ""
   }), {}) || {}
 
+  const apiBaseUrl = `${origin}${API_BASE_URL}`
+
   // API endpoint
   const webhookUrl = workflow.webhook_token
-    ? `${apiBaseUrl}/api/v1/workflows/webhook/${workflow.webhook_token}`
+    ? `${apiBaseUrl}/workflows/webhook/${workflow.webhook_token}`
     : ''
 
   // Sample request body
@@ -285,7 +289,7 @@ if (result.code === 0) {
                       data: {
                         run_id: "550e8400-e29b-41d4-a716-446655440000",
                         status: "pending",
-                        stream_url: "/api/v1/workflows/runs/{run_id}/stream"
+                        stream_url: `${API_BASE_URL}/workflows/runs/{run_id}/stream`
                       },
                       msg: "workflow_triggered"
                     }, null, 2)}
@@ -367,7 +371,7 @@ if (result.code === 0) {
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant="secondary">GET</Badge>
                     <code className="text-sm bg-muted px-2 py-1 rounded break-all">
-                      {apiBaseUrl}/api/v1/workflows/runs/{'{run_id}'}/stream
+                      {apiBaseUrl}/workflows/runs/{'{run_id}'}/stream
                     </code>
                   </div>
                 </div>
@@ -483,7 +487,7 @@ data: {"event":"workflow_complete","data":{"outputs":{"result":"Hello World"},"d
 
 # After triggering workflow
 run_id = result["data"]["run_id"]
-stream_url = f"${apiBaseUrl}/api/v1/workflows/runs/{run_id}/stream"
+stream_url = f"${apiBaseUrl}/workflows/runs/{run_id}/stream"
 
 # Connect to SSE stream
 response = requests.get(stream_url, stream=True, headers={
@@ -517,7 +521,7 @@ for line in response.iter_lines():
                   <CodeBlock
                     code={`// After triggering workflow
 const { run_id } = result.data;
-const streamUrl = \`${apiBaseUrl}/api/v1/workflows/runs/\${run_id}/stream\`;
+const streamUrl = \`${apiBaseUrl}/workflows/runs/\${run_id}/stream\`;
 
 // Connect to SSE stream
 const eventSource = new EventSource(streamUrl);
@@ -581,7 +585,7 @@ eventSource.onerror = (error) => {
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="secondary">GET</Badge>
                       <code className="text-sm bg-muted px-2 py-1 rounded break-all">
-                        {apiBaseUrl}/api/v1/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-request
+                        {apiBaseUrl}/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-request
                       </code>
                     </div>
                     <p className="text-sm text-muted-foreground mb-3">{t('pauseGetDescription')}</p>
@@ -634,7 +638,7 @@ eventSource.onerror = (error) => {
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="secondary">POST</Badge>
                       <code className="text-sm bg-muted px-2 py-1 rounded break-all">
-                        {apiBaseUrl}/api/v1/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-requests/{'{pause_request_id}'}/submit
+                        {apiBaseUrl}/workflows/{'{workflow_id}'}/runs/{'{run_id}'}/pause-requests/{'{pause_request_id}'}/submit
                       </code>
                     </div>
                     <p className="text-sm text-muted-foreground mb-3">{t('pauseSubmitDescription')}</p>
@@ -642,7 +646,7 @@ eventSource.onerror = (error) => {
                     <CodeBlock
                       code={JSON.stringify({
                         values: {
-                          contract: ["/api/v1/upload/files/contract.pdf"],
+                          contract: [`${UPLOAD_FILES_PATH}contract.pdf`],
                           amount: 100,
                         },
                         comment: "已上传合同",
@@ -672,7 +676,7 @@ import time
 API_KEY = "YOUR_API_KEY"
 headers = {"Authorization": f"Bearer {API_KEY}"}
 
-BASE = "${apiBaseUrl}/api/v1/workflows"
+BASE = "${apiBaseUrl}/workflows"
 run_id = result["data"]["run_id"]
 
 # 1) Run is waiting: poll for the pending pause request
@@ -687,7 +691,7 @@ while True:
 
 # 2) Fill the requested variables (or decision for approval mode)
 submission = {"values": {v["name"]: "" for v in pause_request["input_variables"]}}
-# e.g. submission = {"values": {"contract": ["/api/v1/upload/files/a.pdf"]}, "comment": ""}
+# e.g. submission = {"values": {"contract": ["${UPLOAD_FILES_PATH}a.pdf"]}, "comment": ""}
 # approval mode: submission = {"values": {"decision": "approved"}, "comment": "ok"}
 
 submit = requests.post(

@@ -48,7 +48,6 @@ def test_run_workflow_task_returns_completed_outputs():
         team_id=UUID(TEAM_ID),
         stream=True,
         is_debug=True,
-        public_base_url=None,
     )
 
 

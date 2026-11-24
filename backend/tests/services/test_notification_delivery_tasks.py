@@ -39,14 +39,26 @@ def query(**methods):
 @pytest.mark.parametrize(
     ("link_url", "expected"),
     [
-        ("/app/notifications/123", "https://clouisle.example/app/notifications/123"),
+        ("/app/notifications/123", "https://app.example.test/app/notifications/123"),
         ("https://other.example/path", "https://other.example/path"),
         (None, None),
     ],
 )
-def test_absolute_notification_url(link_url, expected):
-    with patch.object(tasks.settings, "FRONTEND_URL", "https://clouisle.example/"):
-        assert tasks._get_absolute_notification_url(link_url) == expected
+@pytest.mark.anyio
+async def test_absolute_notification_url(link_url, expected):
+    with patch.object(
+        tasks.SiteSetting,
+        "get_value",
+        new=AsyncMock(return_value="https://app.example.test/"),
+    ):
+        assert await tasks._get_absolute_notification_url(link_url) == expected
+
+
+@pytest.mark.anyio
+async def test_relative_notification_url_requires_site_url():
+    with patch.object(tasks.SiteSetting, "get_value", new=AsyncMock(return_value="")):
+        with pytest.raises(ValueError, match="site_url is not configured"):
+            await tasks._get_absolute_notification_url("/app")
 
 
 @pytest.mark.anyio

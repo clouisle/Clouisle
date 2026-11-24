@@ -1,5 +1,6 @@
 'use client'
 
+import { UPLOAD_FILES_PATH } from '@/lib/constants'
 import * as React from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
@@ -27,7 +28,7 @@ interface ImageUploadProps {
  * 判断 URL 是否是我们上传的文件
  */
 function isUploadedFile(url: string): boolean {
-  return url.includes('/api/v1/upload/files/')
+  return url.includes(UPLOAD_FILES_PATH)
 }
 
 export function ImageUpload({

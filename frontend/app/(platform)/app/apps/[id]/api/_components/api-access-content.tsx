@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Copy, Check, ExternalLink, Key, AlertCircle } from 'lucide-react'
@@ -83,10 +84,13 @@ function Section({
 export function ApiAccessContent({ agent }: ApiAccessContentProps) {
   const t = useTranslations('agents.apiAccess')
   
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const [origin, setOrigin] = React.useState('')
+  React.useEffect(() => setOrigin(window.location.origin), [])
   
+  const apiBaseUrl = `${origin}${API_BASE_URL}`
+
   // API endpoint
-  const chatEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/stream`
+  const chatEndpoint = `${apiBaseUrl}/agents/${agent.id}/chat/stream`
   
   // Sample request body
   const sampleRequestBody = JSON.stringify({
@@ -116,7 +120,7 @@ export function ApiAccessContent({ agent }: ApiAccessContentProps) {
 API_KEY = "YOUR_API_KEY"
 AGENT_ID = "${agent.id}"
 
-url = f"${apiBaseUrl}/api/v1/agents/{AGENT_ID}/chat/stream"
+url = f"${apiBaseUrl}/agents/{AGENT_ID}/chat/stream"
 headers = {
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json",
@@ -143,7 +147,7 @@ for line in response.iter_lines():
 const AGENT_ID = "${agent.id}";
 
 const response = await fetch(
-  \`${apiBaseUrl}/api/v1/agents/\${AGENT_ID}/chat/stream\`,
+  \`${apiBaseUrl}/agents/\${AGENT_ID}/chat/stream\`,
   {
     method: "POST",
     headers: {
@@ -208,7 +212,7 @@ while (true) {
   ]
 
   // Answer endpoint
-  const answerEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/answers`
+  const answerEndpoint = `${apiBaseUrl}/agents/${agent.id}/chat/runs/{run_id}/answers`
 
   // Sample answer body
   const sampleAnswerBody = JSON.stringify({
@@ -220,13 +224,13 @@ while (true) {
   }, null, 2)
 
   // Approval decision endpoints and samples
-  const approvalExecutionEndpoint = `${apiBaseUrl}/api/v1/tool-executions/{execution_id}/decision`
-  const approvalInboxEndpoint = `${apiBaseUrl}/api/v1/tool-approvals/{request_id}/decision`
-  const approvalExecutionReadEndpoint = `${apiBaseUrl}/api/v1/tool-executions/{execution_id}`
-  const approvalPendingListEndpoint = `${apiBaseUrl}/api/v1/tool-approvals?page=1&page_size=20`
-  const approvalExecutionListEndpoint = `${apiBaseUrl}/api/v1/tool-executions?run_id={run_id}&status=awaiting_approval`
-  const approvalStreamEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence={sequence}`
-  const approvalRunStatusEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}`
+  const approvalExecutionEndpoint = `${apiBaseUrl}/tool-executions/{execution_id}/decision`
+  const approvalInboxEndpoint = `${apiBaseUrl}/tool-approvals/{request_id}/decision`
+  const approvalExecutionReadEndpoint = `${apiBaseUrl}/tool-executions/{execution_id}`
+  const approvalPendingListEndpoint = `${apiBaseUrl}/tool-approvals?page=1&page_size=20`
+  const approvalExecutionListEndpoint = `${apiBaseUrl}/tool-executions?run_id={run_id}&status=awaiting_approval`
+  const approvalStreamEndpoint = `${apiBaseUrl}/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence={sequence}`
+  const approvalRunStatusEndpoint = `${apiBaseUrl}/agents/${agent.id}/chat/runs/{run_id}`
 
   const approvalToolCallEvent = `event: tool_call
 data: ${JSON.stringify({
@@ -292,7 +296,7 @@ data: ${JSON.stringify({
     msg: "success",
   }, null, 2)
 
-  const apiKeyWaitSample = `curl -N -X POST "${apiBaseUrl}/api/v1/agents/${agent.id}/chat/stream" \\
+  const apiKeyWaitSample = `curl -N -X POST "${apiBaseUrl}/agents/${agent.id}/chat/stream" \\
   -H "Authorization: Bearer clou_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{"message":"Delete task T-42"}'
@@ -301,18 +305,18 @@ data: ${JSON.stringify({
 # run_status: {"status":"waiting","pending_tool_call_id":"call-123",
 #   "pending_tool_input":{"interaction_kind":"tool_approval","execution_id":"…"}}`
 
-  const apiKeyViewSample = `curl "${apiBaseUrl}/api/v1/tool-approvals?page=1&page_size=20" \\
+  const apiKeyViewSample = `curl "${apiBaseUrl}/tool-approvals?page=1&page_size=20" \\
   -H "Authorization: Bearer clou_your_key"
 
-curl "${apiBaseUrl}/api/v1/tool-executions/{execution_id}" \\
+curl "${apiBaseUrl}/tool-executions/{execution_id}" \\
   -H "Authorization: Bearer clou_your_key"`
 
-  const apiKeyDecisionSample = `curl -X POST "${apiBaseUrl}/api/v1/tool-executions/{execution_id}/decision" \\
+  const apiKeyDecisionSample = `curl -X POST "${apiBaseUrl}/tool-executions/{execution_id}/decision" \\
   -H "Authorization: Bearer clou_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{"decision":"approve","reason":"checked the order id","idempotency_key":"decision-2026-10-28-0001"}'`
 
-  const apiKeyResumeSample = `curl -N "${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence=17" \\
+  const apiKeyResumeSample = `curl -N "${apiBaseUrl}/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence=17" \\
   -H "Authorization: Bearer clou_your_key"`
 
   return (

@@ -51,7 +51,6 @@ async def sso_app(monkeypatch):
         )
 
     monkeypatch.setattr(sso.SiteSetting, "get_value", setting)
-    monkeypatch.setattr(sso, "_backend_url", lambda _: "https://backend.example")
     monkeypatch.setattr(sso.AuditLogService, "log", AsyncMock())
     try:
         async with httpx.AsyncClient(

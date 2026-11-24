@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { api } from './client'
 import { memoriesApi } from './memories'
 
-mock.module('server-only', () => ({}))
-
-const serverUrl = await import('./server-url')
 const spies: Array<{ mockRestore(): void }> = []
 
 afterEach(() => {
@@ -99,41 +96,5 @@ describe('memoriesApi', () => {
     expect(put).toHaveBeenCalledWith('/memories/entities/entity-1', updateEntityInput)
     expect(remove).toHaveBeenNthCalledWith(1, '/memories/entities/entity-1')
     expect(remove).toHaveBeenNthCalledWith(2, '/memories/relations/relation-1')
-  })
-})
-
-describe('server URL helpers', () => {
-  const originalBackendInternalUrl = process.env.BACKEND_INTERNAL_URL
-
-  afterEach(() => {
-    if (originalBackendInternalUrl === undefined) delete process.env.BACKEND_INTERNAL_URL
-    else process.env.BACKEND_INTERNAL_URL = originalBackendInternalUrl
-  })
-
-  it('keeps an absolute API URL and derives its backend origin', () => {
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
-    expect(serverUrl.getServerBackendOrigin()).toBe('http://localhost:8000')
-  })
-
-  it('evaluates the HTTPS condition', () => {
-    const startsWith = spyOn(String.prototype, 'startsWith')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-    spies.push(startsWith)
-
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
-    expect(startsWith).toHaveBeenNthCalledWith(1, 'http://')
-    expect(startsWith).toHaveBeenNthCalledWith(2, 'https://')
-  })
-
-  it('uses configured and default backend origins for a relative API path', () => {
-    const startsWith = spyOn(String.prototype, 'startsWith').mockReturnValue(false)
-    spies.push(startsWith)
-
-    process.env.BACKEND_INTERNAL_URL = 'http://backend:8000'
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://backend:8000http://localhost:8000/api/v1')
-
-    delete process.env.BACKEND_INTERNAL_URL
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000http://localhost:8000/api/v1')
   })
 })

@@ -18,7 +18,7 @@ import {
 
 describe('application constants', () => {
   test('provides local development defaults and application identity', () => {
-    expect(API_BASE_URL).toBe('http://localhost:8000/api/v1')
+    expect(API_BASE_URL).toBe('/api/v1')
     expect(APP_VERSION).toBe('0.0.0-dev')
     expect(BUILD_DATE).toBe('dev')
     expect(APP_NAME).toBe('Clouisle')

@@ -4,21 +4,22 @@ Sub-workflow node executor.
 Handles nested workflow execution with depth tracking.
 """
 
-from typing import TYPE_CHECKING, cast
-from uuid import UUID
 import logging
 import mimetypes
 import os
+from typing import TYPE_CHECKING, cast
+from uuid import UUID
 
 from app.services import upload_gateway
-from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+
+from ..errors import MaxDepthExceededError, translate_public_workflow_error
 from ..execution_origin import inherited_origin
+from ..executor import ExecutionResult, NodeExecutor, NodeExecutorRegistry
 from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
-from ..errors import MaxDepthExceededError
-from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
+
     from ..context import ExecutionContext
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,9 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute sub-workflow node."""
-        from app.models.workflow import Workflow, WorkflowRun as WorkflowRunModel
+        from app.models.workflow import Workflow
+        from app.models.workflow import WorkflowRun as WorkflowRunModel
+
         from ..orchestrator import WorkflowOrchestrator
 
         node_data = node.get("data", {})
@@ -274,7 +277,7 @@ class FileToURLNodeExecutor(NodeExecutor):
         import mimetypes
         from urllib.parse import urlparse
 
-        from app.core.config import settings
+        from app.models.site_setting import SiteSetting
 
         node_data = node.get("data", {})
         legacy_config = node_data.get("config", {})
@@ -293,10 +296,12 @@ class FileToURLNodeExecutor(NodeExecutor):
         )
 
         try:
-            # 绝对化兜底：优先请求来源（run/debug 端点传入），其次 PUBLIC_API_URL
-            public_base = context.get_public_base_url() or str(
-                getattr(settings, "PUBLIC_API_URL", "") or ""
-            ).rstrip("/")
+            public_base = (
+                (await SiteSetting.get_value("site_url", "") or "").rstrip("/")
+                if ensure_absolute
+                and (inputs or (input_type == "path" and output_type == "url"))
+                else ""
+            )
 
             if inputs:
                 outputs: dict[str, WorkflowValue] = {}

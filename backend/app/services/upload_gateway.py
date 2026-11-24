@@ -14,7 +14,7 @@ class UploadGatewayError(RuntimeError):
 def client() -> httpx.AsyncClient:
     """Create an authenticated client for the internal uploads API."""
     return httpx.AsyncClient(
-        base_url=settings.API_INTERNAL_BASE_URL.rstrip("/"),
+        base_url=(settings.API_INTERNAL_BASE_URL or settings.API_BASE_URL).rstrip("/"),
         headers={"Authorization": f"Bearer {settings.get_internal_api_token()}"},
         timeout=60.0,
     )

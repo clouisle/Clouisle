@@ -500,7 +500,6 @@ export type AgentsMessages = {
       runLifecycleDescription: string
       answerTitle: string
       answerDescription: string
-      answerEndpoint: string
       answerBody: string
       answerFields: {
         toolCallId: string

@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import bcrypt
 import jwt
@@ -16,15 +16,14 @@ def _prepare_password(password: str) -> bytes:
     return password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_LENGTH]
 
 
-def create_access_token(
-    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
-) -> str:
-    if expires_delta:
-        expire = now_utc() + expires_delta
-    else:
-        expire = now_utc() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+def create_access_token(subject: Union[str, Any], expires_delta: timedelta) -> str:
+    """Encode an access token that expires after ``expires_delta``.
 
-    to_encode = {"exp": expire, "sub": str(subject)}
+    The lifetime is required: callers own their session semantics (the site
+    ``session_timeout_days`` setting for logins and SSO, short fixed windows for
+    TOTP hand-off tokens), so there is no config default to fall back on.
+    """
+    to_encode = {"exp": now_utc() + expires_delta, "sub": str(subject)}
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )

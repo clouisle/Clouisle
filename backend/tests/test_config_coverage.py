@@ -54,9 +54,50 @@ def test_settings_reject_invalid_sandbox_task_limits(name, value):
 
 
 def test_settings_preserves_explicit_database_url():
-    settings = Settings(_env_file=None, DATABASE_URL="postgres://configured")
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgres://configured",
+        POSTGRES_USER="ignored",
+        POSTGRES_PASSWORD="ignored",
+        POSTGRES_SERVER="ignored",
+        POSTGRES_PORT=6543,
+        POSTGRES_DB="ignored",
+    )
 
     assert settings.DATABASE_URL == "postgres://configured"
+
+
+def test_settings_assembles_database_url_from_postgres_parts(monkeypatch):
+    """POSTGRES_* stays a supported interface; Settings owns the assembly."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    settings = Settings(
+        _env_file=None,
+        POSTGRES_USER="app",
+        POSTGRES_PASSWORD="secret",
+        POSTGRES_SERVER="db.internal",
+        POSTGRES_PORT=6543,
+        POSTGRES_DB="appdb",
+    )
+
+    assert settings.DATABASE_URL == "postgres://app:secret@db.internal:6543/appdb"
+
+
+def test_settings_treats_blank_database_url_as_absent(monkeypatch):
+    """An empty DATABASE_URL means "not configured", so POSTGRES_* wins."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="",
+        POSTGRES_USER="app",
+        POSTGRES_PASSWORD="secret",
+        POSTGRES_SERVER="db.internal",
+        POSTGRES_PORT=6543,
+        POSTGRES_DB="appdb",
+    )
+
+    assert settings.DATABASE_URL == "postgres://app:secret@db.internal:6543/appdb"
 
 
 def test_settings_prefers_nonempty_internal_token_file(tmp_path):

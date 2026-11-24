@@ -114,8 +114,6 @@ Containerized services should use internal service names:
 POSTGRES_SERVER=db
 REDIS_HOST=redis
 QDRANT_URL=http://qdrant:6333
-API_BASE_URL=http://api:8000
-SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 ```
 
 `sandbox-worker` uploads artifacts to `/api/v1/upload/sandbox-artifact`. Keep `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` on an internal API address; do not point it at `localhost` inside containers.
@@ -176,6 +174,8 @@ docker compose down -v
 - A `ReadWriteMany` capable StorageClass for multiple API replicas using local upload storage; otherwise use one API replica or object storage
 
 ### Option A: Helm Chart (recommended)
+
+For public Ingress, set `config.FRONTEND_URL` to the public origin before the first start. Leave it empty for a local demo without public links.
 
 ```bash
 helm lint deploy/helm/clouisle \
@@ -316,10 +316,9 @@ kubectl -n clouisle logs -f deployment/frontend
 | Variable | Required | Compose default | Description |
 |----------|----------|-----------------|-------------|
 | `SECRET_KEY` | Yes | placeholder | JWT signing key and default sandbox upload signing basis |
-| `API_BASE_URL` | Yes | `http://api:8000` | Internal API URL for containers |
-| `PUBLIC_API_URL` | No | empty | Public API origin used when workflow file URLs must be absolute |
-| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | Yes for sandbox | `http://api:8000` | Internal API URL used by sandbox artifact upload |
-| `FRONTEND_URL` | Yes | `http://localhost:3000` | Public frontend URL |
+| `API_BASE_URL` | Set by Compose | `http://api:8000` | Internal API address; not a Compose `.env` setting |
+| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | No | Inherits `API_BASE_URL` | Optional override for sandbox artifact uploads |
+| `FRONTEND_URL` | Yes | `http://localhost:3000` | Public site origin used to seed `site_url` |
 | `BACKEND_CORS_ORIGINS` | Yes | `["http://localhost:3000"]` | JSON array of allowed frontend origins |
 | `POSTGRES_SERVER` | Yes | `db` | PostgreSQL host |
 | `POSTGRES_PASSWORD` | Yes | empty | PostgreSQL password |
@@ -336,8 +335,7 @@ kubectl -n clouisle logs -f deployment/frontend
 | `SANDBOX_WORKER_RECOVERY_SECONDS` | No | `30` | Bounded original-disk recovery window |
 | `SANDBOX_SESSION_MAX_RESETS` | No | `1` | Maximum fresh-workspace replacements per logical session |
 | `SANDBOX_SUPERVISOR_MAX_RESTARTS` | No | `3` | Same-node child restart limit before container restart |
-| `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |
-| `TAVILY_API_KEY` | No | empty | Tavily search API key |
+| `TAVILY_API_KEY` | No | empty | Legacy one-time site search import only; use the admin UI for new configurations |
 
 ---
 
@@ -352,7 +350,7 @@ kubectl -n clouisle logs -f deployment/frontend
 - In Compose, verify `docker compose logs -f api` and `curl http://localhost:8000/api/v1/health`.
 
 **Sandbox artifacts are not uploaded**
-- Verify `SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000` in containerized deployment.
+- Verify `API_BASE_URL` (or the optional `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` override) points to the internal API.
 - Check `docker compose logs -f sandbox-worker` or `kubectl -n clouisle logs -f daemonset/sandbox-worker`.
 - Ensure `SECRET_KEY` is the same for `api` and `sandbox-worker`, unless `SANDBOX_ARTIFACT_UPLOAD_API_KEY` is configured.
 

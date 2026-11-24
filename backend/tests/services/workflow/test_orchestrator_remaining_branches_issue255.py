@@ -401,9 +401,7 @@ async def test_resume_existing_run_uses_pinned_pause_definition() -> None:
     orchestrator._get_execution_plan.assert_awaited_once_with(
         workflow_id, old_definition
     )
-    assert (
-        create_context.await_args.kwargs["public_base_url"] == "https://public.example"
-    )
+    assert "public_base_url" not in create_context.await_args.kwargs
 
 
 @pytest.mark.asyncio
@@ -641,49 +639,3 @@ async def test_resume_existing_run_seeds_stream_sequence():
 
     assert result == str(run.id)
     stream.seed_sequence.assert_awaited_once_with()
-
-
-@pytest.mark.asyncio
-async def test_resume_existing_run_keeps_supplied_public_base_url():
-    workflow_id = uuid4()
-    run = SimpleNamespace(
-        id=uuid4(),
-        context_snapshot={"workflow_definition": {"nodes": []}},
-        status=RunStatus.WAITING,
-        total_duration_ms=None,
-        save=AsyncMock(),
-    )
-    workflow = SimpleNamespace(name="Workflow", definition={"nodes": []})
-    plan = MagicMock(validate=MagicMock(return_value=[]))
-    context = MagicMock(set_inputs=AsyncMock())
-    service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
-    service._load_workflow = AsyncMock(return_value=workflow)
-    service._get_execution_plan = AsyncMock(return_value=plan)
-    service._execute = AsyncMock(return_value=({}, 0))
-    service._complete_run = AsyncMock()
-
-    with (
-        patch("app.services.workflow.orchestrator.WorkflowRun") as run_model,
-        patch(
-            "app.services.workflow.orchestrator.get_redis",
-            new=AsyncMock(return_value=MagicMock()),
-        ),
-        patch(
-            "app.services.workflow.orchestrator.ExecutionContext.create",
-            new=AsyncMock(return_value=context),
-        ) as create_context,
-    ):
-        run_model.filter.return_value.first = AsyncMock(return_value=run)
-        await service.run_with_run_id(
-            run.id,
-            workflow_id,
-            {},
-            uuid4(),
-            stream=False,
-            public_base_url="https://caller.example",
-            resume=True,
-        )
-
-    assert (
-        create_context.await_args.kwargs["public_base_url"] == "https://caller.example"
-    )

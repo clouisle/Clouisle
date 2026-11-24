@@ -628,11 +628,7 @@ def main(argv: list[str] | None = None) -> int:
         from tortoise import Tortoise
 
         await Tortoise.init(
-            db_url=settings.DATABASE_URL
-            or (
-                f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
-                f"@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
-            ),
+            db_url=settings.DATABASE_URL,
             modules={"models": ["app.models"]},
         )
         try:

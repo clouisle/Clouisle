@@ -92,12 +92,7 @@ cp .env.example .env
 SECRET_KEY=generate-a-secure-random-key-here
 TIMEZONE=Asia/Shanghai
 
-# Internal service URLs (keep these on the private Compose network)
-API_BASE_URL=http://api:8000
-API_INTERNAL_BASE_URL=http://api:8000
-
 # Public/browser origins (set these to the deployed public origin)
-PUBLIC_API_URL=
 FRONTEND_URL=http://localhost:3000
 BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
@@ -117,16 +112,12 @@ REDIS_PORT=6379
 REDIS_PASSWORD=change-this-password
 
 # Qdrant (Vector Database)
-VECTOR_BACKEND=qdrant
 QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=
 
 # Sandbox artifact upload (optional auth key)
-SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 SANDBOX_ARTIFACT_UPLOAD_API_KEY=
 
-# External APIs (optional)
-TAVILY_API_KEY=
 ```
 
 **Generate the required token and keys:**
@@ -198,7 +189,7 @@ The production Compose file (`deploy/docker-compose.yml`) defines these services
 | `beat` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py beat` | — |
 | `frontend` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest` | `node server.js` (image default) | 3000 |
 
-There is **no `nginx` service** in Compose. The frontend container runs the Next.js standalone server and proxies `/api/*` to the backend via Next.js rewrites (`BACKEND_INTERNAL_URL`).
+There is **no `nginx` service** in Compose. The frontend container runs the Next.js standalone server and proxies `/api/*` to the backend via Next.js rewrites (the frontend image builds with `BACKEND_INTERNAL_URL=http://api:8000` by default). Both SSR and the proxy use that image build argument. For a different internal destination, build a custom frontend image with `--build-arg BACKEND_INTERNAL_URL=http://your-api:8000`; do not set a runtime override.
 
 Representative excerpt (condensed; see `deploy/docker-compose.yml` for the full file):
 
@@ -277,7 +268,6 @@ services:
     env_file: .env
     environment:
       UPLOAD_STORAGE_MODE: remote
-      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     # no uploads volume — files are fetched through the API gateway
     depends_on:
@@ -299,7 +289,6 @@ services:
       - NET_ADMIN
     environment:
       UPLOAD_STORAGE_MODE: remote
-      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
     depends_on:
       db: { condition: service_healthy }
@@ -315,8 +304,6 @@ services:
 
   frontend:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest
-    environment:
-      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}
     ports:
       - "3000:3000"
     depends_on:

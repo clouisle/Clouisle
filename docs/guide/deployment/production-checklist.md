@@ -21,7 +21,7 @@ Use this checklist to verify:
 - [ ] Strong password policy enabled (min 8 chars, complexity requirements)
 - [ ] 2FA enabled for admin accounts
 - [ ] JWT secret key is strong and unique
-- [ ] Session timeout configured appropriately (default: 30 days via the `session_timeout_days` site setting; JWT config fallback `ACCESS_TOKEN_EXPIRE_MINUTES` = 11520 min / 8 days)
+- [ ] Session timeout configured appropriately (default: 30 days via the `session_timeout_days` site setting)
 - [ ] API key rotation policy in place
 - [ ] SSO configured and tested (if applicable)
 - [ ] Account lockout after failed login attempts (5 attempts)

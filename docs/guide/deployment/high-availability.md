@@ -648,7 +648,7 @@ volumes:
 The backend exposes `GET /api/v1/health` (defined in `backend/app/main.py`):
 
 ```python
-@app.get(f"{settings.API_V1_STR}/health")
+@app.get(f"{API_V1_PREFIX}/health")
 async def health():
     return success(data={"status": "healthy"})
 ```

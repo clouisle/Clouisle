@@ -102,13 +102,6 @@ class ExecutionContext:
         # body nodes can reference them by bare name ({{doc}}), not only via the
         # node-scoped form ({{iteration-xxx.doc}}). Innermost scope wins.
         self._iteration_scopes: list[dict[str, WorkflowValue]] = []
-        # Best-effort public base URL captured from the triggering request,
-        # used to absolutize upload URLs when settings.PUBLIC_API_URL is unset.
-        self._public_base_url: str | None = None
-
-    def get_public_base_url(self) -> str | None:
-        """Return the request-derived public base URL (or None)."""
-        return self._public_base_url
 
     def push_iteration_scope(self, scope: dict[str, WorkflowValue]) -> None:
         """Expose the current iteration/loop round's variables (item, index, ...)
@@ -130,7 +123,6 @@ class ExecutionContext:
         workflow_id: str | UUID,
         user_id: str | UUID | None = None,
         ttl: int = DEFAULT_TTL,
-        public_base_url: str | None = None,
     ) -> "ExecutionContext":
         """
         Create a new execution context.
@@ -141,11 +133,8 @@ class ExecutionContext:
             workflow_id: Workflow ID
             user_id: User who triggered the run
             ttl: Time-to-live for context data in seconds
-            public_base_url: Public base URL of the triggering request, used as a
-                fallback for absolutizing upload URLs when PUBLIC_API_URL is unset
         """
         ctx = cls(run_id, redis_client)
-        ctx._public_base_url = (public_base_url or "").rstrip("/") or None
 
         # Initialize system variables
         ctx._system_variables = {

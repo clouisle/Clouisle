@@ -110,7 +110,7 @@ Process role selection is explicit via env (`UPLOAD_STORAGE_MODE`), not inferred
       unchanged.
   - Fix `FileToURLNodeExecutor` (subworkflow.py): the workflow file parameter value IS the upload
     URL (`onChange(result.url)` in the frontend), so URL outputs never read local worker files.
-    Apply `ensureAbsolute` only with configured `PUBLIC_API_URL`, and support both
+    Apply `ensureAbsolute` only with configured `site_url`, and support both
     `fileToUrlConfig.inputs[]` (frontend) and legacy `config.inputVariable/inputType` shapes.
     The legacy `path` → `base64` mode remains supported through the internal gateway, never a local path.
 - **Validation**: unit tests for internal router auth and endpoints, `document_processor` remote

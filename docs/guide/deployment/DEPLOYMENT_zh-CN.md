@@ -177,11 +177,11 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 
 根据提示选择单机 Docker Compose、Kubernetes Helm，或 Kubernetes 单文件 manifest（仅生成）。Docker 模式会交互式询问安装目录，默认为 `/opt/clouisle`，随后自动生成强随机密钥、下载当前 Compose 文件、拉取镜像并启动服务。Helm 模式会引导配置命名空间、Ingress、共享存储和可选的镜像拉取 Secret。单文件 manifest 模式默认在当前目录生成权限为 `0600` 的 `./clouisle-k8s.yaml`（可通过 `CLOUISLE_K8S_MANIFEST` 指定路径），不会自动应用；请先审阅文件，再运行 `kubectl apply -f ./clouisle-k8s.yaml`。
 
-如需非交互式安装 Docker Compose：
+Docker 安装脚本会在首次配置时询问站点公网地址。非交互式部署到公网时，请在首次启动前传入该地址：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/install.sh | \
-  CLOUISLE_DEPLOYMENT=docker CLOUISLE_YES=1 bash
+  CLOUISLE_DEPLOYMENT=docker CLOUISLE_FRONTEND_URL=https://app.example.com CLOUISLE_YES=1 bash
 ```
 
 ### 配置说明
@@ -202,8 +202,7 @@ Docker 安装会把生成的配置保存在 `<安装目录>/.env`（默认为 `/
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `API_BASE_URL` | `http://localhost:8000` | 服务端文件解析和沙箱产物链接使用的内部 API 地址；不要填写公网域名。 |
-| `PUBLIC_API_URL` | *(empty)* | 浏览器可见的公网 API origin，用于绝对 API/文件 URL。 |
-| `FRONTEND_URL` | `http://localhost:3000` | 前端公网 origin，用于 SSO 重定向 URI。生产环境请设置为实际域名。 |
+| `FRONTEND_URL` | `http://[REDACTED]:3000` | 初始化站点公网地址 `site_url`；生产环境请设置为实际域名。已有非空站点地址不会被覆盖，后续请在站点设置中修改。 |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 精确的允许 CORS origin 列表，不要使用 `*`。 |
 
 > **说明**：`POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 会在 `docker-compose.yml` 的 `environment` 中被覆盖为 Docker 服务名（`db`、`redis`、`qdrant`）。无需在 `.env` 里修改它们。
@@ -331,6 +330,8 @@ volumes:
 
 ### 自定义域名与 HTTPS
 
+浏览器统一请求当前域名下的 `/api/v1`，请在反向代理转发该路径。升级前请检查站点设置中的 `site_url` 是否是实际公网 origin；已有非空值不会被 `FRONTEND_URL` 覆盖。若 OAuth 或 SSO 此前使用独立 API 域名，请在服务提供方登记新的同域回调 URL。旧环境变量 `NEXT_PUBLIC_API_URL`、`PUBLIC_API_URL` 和 `API_V1_STR` 不再生效。
+
 在生产环境使用自定义域名时，建议在 frontend 容器前增加外部反向代理（如 Nginx、Caddy、Traefik）：
 
 **方案 A：Caddy（自动 HTTPS）**
@@ -377,12 +378,7 @@ server {
 启用 HTTPS 后，将浏览器可见的公网 origin 与服务间内部地址分开配置：
 
 ```bash
-# Compose/Kubernetes 内部服务地址
-API_BASE_URL=http://api:8000
-API_INTERNAL_BASE_URL=http://api:8000
-
 # 浏览器公网 origin 与 CORS
-PUBLIC_API_URL=https://example.com
 FRONTEND_URL=https://example.com
 BACKEND_CORS_ORIGINS='["https://example.com"]'
 ```
@@ -561,11 +557,10 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
 
-同时更新 ConfigMap（`API_BASE_URL` 保持内部地址，公网域名放入 `PUBLIC_API_URL`）：
+同时更新 ConfigMap（`API_BASE_URL` 保持内部地址，通过 `FRONTEND_URL` 初始化 `site_url`）：
 
 ```yaml
 data:
-  PUBLIC_API_URL: "https://your-domain.com"
   FRONTEND_URL: "https://your-domain.com"
   BACKEND_CORS_ORIGINS: "https://your-domain.com"
 ```
@@ -656,8 +651,7 @@ kubectl -n clouisle top pods
 |------|--------|------|
 | `REDIS_PASSWORD` | *(empty)* | Redis 密码。生产环境应设置。 |
 | `QDRANT_API_KEY` | *(empty)* | Qdrant API 密钥。生产环境应设置。 |
-| `PUBLIC_API_URL` | *(empty)* | 浏览器可见的公网 API origin；需要绝对文件/API URL 时设置。 |
-| `FRONTEND_URL` | `http://localhost:3000` | 前端公网 origin，用于 SSO 重定向 URI。 |
+| `FRONTEND_URL` | `http://localhost:3000` | 初始化 `site_url` 的公网 origin；后续请在站点设置中修改。 |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 精确的允许 CORS origin 列表，不要使用 `*`。 |
 
 `API_BASE_URL` 和 `API_INTERNAL_BASE_URL` 是服务间内部地址（Compose/K8s 中通常为 `http://api:8000`），不是公网域名。部署文件会覆盖 `POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 等容器内部连接地址。
@@ -666,7 +660,6 @@ kubectl -n clouisle top pods
 
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
-| `PROJECT_NAME` | `Clouisle` | 展示名称 |
 | `TIMEZONE` | `Asia/Shanghai` | 服务器时区（影响定时任务） |
 | `POSTGRES_SERVER` | `localhost` | PostgreSQL 主机。部署配置中会覆盖为 Compose 的 `db` 或 K8s 的 `postgres`。 |
 | `POSTGRES_PORT` | `5432` | PostgreSQL 端口 |
@@ -675,12 +668,10 @@ kubectl -n clouisle top pods
 | `DATABASE_URL` | *(auto-assembled)* | 完整 PostgreSQL DSN。若设置则覆盖 `POSTGRES_*` 变量。 |
 | `REDIS_HOST` | `localhost` | Redis 主机。部署配置中会覆盖为 `redis`。 |
 | `REDIS_PORT` | `6379` | Redis 端口 |
-| `VECTOR_BACKEND` | `qdrant` | 向量数据库后端 |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant 地址。部署配置中会覆盖为 `http://qdrant:6333`。 |
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection 前缀 |
 | `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
 | `TAVILY_API_KEY` | *(empty)* | 首次迁移时在缺少全局 Key 的情况下导入站点搜索配置；后续通过管理端维护 |
-| `SANDBOX_RUNTIME_ENABLED` | `true` | 将可执行任务路由到沙箱运行时。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `true`。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | Sandbox Worker 部署中为 `/usr/bin/bwrap` | Bubblewrap 可执行文件路径；通用应用默认值为 `bwrap`。 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery Worker 并发数。 |
@@ -702,7 +693,7 @@ Browser
   └── API requests (/api/*) ──► Next rewrites（frontend 容器）──► Backend Gunicorn (:8000)
 ```
 
-frontend 容器运行 Next.js standalone 服务（`node server.js`），监听 3000 端口。它负责 SSR，并通过 Next.js rewrites（`frontend/next.config.ts`，目标取自 `BACKEND_INTERNAL_URL`，代码默认 `http://localhost:8000`，Compose 中设为 `http://api:8000`）将 `/api/*` 请求代理到后端。
+frontend 容器运行 Next.js standalone 服务（`node server.js`），监听 3000 端口。SSR 和 `/api/*` 代理使用镜像构建时配置的同一个内部地址（`BACKEND_INTERNAL_URL`，默认 `http://api:8000`）。如需更改，请重建镜像，不要在容器运行时覆盖。
 
 ### Header 转发
 
@@ -839,7 +830,7 @@ kubectl -n clouisle rollout status deployment/frontend
 - [ ] **启用 HTTPS**：在外部反向代理或 K8s Ingress 做 TLS 终止
 - [ ] **限制暴露端口**：生产环境仅暴露 3000（或反向代理后的 443），移除 DB/Redis/Qdrant 的端口映射
 - [ ] **设置 CORS 来源**：`BACKEND_CORS_ORIGINS` 仅包含真实前端域名，不要使用 `*`
-- [ ] **按职责设置 URL 变量**：`API_BASE_URL` 保持内部地址（Compose/K8s 中例如 `http://api:8000`）；浏览器可见的 API/文件链接使用 `PUBLIC_API_URL`，SSO 重定向使用 `FRONTEND_URL`
+- [ ] **按职责设置 URL 变量**：`API_BASE_URL` 保持内部地址（Compose/K8s 中例如 `http://api:8000`）；浏览器可见的 API/文件链接使用 `site_url`和 SSO 重定向
 - [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
 - [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
 - [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
@@ -870,7 +861,7 @@ kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
 
 ### Frontend 访问 API 返回 502
 
-frontend 容器通过 Next.js rewrites（目标取自 `BACKEND_INTERNAL_URL`；代码默认 `http://localhost:8000`，Compose 中设为 `http://api:8000`）将 `/api/*` 代理到后端。502 说明 backend 不可达。
+frontend 容器将 `/api/*` 代理到镜像构建时指定的内部地址（默认 `http://api:8000`）。502 说明 backend 不可达。
 
 ```bash
 # Check if backend is running

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import pytest
 
 from app.core import security
 from app.core.config import settings
@@ -15,30 +16,16 @@ def test_password_hash_round_trip_and_bcrypt_byte_limit() -> None:
     assert not security.verify_password("wrong password", hashed)
 
 
-def test_access_token_uses_requested_and_default_expiration(monkeypatch) -> None:
+def test_access_token_requires_explicit_expiration(monkeypatch) -> None:
     issued_at = datetime(2099, 1, 2, 3, 4, tzinfo=timezone.utc)
     monkeypatch.setattr(security, "now_utc", lambda: issued_at)
 
-    requested = jwt.decode(
-        security.create_access_token(123, timedelta(minutes=5)),
-        settings.SECRET_KEY,
-        algorithms=[settings.ALGORITHM],
-    )
-    default = jwt.decode(
-        security.create_access_token("user-id"),
-        settings.SECRET_KEY,
-        algorithms=[settings.ALGORITHM],
-    )
+    token = security.create_access_token("user-id", expires_delta=timedelta(minutes=5))
 
-    assert requested == {
+    assert jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]) == {
         "exp": int((issued_at + timedelta(minutes=5)).timestamp()),
-        "sub": "123",
-    }
-    assert default == {
-        "exp": int(
-            (
-                issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-            ).timestamp()
-        ),
         "sub": "user-id",
     }
+
+    with pytest.raises(TypeError):
+        security.create_access_token("user-id")  # type: ignore[call-arg]

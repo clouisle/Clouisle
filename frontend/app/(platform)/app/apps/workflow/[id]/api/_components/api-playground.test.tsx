@@ -142,7 +142,7 @@ describe('ApiPlayground', () => {
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret-key' },
       body: JSON.stringify(generated),
     })
-    expect(eventSources[0].url).toBe('https://api.example.test/api/v1/workflows/runs/run-1/stream')
+    expect(eventSources[0].url).toBe('/api/v1/workflows/runs/run-1/stream')
     expect(text()).toContain('Run ID:  run-1')
     expect(output()).toContain('running')
     expect(output()).toContain('apiPlayground.workflowStarted')

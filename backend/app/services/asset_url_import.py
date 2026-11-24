@@ -26,6 +26,7 @@ from app.api.v1.endpoints.upload import save_generated_upload
 from app.core.config import settings
 from app.core.network_security import ensure_external_http_url_allowed
 from app.models.asset import Asset, AssetScopeType, AssetSource, AssetStatus
+from app.models.site_setting import SiteSetting
 from app.models.user import User
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.asset import asset_service
@@ -113,8 +114,8 @@ def resolve_document_scope(
         ) from exc
 
 
-def internal_storage_key(value: str) -> str | None:
-    """Return the storage key for a relative or same-origin protected file URL.
+async def internal_storage_key(value: str) -> str | None:
+    """Recognize protected file URLs on the internal API or public site.
 
     Other hosts that happen to share the path are ordinary external URLs; they
     must never be resolved against local persistence.
@@ -125,12 +126,28 @@ def internal_storage_key(value: str) -> str | None:
     path = unquote(parsed.path)
     if not path.startswith(INTERNAL_FILE_PREFIX):
         return None
-    if parsed.netloc:
-        base = urlparse(str(settings.API_BASE_URL))
-        if parsed.netloc.lower() != base.netloc.lower():
-            return None
     key = path[len(INTERNAL_FILE_PREFIX) :].lstrip("/")
-    return key or None
+    if not key:
+        return None
+    if not parsed.netloc:
+        return key
+
+    authority = parsed.netloc.lower()
+    internal = urlparse(settings.API_BASE_URL)
+    if authority == internal.netloc.lower():
+        return key
+
+    site_url = await SiteSetting.get_value("site_url", "")
+    try:
+        public = urlparse(site_url or "")
+    except ValueError:
+        return None
+    if parsed.scheme in {"http", "https"} and (parsed.scheme, authority) == (
+        public.scheme,
+        public.netloc.lower(),
+    ):
+        return key
+    return None
 
 
 def safe_display_filename(value: str | None, *, default: str) -> str:
@@ -334,7 +351,7 @@ async def load_url_document(
     if not isinstance(url, str) or not url:
         raise BusinessError(msg_key="validation_error")
 
-    storage_key = internal_storage_key(url)
+    storage_key = await internal_storage_key(url)
     if storage_key is not None:
         asset = await Asset.filter(
             storage_key=storage_key,

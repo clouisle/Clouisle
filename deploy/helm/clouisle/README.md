@@ -77,9 +77,10 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `images.backend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend` | API, workers, and beat image |
 | `images.sandboxWorker.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker` | Sandbox worker image |
 | `images.frontend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend` | Frontend image |
+| `config.FRONTEND_URL` | empty | Browser-visible origin (including scheme). Set before first startup for public Ingress; seeds `site_url`. |
 | `config.API_BASE_URL` | `http://api:8000` | Internal API URL |
-| `config.API_INTERNAL_BASE_URL` | `http://api:8000` | Worker-to-API internal upload gateway URL |
-| `config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | `http://api:8000` | Internal artifact upload API URL |
+| `config.API_INTERNAL_BASE_URL` | Inherits `config.API_BASE_URL` | Worker-to-API internal upload gateway URL |
+| `config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | Inherits `config.API_BASE_URL` | Internal artifact upload API URL |
 | `secrets.create` | `true` | Create a Secret from values |
 | `secrets.existingSecret` | empty | Existing Secret for production |
 | `secrets.values.INTERNAL_API_TOKEN` | required | Shared token for the internal upload gateway; set a unique value when chart-managed Secrets are enabled |

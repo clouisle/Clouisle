@@ -4,7 +4,9 @@
  */
 
 // API 基础地址
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+export const API_BASE_URL = '/api/v1'
+export const UPLOAD_API_PATH = `${API_BASE_URL}/upload`
+export const UPLOAD_FILES_PATH = `${UPLOAD_API_PATH}/files/`
 
 // 应用版本
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0-dev'

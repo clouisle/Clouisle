@@ -182,13 +182,15 @@ async def _parse_one(
     from app.services.citations import stable_citation_id
     from app.services.file_parser import file_parser_service
 
-    is_internal = internal_storage_key(url) is not None
-    if not is_internal and not url.startswith("data:"):
-        extension = get_extension_from_url(url)
-        if extension and extension not in SUPPORTED_EXTENSIONS:
-            return _error_entry(url, t("unsupported_file_type")), 0
-
     try:
+        if not url.startswith("data:"):
+            extension = get_extension_from_url(url)
+            if (
+                extension
+                and extension not in SUPPORTED_EXTENSIONS
+                and await internal_storage_key(url) is None
+            ):
+                return _error_entry(url, t("unsupported_file_type")), 0
         source = await load_url_document(
             url,
             scope_type=scope_type,

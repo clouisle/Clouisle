@@ -62,7 +62,6 @@ async def channel(monkeypatch):
     # Authorization status codes are the subject here; the token blacklist lives
     # in Redis, so stub it rather than requiring a Redis instance.
     monkeypatch.setattr(deps, "is_token_blacklisted", AsyncMock(return_value=False))
-    monkeypatch.setattr(sso, "_backend_url", lambda _: "https://api.example")
 
     async def setting(key, default=None):
         return {"sso_enabled": True, "site_url": "http://frontend"}.get(key, default)
@@ -125,7 +124,7 @@ async def test_binding_reuses_registered_callback_and_keeps_local_account(channe
     assert await UserSSOConnection.all().count() == 0
     assert (
         channel.provider.get_authorization_url.await_args.kwargs["redirect_uri"]
-        == "https://api.example/api/v1/sso/callback/feishu"
+        == "http://frontend/api/v1/sso/callback/feishu"
     )
     response = await channel.client.post(
         "/sso/links/complete", json={"session_id": state}

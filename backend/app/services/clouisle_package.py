@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.core.config import settings
 from app.core.timezone import now_utc
 from app.models.package_import import (
     ClouisleImportSession,
@@ -133,7 +132,7 @@ class ClouislePackageService:
 
         manifest = {
             "format_version": FORMAT_VERSION,
-            "app_version": settings.PROJECT_NAME and _app_version(),
+            "app_version": _app_version(),
             "package_id": str(uuid4()),
             "exported_at": now_utc().isoformat(),
             "resource_type": resource_type.value,

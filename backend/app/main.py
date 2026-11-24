@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.api import api_router
-from app.core.config import settings
+from app.core.config import API_V1_PREFIX, settings
 from app.api.v1.endpoints.internal_uploads import router as internal_uploads_router
 from app.core.init_data import init_db
 from app.core.i18n import (
@@ -68,8 +68,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize Tortoise connection with global fallback enabled
     await Tortoise.init(
-        db_url=settings.DATABASE_URL
-        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
+        db_url=settings.DATABASE_URL,
         modules={"models": ["app.models"]},
         _enable_global_fallback=True,  # Enable global state for compatibility
     )
@@ -524,10 +523,13 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
+# Fixed product title; branding is not operator-configurable.
+PRODUCT_TITLE = "Clouisle"
+
 # Update app to use custom lifespan
 app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    title=PRODUCT_TITLE,
+    openapi_url=f"{API_V1_PREFIX}/openapi.json",
     lifespan=lifespan,
 )
 
@@ -769,7 +771,7 @@ class LanguageMiddleware(BaseHTTPMiddleware):
 # Embed security headers middleware - allow iframe embedding for /api/v1/embed/ routes
 class EmbedHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        is_embed_path = request.url.path.startswith(f"{settings.API_V1_STR}/embed/")
+        is_embed_path = request.url.path.startswith(f"{API_V1_PREFIX}/embed/")
         if is_embed_path and request.method == "OPTIONS":
             return Response(
                 status_code=204,
@@ -810,7 +812,7 @@ app.add_middleware(LanguageMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(EmbedHeadersMiddleware)
 
-app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_router, prefix=API_V1_PREFIX)
 # Internal upload gateway for worker -> api file access. Mounted outside
 # /api so the Ingress does not expose it publicly; authentication is
 # enforced by the dependency on every request.
@@ -822,6 +824,6 @@ async def root():
     return success(msg_key="welcome_message")
 
 
-@app.get(f"{settings.API_V1_STR}/health")
+@app.get(f"{API_V1_PREFIX}/health")
 async def health():
     return success(data={"status": "healthy"})

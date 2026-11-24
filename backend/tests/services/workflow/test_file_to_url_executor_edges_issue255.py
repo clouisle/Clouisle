@@ -4,6 +4,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.workflow.executors.subworkflow import FileToURLNodeExecutor
+from app.models.site_setting import SiteSetting
+
+
+@pytest.fixture(autouse=True)
+def mock_public_site_url(monkeypatch):
+    lookup = AsyncMock(return_value="")
+    monkeypatch.setattr(SiteSetting, "get_value", lookup)
+    return lookup
 
 
 def node(**config):

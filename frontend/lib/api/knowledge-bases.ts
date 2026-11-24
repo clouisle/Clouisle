@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '@/lib/constants'
 import { api } from './client'
 
 export interface PageData<T> {
@@ -325,8 +326,7 @@ export interface ChunkPreviewResponse {
 function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-bases') {
   const getDocumentFile = async (kbId: string, docId: string): Promise<Blob> => {
     const token = localStorage.getItem('access_token')
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-    const url = `${baseUrl}${prefix}/${kbId}/documents/${docId}/download`
+    const url = `${API_BASE_URL}${prefix}/${kbId}/documents/${docId}/download`
 
     const response = await fetch(url, {
       method: 'GET',

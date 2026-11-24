@@ -183,19 +183,19 @@ describe('streaming agent API requests', () => {
     edit.abort()
     chat.abort()
 
-    expect(fetch).toHaveBeenNthCalledWith(1, 'http://localhost:8000/api/v1/agents/agent-1/messages/message-1/regenerate', {
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/agents/agent-1/messages/message-1/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ variables: { locale: 'en' } }),
       signal: expect.any(AbortSignal),
     })
-    expect(fetch).toHaveBeenNthCalledWith(2, 'http://localhost:8000/api/v1/agents/agent-1/messages/message-1/edit/stream', {
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/v1/agents/agent-1/messages/message-1/edit/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'Revised' }),
       signal: expect.any(AbortSignal),
     })
-    expect(fetch).toHaveBeenNthCalledWith(3, 'http://localhost:8000/api/v1/agents/agent-1/chat/stream', {
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/v1/agents/agent-1/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),
@@ -226,7 +226,7 @@ describe('streaming agent API requests', () => {
 
     expect(post).toHaveBeenCalledWith('/agents/agent-1/chat/runs', request)
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/agents/agent-1/chat/runs/run-1/stream?after_sequence=7',
+      '/api/v1/agents/agent-1/chat/runs/run-1/stream?after_sequence=7',
       {
         headers: { Accept: 'text/event-stream' },
         signal: expect.any(AbortSignal),

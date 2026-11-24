@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
@@ -45,7 +46,7 @@ export function TOTPSetupWizardForced({ tempToken, onComplete, onCancel }: TOTPS
       options.body = JSON.stringify(body)
     }
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}${endpoint}`, options)
+    const response = await fetch(endpoint, options)
 
     if (!response.ok) {
       const error = await response.json()
@@ -59,7 +60,7 @@ export function TOTPSetupWizardForced({ tempToken, onComplete, onCancel }: TOTPS
   const handleStartSetup = async () => {
     try {
       setLoading(true)
-      const data = await callApiWithTempToken<TOTPSetupResponse>('/api/v1/totp/setup', 'POST')
+      const data = await callApiWithTempToken<TOTPSetupResponse>(`${API_BASE_URL}/totp/setup`, 'POST')
       setSetupData(data)
       setStep(2)
     } catch {
@@ -77,7 +78,7 @@ export function TOTPSetupWizardForced({ tempToken, onComplete, onCancel }: TOTPS
 
     try {
       setLoading(true)
-      await callApiWithTempToken('/api/v1/totp/enable', 'POST', { code: verificationCode })
+      await callApiWithTempToken(`${API_BASE_URL}/totp/enable`, 'POST', { code: verificationCode })
       toast.success(t('twoFactorEnabledSuccess'))
       setStep(4)
     } catch {

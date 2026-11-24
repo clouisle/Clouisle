@@ -108,8 +108,8 @@ describe('API request behavior', () => {
     })
     axiosInstance.defaults.adapter = 'fetch'
 
-    expect(await api.post('/fetch-options', { enabled: true }, { headers: { 'X-Custom': 'yes' } })).toBe('saved')
-    expect(request?.url).toBe(`${API_BASE_URL}/fetch-options`)
+    expect(await api.post('/fetch-options', { enabled: true }, { baseURL: `https://app.example.test${API_BASE_URL}`, headers: { 'X-Custom': 'yes' } })).toBe('saved')
+    expect(request?.url).toBe(`https://app.example.test${API_BASE_URL}/fetch-options`)
     expect(request?.method).toBe('POST')
     expect(request?.headers.get('X-Custom')).toBe('yes')
     expect(await request?.json()).toEqual({ enabled: true })

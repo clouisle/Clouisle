@@ -54,11 +54,6 @@ mock.module('lucide-react', () => ({
   X: Icon,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...classes: unknown[]) => classes.filter(Boolean).join(' ') }))
-mock.module('@/lib/constants', () => ({
-  BYTES_PER_MB: 1024 * 1024,
-  GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES: 10 * 1024 * 1024,
-  GENERAL_UPLOAD_MAX_FILE_SIZE_MB: 10,
-}))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => Object.fromEntries(Object.entries(errors).filter(([key]) => key !== field)),
   getValidationSummaryEntries: (errors: Record<string, string>, fields: string[]) => fields.filter((field) => errors[field]).map((field) => [field, errors[field]]),

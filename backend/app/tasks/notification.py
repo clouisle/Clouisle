@@ -25,7 +25,6 @@ from app.models.notification import (
     NotificationDeliveryStatus,
 )
 from app.models.site_setting import SiteSetting
-from app.core.config import settings
 from app.models.integration import Integration
 from app.models.user import User, TeamMember, Team
 from app.services.integration_features import active_features
@@ -51,14 +50,17 @@ class NotificationContext:
     user: User | None = None
 
 
-def _get_absolute_notification_url(link_url: str | None) -> str | None:
-    """Resolve app-relative notification links against the configured public frontend URL."""
+async def _get_absolute_notification_url(link_url: str | None) -> str | None:
+    """Resolve app-relative links against the current site URL."""
     if not link_url:
         return None
     parsed = urlsplit(link_url)
     if parsed.scheme or parsed.netloc:
         return link_url
-    return urljoin(f"{settings.FRONTEND_URL.rstrip('/')}/", link_url.lstrip("/"))
+    site_url = await SiteSetting.get_value("site_url", "")
+    if not site_url:
+        raise ValueError("site_url is not configured")
+    return urljoin(f"{site_url.rstrip('/')}/", link_url.lstrip("/"))
 
 
 def _get_event_loop():
@@ -563,7 +565,9 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
                 NotificationMessage(
                     title=title,
                     content=content,
-                    link_url=_get_absolute_notification_url(ctx.notification.link_url),
+                    link_url=await _get_absolute_notification_url(
+                        ctx.notification.link_url
+                    ),
                     link_label=t("email_view_details", lang=locale),
                     recipient=feishu_user_id,
                 )

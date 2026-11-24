@@ -14,6 +14,13 @@ Environment variables configure:
 - **Sandbox runtime**: Sandbox worker configuration
 - **External APIs**: Tavily search key
 
+## Upgrading existing deployments
+
+- Remove `VECTOR_BACKEND`: Qdrant is the supported vector store, and its health check no longer depends on a selector.
+- Remove `SANDBOX_RUNTIME_ENABLED`: it did not control code execution. Its removal does not change sandbox routing or filesystem isolation.
+- Remove `PROJECT_NAME`: use the site's `site_name` setting to change the user-facing name.
+- Remove `ACCESS_TOKEN_EXPIRE_MINUTES`: use the `session_timeout_days` site setting to change the login session duration. Temporary TOTP tokens retain their separate lifetimes.
+
 ## Configuration System
 
 Clouisle's configuration is not env-only. Values are resolved from three layers:
@@ -22,7 +29,7 @@ Clouisle's configuration is not env-only. Values are resolved from three layers:
 2. **Database `SiteSetting` model** — runtime settings that admins manage through the admin UI and are stored in PostgreSQL (`backend/app/models/site_setting.py`). These include SMTP/email, registration, SSO, upload size limits, session timeout, default language, and more. They are **not** environment variables.
 3. **LLM provider models** — LLM API keys, base URLs, and model configurations are stored in database models (admin-managed per provider), **not** in environment variables.
 
-Deployment files (`deploy/docker-compose.yml`, Helm values, `deploy/k8s/clouisle.yaml`) set the container-relevant backend values explicitly (e.g. `POSTGRES_SERVER=db`, `API_BASE_URL=http://api:8000`), overriding `.env` defaults. `API_BASE_URL` and `API_INTERNAL_BASE_URL` stay on the private container network; use `PUBLIC_API_URL`, `FRONTEND_URL`, and `BACKEND_CORS_ORIGINS` for browser-facing origins.
+Deployment files (`deploy/docker-compose.yml`, Helm values, `deploy/k8s/clouisle.yaml`) set the container-relevant backend values explicitly (e.g. `POSTGRES_SERVER=db`, `API_BASE_URL=http://api:8000`), overriding `.env` defaults. `API_BASE_URL` and `API_INTERNAL_BASE_URL` stay on the private container network; use `FRONTEND_URL` (to seed `site_url`) and `BACKEND_CORS_ORIGINS` for browser-facing origins.
 
 ## Configuration File
 
@@ -40,7 +47,6 @@ ANOTHER_VARIABLE=another_value
 **Example .env file**:
 ```bash
 # Application
-PROJECT_NAME=Clouisle
 SECRET_KEY=changethis-to-a-secure-random-secret-key
 TIMEZONE=Asia/Shanghai
 
@@ -49,7 +55,6 @@ API_BASE_URL=http://api:8000
 API_INTERNAL_BASE_URL=http://api:8000
 
 # Public/browser origins
-PUBLIC_API_URL=
 FRONTEND_URL=http://localhost:3000
 BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
@@ -66,7 +71,6 @@ REDIS_PORT=6379
 REDIS_PASSWORD=secure_password
 
 # Qdrant
-VECTOR_BACKEND=qdrant
 QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=
 
@@ -80,35 +84,9 @@ UPLOAD_STORAGE_MODE=remote
 
 The variables in this section are read by the backend Pydantic `Settings` class (`backend/app/core/config.py`). They are distinct from the frontend build-time and runtime variables documented near the end of this page; `NEXT_PUBLIC_*`, `BACKEND_INTERNAL_URL`, and `DEV_ALLOWED_ORIGINS` are not backend `Settings` fields.
 
-### PROJECT_NAME
-
-**Description**: Display name of the application
-
-**Required**: No
-
-**Default**: `Clouisle`
-
-**Example**:
-```bash
-PROJECT_NAME=Clouisle
-```
-
-### API_V1_STR
-
-**Description**: URL path prefix under which the backend mounts all API routers (`app.include_router(api_router, prefix=settings.API_V1_STR)` in `backend/app/main.py`). It must match the frontend build arg `NEXT_PUBLIC_API_URL` (default `/api/v1` in `deploy/dockerfiles/frontend.Dockerfile`) and the ingress/proxy paths that forward `/api/v1` to the backend.
-
-**Required**: No
-
-**Default**: `/api/v1`
-
-**Example**:
-```bash
-API_V1_STR=/api/v1
-```
-
 ### API_BASE_URL
 
-**Description**: Internal API URL used by services (file access, sandbox artifact upload, internal calls). Put public domains in `PUBLIC_API_URL` / `FRONTEND_URL` / `BACKEND_CORS_ORIGINS`.
+**Description**: Internal API URL used by services (file access, sandbox artifact upload, internal calls). Put public domains in `FRONTEND_URL` (to seed `site_url`) / `BACKEND_CORS_ORIGINS`.
 
 **Required**: Yes in deployments
 
@@ -119,22 +97,9 @@ API_V1_STR=/api/v1
 API_BASE_URL=http://api:8000
 ```
 
-### PUBLIC_API_URL
-
-**Description**: Public API origin used when workflow file URLs must be absolute (browser-visible links)
-
-**Required**: No
-
-**Default**: *(empty)*
-
-**Example**:
-```bash
-PUBLIC_API_URL=https://example.com
-```
-
 ### FRONTEND_URL
 
-**Description**: Frontend URL, used for SSO redirect URIs
+**Description**: Public site origin used to initialize the stored `site_url`; edit the site setting after initialization
 
 **Required**: Yes in deployments
 
@@ -268,19 +233,6 @@ TOOL_SECRET_PRIMARY_KEY_ID=2026-10
 
 The command never prints plaintext or key material; failures are reported by row UUID/key id only.
 
-### ACCESS_TOKEN_EXPIRE_MINUTES
-
-**Description**: JWT access token lifetime in minutes — the config fallback used by `create_access_token` when no explicit expiry is passed. Actual session duration is controlled by the database `session_timeout_days` site setting (admin-configurable, default **30 days**), which login/SSO flows pass as an explicit expiry; this env only kicks in when no explicit expiry is provided.
-
-**Required**: No
-
-**Default**: `11520` (8 days) — JWT fallback only; effective session default is the `session_timeout_days` site setting (30 days)
-
-**Example**:
-```bash
-ACCESS_TOKEN_EXPIRE_MINUTES=11520
-```
-
 ## Database Configuration
 
 ### PostgreSQL
@@ -354,7 +306,7 @@ POSTGRES_PASSWORD=secure_password_here
 
 #### DATABASE_URL
 
-**Description**: Complete database connection URL. If set, overrides the individual `POSTGRES_*` variables.
+**Description**: Complete application database connection URL. A non-empty value takes precedence; otherwise the application derives it from `POSTGRES_*`. In Compose, the PostgreSQL container still uses its own `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to initialize the database.
 
 **Required**: No
 
@@ -409,19 +361,6 @@ REDIS_PASSWORD=secure_password_here
 The Celery broker and result backend are derived from `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` (`redis://.../0` broker, `redis://.../1` backend) in `backend/app/core/celery.py`. There are no separate `REDIS_URL`/`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` variables.
 
 ### Qdrant (Vector Database)
-
-#### VECTOR_BACKEND
-
-**Description**: Vector database backend
-
-**Required**: No
-
-**Default**: `qdrant`
-
-**Example**:
-```bash
-VECTOR_BACKEND=qdrant
-```
 
 #### QDRANT_URL
 
@@ -503,7 +442,7 @@ openssl rand -hex 32
 
 **Required**: No
 
-**Default**: *(empty; Compose sets it to `http://api:8000`)*
+**Default**: *(empty; inherits `API_BASE_URL`)*
 
 **Example**:
 ```bash
@@ -648,9 +587,9 @@ The dispatcher runs every three seconds while a platform WeChat feature is enabl
 
 ## External API Keys
 
-### TAVILY_API_KEY
+### TAVILY_API_KEY (legacy upgrades only)
 
-**Description**: Legacy Tavily bootstrap credential. On the first site-search migration it is imported only when no global Tavily credential exists; subsequent runtime searches do not read this variable. Rotate keys in the administrator's Web Search configuration instead. Existing Agent/team keys are never promoted to site scope.
+**Description**: Legacy Tavily bootstrap credential. On the first site-search migration it is imported only when no global Tavily credential exists; subsequent runtime searches do not read this variable. Rotate keys in the administrator's Web Search configuration instead. Existing Agent/team keys are never promoted to site scope. On Helm, supply this only when needed through `extraSecretEnv` or an existing Secret.
 
 **Required**: No
 
@@ -665,9 +604,10 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 
 ## Sandbox Runtime
 
+Most deployments only need to set worker concurrency. The remaining variables below are advanced overrides; leave them unset unless a deployment needs different limits or recovery behavior.
+
 | Variable | Generic Default | Deployment Default | Description |
 |---|---|---|---|
-| `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Route code, Bash, skill, and workflow execution through the sandbox runtime |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | `true` | Launch executable payloads in a Bubblewrap mount namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
@@ -713,7 +653,7 @@ When enabled, Bubblewrap must be installed and usable. The supplied sandbox work
 
 | Variable | Default | Description |
 |---|---|---|
-| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | *(empty)* | Internal API base URL used by sandbox workers to upload artifacts (Compose sets `http://api:8000`). Keep it internal, never `localhost` inside containers. |
+| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | *(empty)* | Optional internal API override for sandbox artifact uploads; inherits `API_BASE_URL`. Keep it internal, never `localhost` inside containers. |
 | `SANDBOX_ARTIFACT_UPLOAD_API_KEY` | *(empty)* | Optional API-key authentication for sandbox artifact uploads |
 | `SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB` | `10` | Maximum single artifact file size in MB |
 | `SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB` | `10` | Maximum total artifact size per job in MB |
@@ -722,19 +662,18 @@ When enabled, Bubblewrap must be installed and usable. The supplied sandbox work
 
 ## Frontend Build & Runtime Variables (Not Backend Settings)
 
-These variables configure the separate Next.js frontend image, not the backend Pydantic `Settings` class. The frontend image is built with `bun run build`; the first three values are baked in as build-time ARGs (see `deploy/dockerfiles/frontend.Dockerfile`):
+These variables configure the separate Next.js frontend image, not the backend Pydantic `Settings` class. The frontend image is built with `bun run build`. The following metadata is supplied as build arguments, not deployment `.env` settings (see `deploy/dockerfiles/frontend.Dockerfile`):
 
 | Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `/api/v1` | Browser-visible API base path used by the Next.js client |
 | `NEXT_PUBLIC_APP_VERSION` | `0.0.0-dev` | Version string shown in the UI |
 | `NEXT_PUBLIC_BUILD_DATE` | `unknown` | Build date string shown in the UI |
 
-Runtime environment variables for the frontend container:
+Frontend server settings:
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKEND_INTERNAL_URL` | `http://localhost:8000` | Backend URL the Next.js server uses for SSR and its `/api/*` rewrites (Compose sets `http://api:8000`) |
+| `BACKEND_INTERNAL_URL` | `http://localhost:8000` | For local development: internal backend address. For containers: Docker build argument (default `http://api:8000`) that supplies both SSR and `/api/*` rewrites. Do not override it at container startup. |
 | `DEV_ALLOWED_ORIGINS` | *(empty)* | Comma-separated extra origins allowed for dev-server LAN access (`allowedDevOrigins`); production builds ignore it |
 
 ## API Instance Observability

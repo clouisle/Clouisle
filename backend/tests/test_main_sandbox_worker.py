@@ -103,6 +103,30 @@ def test_start_sandbox_worker_container_reads_root_env(
     assert "SANDBOX_WORKER_ID=local-disk-a" in cmd
 
 
+def test_start_sandbox_worker_container_does_not_forward_removed_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
+    env_file = tmp_path / ".env"
+    env_file.write_text("VECTOR_BACKEND=other\nSANDBOX_RUNTIME_ENABLED=false\n")
+    monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("VECTOR_BACKEND", "other")
+    monkeypatch.setenv("SANDBOX_RUNTIME_ENABLED", "false")
+
+    with (
+        patch("main.build_sandbox_worker_image"),
+        patch("main.subprocess.run") as mock_run,
+    ):
+        start_sandbox_worker_container(image_tag="sandbox:test")
+
+    cmd = mock_run.call_args.args[0]
+    forwarded = [
+        arg
+        for arg in cmd
+        if arg.startswith(("VECTOR_BACKEND=", "SANDBOX_RUNTIME_ENABLED="))
+    ]
+    assert forwarded == []
+
+
 def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ):
@@ -146,6 +170,7 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     monkeypatch.delenv("POSTGRES_SERVER", raising=False)
     monkeypatch.delenv("API_BASE_URL", raising=False)
     monkeypatch.delenv("SANDBOX_ARTIFACT_UPLOAD_BASE_URL", raising=False)
+    monkeypatch.delenv("API_INTERNAL_BASE_URL", raising=False)
 
     with (
         patch("main.build_sandbox_worker_image"),
@@ -157,8 +182,11 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "REDIS_HOST=host.docker.internal" in cmd
     assert "POSTGRES_SERVER=host.docker.internal" in cmd
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
-    assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
-    assert "SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://host.docker.internal:8000" in cmd
+    assert "API_BASE_URL=http://host.docker.internal:8000" in cmd
+    assert not any(
+        arg.startswith(("API_INTERNAL_BASE_URL=", "SANDBOX_ARTIFACT_UPLOAD_BASE_URL="))
+        for arg in cmd
+    )
     # Rootless bwrap needs namespace/mount syscalls the default seccomp
     # profile blocks; local dev mirrors the deployed worker security options.
     assert cmd[cmd.index("seccomp=unconfined") - 1] == "--security-opt"

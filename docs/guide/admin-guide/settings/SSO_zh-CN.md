@@ -73,14 +73,14 @@
 
 ## 配置 GitHub 登录
 
-1. 确保外部可访问 Clouisle，配置正确的 `FRONTEND_URL`，并保留可用的管理员登录方式。
+1. 确保外部可访问 Clouisle，初始化前配置 `FRONTEND_URL`，或在站点设置中更新 `site_url`，并保留可用的管理员登录方式。
 2. 在 **站点设置 → 安全** 配置全局 SSO 策略：SSO 总开关、密码登录、自动创建用户、审批和邮箱匹配。原有 `sso_*` 键与认证行为保持不变。
 3. 在 GitHub 的 **Settings → Developer settings → OAuth Apps** 创建 OAuth 应用，将回调填写为 `https://your-domain.com/api/v1/sso/callback/github`。
 4. 创建名称为 `github` 的 `oauth2` 登录集成，启用 `user_login`，填写显示名称、按钮文本、图标及该集成自己的 `login_config`（注册、审批、默认角色）。
 5. 非敏感配置填写 client ID、授权 URL、token URL、userinfo URL 和 `read:user user:email` scopes。独立的 `attribute_mapping` 字段使用 `{"email":"email","username":"login","avatar_url":"avatar_url"}`。
 6. 在凭据字段填写 client secret（API 为 `credentials.client_secret`），不要放入 `config`。保存并测试配置后，用独立浏览器会话完成实际登录；配置测试不代表完整登录已通过。
 
-**原有登录与回调地址不变：** `/api/v1/sso/login/{name}`、`/api/v1/sso/callback/{name}`；前端结果页仍为 `/sso-callback`。回调使用外部可达的后端域名；若前端代理 `/api/*`，则使用前端公开域名。`API_BASE_URL` 是内部服务地址，不决定回调域名。集成名称是已登记的 URL 标识，请保持稳定。
+**原有登录与回调地址不变：** `/api/v1/sso/login/{name}`、`/api/v1/sso/callback/{name}`；前端结果页仍为 `/sso-callback`。回调使用站点设置中的公网域名，该域名必须转发 `/api/v1`。`API_BASE_URL` 是内部服务地址，不决定回调域名。集成名称是已登记的 URL 标识，请保持稳定。
 
 OAuth2/OIDC、SAML2 和 CAS 保留原协议配置。SAML ACS 地址仍使用上述 callback 地址。属性映射支持 `profile.name` 等点路径和 `$.emails[0].value` 等 JSONPath，多个匹配时取第一个值。
 

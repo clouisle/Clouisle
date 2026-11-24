@@ -76,7 +76,7 @@ Personal WeChat settings place authorization and refresh in the header, with com
 
 ## Configure GitHub login
 
-1. Deploy Clouisle with an externally reachable backend/proxy URL and a correct `FRONTEND_URL`. Keep a working administrator login available.
+1. Deploy Clouisle with a public site URL that proxies `/api/v1` to the backend. Set `FRONTEND_URL` before initialization or update `site_url` in site settings. Keep a working administrator login available.
 2. In **Site Settings → Security**, configure the global SSO settings: enable SSO, allow password login, automatic account creation, approval, and email matching as appropriate. Their existing `sso_*` setting keys and authentication behavior are unchanged.
 3. Register a GitHub OAuth App under **GitHub Settings → Developer settings → OAuth Apps**. Use `https://your-domain.com/api/v1/sso/callback/github` as its authorization callback URL.
 4. Add a login integration named `github`, with provider type `oauth2`, display name `GitHub`, the `user_login` capability, and the desired button text/icon. Set its enabled state and its own `login_config` (signup, approval, default role).
@@ -96,7 +96,7 @@ Set the integration's separate `attribute_mapping` field to `{"email":"email","u
 
 6. Supply the client secret through the credential field (`credentials.client_secret` in the API), not `config`. Save, test, and complete a real login in a separate browser session; the configuration test is not a full login.
 
-**Existing callback URLs remain unchanged:** `/api/v1/sso/login/{name}` and `/api/v1/sso/callback/{name}`. The frontend receives the result at `/sso-callback`. Use the externally reachable backend origin, or frontend origin when it proxies `/api/*`; `API_BASE_URL` is internal and does not select that origin. Keep the integration name stable because it is the registered URL slug.
+**Existing callback URLs remain unchanged:** `/api/v1/sso/login/{name}` and `/api/v1/sso/callback/{name}`. The frontend receives the result at `/sso-callback`. Use the configured public site origin, which must proxy `/api/v1`; `API_BASE_URL` is internal and does not select that origin. Keep the integration name stable because it is the registered URL slug.
 
 ## Configure Feishu sign-in
 

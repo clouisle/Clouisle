@@ -8,6 +8,8 @@ against real Tortoise models.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import base64
 import json
 from contextlib import asynccontextmanager
@@ -19,9 +21,9 @@ import httpx
 import pytest
 from tortoise import Tortoise
 
-from app.core.config import settings
 from app.core.timezone import now_utc
 from app.core.tool_secrets import decrypt_tool_secret, encrypt_tool_secret
+from app.models.site_setting import SiteSetting
 from app.models.tool import CustomToolType, Tool, ToolType, ToolVisibility
 from app.models.tool_connection import (
     ToolConnection,
@@ -168,7 +170,9 @@ def _allow_ssrf(monkeypatch):
         return url
 
     monkeypatch.setattr(oauth, "ensure_external_http_url_allowed", allow)
-    monkeypatch.setattr(settings, "PUBLIC_API_URL", "https://api.example.test")
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="https://api.example.test")
+    )
 
 
 def _frontend(monkeypatch, value="https://app.example.test"):

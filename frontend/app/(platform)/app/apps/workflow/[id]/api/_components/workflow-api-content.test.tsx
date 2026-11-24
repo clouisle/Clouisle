@@ -8,7 +8,7 @@ const open = mock(() => {})
 
 Object.assign(globalThis, {
   navigator: { clipboard: { writeText } },
-  window: { open },
+  window: { open, location: { origin: 'https://app.example.test' } },
 })
 
 mock.module('next-intl', () => ({
@@ -76,6 +76,15 @@ afterEach(() => {
 })
 
 describe('WorkflowApiContent', () => {
+  test('uses the current origin instead of the configured API URL', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://backend.example.test/api/v1'
+    const rendered = output(render({ webhook_token: 'hook-token', variables: [] }))
+    expect(rendered).toContain('https://app.example.test/api/v1/workflows/webhook/hook-token')
+    expect(rendered).toContain('https://app.example.test/api/v1/workflows')
+    expect(rendered).not.toContain('https://backend.example.test')
+    expect(rendered).not.toContain('/api/v1/api/v1')
+  })
+
   test('shows only the webhook configuration error when no token exists', () => {
     const renderer = render({ webhook_token: null, variables: [] })
     const rendered = output(renderer)
@@ -96,7 +105,7 @@ describe('WorkflowApiContent', () => {
     })
     const rendered = output(renderer)
 
-    expect(rendered).toContain('https://api.example.test/api/v1/workflows/webhook/hook-token')
+    expect(rendered).toContain('https://app.example.test/api/v1/workflows/webhook/hook-token')
     expect(rendered).toContain('Question')
     expect(rendered).toContain('required')
     const jsonExamples = renderer.root.findAllByProps({ className: 'language-json' })

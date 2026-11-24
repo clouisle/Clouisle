@@ -97,6 +97,11 @@ async def test_login_persists_oidc_state_and_pkce_values(
     )
     monkeypatch.setattr(sso_endpoints.SSOSession, "create", create_session)
 
+    monkeypatch.setattr(
+        sso_endpoints.SiteSetting,
+        "get_value",
+        AsyncMock(return_value="https://app.example"),
+    )
     response = await sso_endpoints.sso_login("oidc", make_request(), redirect="/work")
 
     assert response.headers["location"] == "https://idp.example/authorize"

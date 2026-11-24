@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { Send, Loader2, AlertCircle, CheckCircle, XCircle, Clock, ExternalLink, ArrowRight, SkipForward } from 'lucide-react'
@@ -240,9 +241,8 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
         timestamp: Date.now()
       }])
 
-      // Connect to SSE stream - use direct backend URL for SSE
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-      const streamUrl = `${apiBaseUrl.replace('/api/v1', '')}/api/v1/workflows/runs/${workflowRunId}/stream`
+      // Use the same-origin API proxy for SSE.
+      const streamUrl = `${API_BASE_URL}/workflows/runs/${workflowRunId}/stream`
       const eventSource = new EventSource(streamUrl)
 
       // Flag to track if workflow completed normally

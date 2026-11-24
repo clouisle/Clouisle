@@ -1,5 +1,6 @@
 'use client'
 
+import { API_BASE_URL } from '@/lib/constants'
 import * as React from 'react'
 import type { IframeHTMLAttributes } from 'react'
 import dynamic from 'next/dynamic'
@@ -244,7 +245,7 @@ async function fetchPreviewResponse(url: string): Promise<Response> {
 function isProtectedRawUrl(url: string | undefined): boolean {
   if (!url) return false
   try {
-    return new URL(url, window.location.href).pathname.startsWith('/api/v1/')
+    return new URL(url, window.location.href).pathname.startsWith(`${API_BASE_URL}/`)
   } catch {
     return false
   }

@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -330,6 +330,42 @@ async def test_init_default_settings_creates_only_missing_settings(monkeypatch):
         description="Missing",
         is_public=True,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing_value", [None, "", "https://saved.example"])
+async def test_init_site_url_from_environment_without_overwriting(
+    monkeypatch, existing_value
+):
+    from types import SimpleNamespace
+
+    from app.core.config import settings
+
+    config = site_setting.DEFAULT_SETTINGS["site_url"]
+    monkeypatch.setattr(site_setting, "DEFAULT_SETTINGS", {"site_url": config})
+    monkeypatch.setattr(settings, "FRONTEND_URL", "https://initial.example/")
+    existing = None if existing_value is None else SimpleNamespace(value=existing_value)
+    query = SimpleNamespace(first=AsyncMock(return_value=existing), update=AsyncMock())
+    filter_settings = Mock(return_value=query)
+    create = AsyncMock(
+        return_value=(SimpleNamespace(value="https://initial.example"), True)
+    )
+    monkeypatch.setattr(SiteSetting, "filter", filter_settings)
+    monkeypatch.setattr(SiteSetting, "get_or_create", create)
+
+    await site_setting.init_default_settings()
+
+    if existing is None:
+        assert (
+            create.await_args.kwargs["defaults"]["value"] == "https://initial.example"
+        )
+    else:
+        create.assert_not_awaited()
+    if existing_value == "":
+        filter_settings.assert_called_with(key="site_url", value="")
+        query.update.assert_awaited_once_with(value="https://initial.example")
+    else:
+        query.update.assert_not_awaited()
 
 
 def test_model_endpoint_allowlist_default_uses_localized_description():

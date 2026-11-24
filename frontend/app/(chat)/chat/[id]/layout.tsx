@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getServerApiBaseUrl, getServerBackendOrigin } from '@/lib/api/server-url'
+import { getServerApiBaseUrl, getPublicSiteOrigin } from '@/lib/api/server-url'
 
 interface PublicAgentInfo {
   id: string
@@ -46,24 +46,20 @@ export async function generateMetadata({
   }
   
   // The favicon <link> is requested by the browser from the frontend origin,
-  // so relative paths (e.g. /api/v1/upload/files/...) must stay relative and
+  // so relative upload paths must stay relative and
   // go through the Next.js API proxy (with auth cookies). openGraph images
-  // need an absolute backend URL because external crawlers cannot resolve
+  // need an absolute public site URL because external crawlers cannot resolve
   // relative paths.
   let iconUrl: string | undefined
-  let ogImageUrl: string | undefined
   if (agent.avatar_url) {
     iconUrl = agent.avatar_url
-    ogImageUrl = agent.avatar_url.startsWith('http')
-      ? agent.avatar_url
-      : `${getServerBackendOrigin()}${agent.avatar_url}`
   } else if (agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))) {
     iconUrl = agent.icon
-    ogImageUrl = agent.icon.startsWith('http')
-      ? agent.icon
-      : `${getServerBackendOrigin()}${agent.icon}`
   }
   
+  const siteOrigin = iconUrl?.startsWith('/') ? await getPublicSiteOrigin() : undefined
+  const ogImageUrl = iconUrl?.startsWith('http') ? iconUrl : siteOrigin && `${siteOrigin}${iconUrl}`
+
   return {
     title: agent.name,
     description: agent.description || `Chat with ${agent.name}`,

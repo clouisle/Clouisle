@@ -1,3 +1,4 @@
+import { UPLOAD_API_PATH, UPLOAD_FILES_PATH } from '@/lib/constants'
 import { api, axiosInstance } from './client'
 
 export interface UploadResult {
@@ -168,18 +169,16 @@ export const uploadApi = {
    * 删除文件
    */
   deleteFile: async (url: string): Promise<void> => {
-    // 从 URL 中提取路径部分
-    // 完整 URL 格式: http://localhost:8000/api/v1/upload/files/{category}/{year}/{month}/{filename}
-    // 或相对路径: /api/v1/upload/files/{category}/{year}/{month}/{filename}
+    // 兼容完整 URL 和相对上传路径。
     let path = url
     
     // 处理完整 URL
-    if (path.includes('/api/v1/upload/files/')) {
-      path = path.substring(path.indexOf('/api/v1/upload/files/'))
+    if (path.includes(UPLOAD_FILES_PATH)) {
+      path = path.substring(path.indexOf(UPLOAD_FILES_PATH))
     }
     
     // 移除前缀得到 files/{category}/{year}/{month}/{filename}
-    path = path.replace('/api/v1/upload/', '')
+    path = path.replace(`${UPLOAD_API_PATH}/`, '')
     await api.delete<null>(`/upload/${path}`)
   },
 
@@ -191,9 +190,6 @@ export const uploadApi = {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path
     }
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-    // 移除 /api/v1 后缀，因为路径已包含
-    const apiBase = baseUrl.replace('/api/v1', '')
-    return `${apiBase}${path}`
+    return typeof window === 'undefined' ? path : new URL(path, window.location.origin).href
   },
 }

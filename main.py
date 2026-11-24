@@ -36,13 +36,11 @@ SANDBOX_WORKER_ENV_KEYS = (
     "REDIS_HOST",
     "REDIS_PORT",
     "REDIS_PASSWORD",
-    "VECTOR_BACKEND",
     "QDRANT_URL",
     "QDRANT_API_KEY",
     "QDRANT_COLLECTION_PREFIX",
     "QDRANT_DISTANCE",
     "SECRET_KEY",
-    "SANDBOX_RUNTIME_ENABLED",
     "INTERNAL_API_TOKEN",
     "SANDBOX_WORKSPACE_ROOT",
     "SANDBOX_WORKER_ID",
@@ -261,24 +259,12 @@ def _sandbox_worker_container_env() -> dict[str, str]:
     else:
         env["QDRANT_URL"] = _map_local_url_to_host_gateway(qdrant_url)
 
-    api_base_url = env.get("API_BASE_URL")
-    if api_base_url:
-        env["API_BASE_URL"] = _map_local_url_to_host_gateway(api_base_url)
-
-    api_internal_base_url = (
-        env.get("API_INTERNAL_BASE_URL")
-        or api_base_url
-        or "http://host.docker.internal:8000"
+    env["API_BASE_URL"] = _map_local_url_to_host_gateway(
+        env.get("API_BASE_URL") or "http://host.docker.internal:8000"
     )
-    env["API_INTERNAL_BASE_URL"] = _map_local_url_to_host_gateway(api_internal_base_url)
-
-    artifact_upload_base_url = env.get("SANDBOX_ARTIFACT_UPLOAD_BASE_URL")
-    if artifact_upload_base_url:
-        env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = _map_local_url_to_host_gateway(
-            artifact_upload_base_url
-        )
-    else:
-        env["SANDBOX_ARTIFACT_UPLOAD_BASE_URL"] = env["API_INTERNAL_BASE_URL"]
+    for key in ("API_INTERNAL_BASE_URL", "SANDBOX_ARTIFACT_UPLOAD_BASE_URL"):
+        if env.get(key):
+            env[key] = _map_local_url_to_host_gateway(env[key])
 
     env["UPLOAD_STORAGE_MODE"] = "remote"
     return env

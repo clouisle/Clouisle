@@ -498,7 +498,6 @@
       "runLifecycleDescription": "Agent chat runs are durable. These run-scoped events carry an envelope with run_id, sequence, timestamp, round_id, message_id and type so reconnects resume via after_sequence without duplicates:",
       "answerTitle": "Submit Answers",
       "answerDescription": "When a run is waiting for ask_user answers, submit structured answers to resume it:",
-      "answerEndpoint": "POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers",
       "answerBody": "Request body:",
       "answerFields": {
         "toolCallId": "Pending tool-call ID from the run_status waiting event",

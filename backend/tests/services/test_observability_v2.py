@@ -1256,16 +1256,12 @@ async def test_celery_dependency_probe_marks_missing_workers_unhealthy(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_qdrant_dependency_probe_reports_connection_and_unconfigured_backend(
-    monkeypatch,
-):
-    from app.core.config import settings
+async def test_qdrant_dependency_probe_reports_connection(monkeypatch):
     from app.services import memory
 
     client = SimpleNamespace(
         get_collections=AsyncMock(return_value={"collections": []})
     )
-    monkeypatch.setattr(settings, "VECTOR_BACKEND", "qdrant")
     monkeypatch.setattr(memory, "_get_qdrant_client", AsyncMock(return_value=client))
 
     healthy = await observability_v2._qdrant_dependency_probe()
@@ -1274,21 +1270,14 @@ async def test_qdrant_dependency_probe_reports_connection_and_unconfigured_backe
     assert isinstance(healthy["latency_ms"], int)
     client.get_collections.assert_awaited_once()
 
-    monkeypatch.setattr(settings, "VECTOR_BACKEND", "other")
-    unconfigured = await observability_v2._qdrant_dependency_probe()
-    assert unconfigured["status"] == "unknown"
-    assert unconfigured["detail"] == "Qdrant is not the configured vector backend"
-
 
 @pytest.mark.asyncio
 async def test_qdrant_dependency_probe_reports_failed_connection(monkeypatch):
-    from app.core.config import settings
     from app.services import memory
 
     client = SimpleNamespace(
         get_collections=AsyncMock(side_effect=RuntimeError("offline"))
     )
-    monkeypatch.setattr(settings, "VECTOR_BACKEND", "qdrant")
     monkeypatch.setattr(memory, "_get_qdrant_client", AsyncMock(return_value=client))
 
     result = await observability_v2._qdrant_dependency_probe()
