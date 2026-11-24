@@ -51,7 +51,7 @@ Navigate to **Capabilities > Skills** from the workspace navigation:
 
 ## 4. How Skills reach the sandbox
 
-When a chat or Agent run starts, [REDACTED] creates a sandbox session and pushes each enabled Skill package into that session's workspace through the sandbox job API as the first sandbox round begins. The worker node receives the package bytes in the job payload; it never reads shared or distributed storage. Files land under `/workspace/skills/<name>/`:
+When a chat or Agent run starts, [REDACTED] creates a sandbox session and pushes each enabled Skill package into that session's workspace through the sandbox job API as the first sandbox round begins. The worker node receives the package bytes in the job payload; it never reads shared or distributed storage. Files land under `/workspace/skills/<name>-<id>/`, where the id suffix keeps two Skills that share a name (a system Skill and a team Skill, for example) in separate directories:
 
 - The first Skill call returns the `SKILL.md` body, the file inventory, and the Skill root path.
 - The Agent then reads `references/`, runs `scripts/`, and writes results to `/workspace/output`, where the `artifact` tool generates download links.

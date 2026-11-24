@@ -116,7 +116,9 @@ async def test_execute_skill_returns_instructions_without_staging():
     assert result.result["instructions"] == "Use this Skill to echo text."
     assert result.result["arguments"] == {"text": "hello"}
     assert result.result["config"] == {"mode": "safe", "tone": "plain"}
-    assert result.result["skill_root"] == "/workspace/skills/echo-skill"
+    assert result.result["skill_root"] == (
+        f"/workspace/skills/echo-skill-{str(skill.id).replace('-', '')}"
+    )
     assert result.result["file_count"] == 2
     assert result.result["files_staged"] is False
     assert result.result["files"] == [
@@ -193,17 +195,18 @@ async def test_execute_skill_propagates_sync_failure():
 
 def test_instruction_display_result_hides_full_instructions():
     skill = make_skill()
+    skill_root = f"/workspace/skills/echo-skill-{str(skill.id).replace('-', '')}"
     result = SkillExecutor.build_instruction_result(
         skill=skill,
         arguments={"text": "hello"},
         config={},
-        skill_root="/workspace/skills/echo-skill",
+        skill_root=skill_root,
     )
 
     display = result.to_dict()
     display_json = json.dumps(display, ensure_ascii=False)
     assert display["result"]["type"] == "skill_instructions"
-    assert display["result"]["skill_root"] == "/workspace/skills/echo-skill"
+    assert display["result"]["skill_root"] == skill_root
     assert display["result"]["file_count"] == 2
     assert "Use this Skill to echo text." not in display_json
 

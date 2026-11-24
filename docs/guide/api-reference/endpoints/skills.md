@@ -487,7 +487,7 @@ Authorization: Bearer <token>
 
 ## Test Skill
 
-Stages the Skill package into a throwaway sandbox session and returns what the Agent receives: the `SKILL.md` instructions, the bundled file inventory under `/workspace/skills/<name>/`, and `allowed-tools`. No script is executed on the caller's behalf, so `stdout`, `stderr` and `artifacts` are always empty and `duration_ms` is always `null`. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
+Stages the Skill package into a throwaway sandbox session and returns what the Agent receives: the `SKILL.md` instructions, the bundled file inventory under `/workspace/skills/<name>-<id>/`, and `allowed-tools`. No script is executed on the caller's behalf, so `stdout`, `stderr` and `artifacts` are always empty and `duration_ms` is always `null`. Test execution requires the same privileges as updating the skill: superuser for system skills, team admin for team skills.
 
 ```http
 POST /api/v1/skills/a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d/test HTTP/1.1
@@ -528,7 +528,7 @@ Content-Type: application/json
       "instructions": "# PDF Tools\n\nRun `scripts/extract.py <file>` ...",
       "arguments": {"dataset": "sales.csv"},
       "config": {"max_rows": 100},
-      "skill_root": "/workspace/skills/pdf-tools",
+      "skill_root": "/workspace/skills/pdf-tools-a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d",
       "files": [{"path": "SKILL.md", "size": 412}],
       "file_count": 3,
       "files_staged": true,

@@ -335,6 +335,18 @@ async def test_list_available_skills_defaults_include_system_without_filters():
         ({"allowed-tools": "  "}, "allowed-tools: Write, Read", ["Write", "Read"]),
         ({"allowed-tools": ["", "  "]}, "allowed-tools: Bash", ["Bash"]),
         ({"allowed-tools": []}, "", None),
+        # A parameterised entry keeps its own spaces and wildcard in one token;
+        # splitting inside the parentheses would yield a bare "*".
+        (
+            {"allowed-tools": "Bash(npx * --yes) Read"},
+            "",
+            ["Bash(npx * --yes)", "Read"],
+        ),
+        (
+            {"allowed-tools": ""},
+            "allowed-tools: Bash(npx * --yes), Read",
+            ["Bash(npx * --yes)", "Read"],
+        ),
     ],
 )
 def test_allowed_tools_frontmatter_and_markdown_fallback(
@@ -371,3 +383,14 @@ def test_output_and_allowed_tools_cover_optional_values_and_patterns():
     assert SkillService.is_tool_allowed("Bash", ["Bash(command *)"]) is True
     assert SkillService.is_tool_allowed("ReadFile", ["Read*"]) is True
     assert SkillService.is_tool_allowed("Write", ["Read*", "Bash"]) is False
+
+
+def test_parameterised_allowed_tool_does_not_grant_every_tool():
+    """A wildcard inside parentheses is scoped to that tool's arguments."""
+    parsed = SkillService.parse_allowed_tools(
+        skill(frontmatter={"allowed-tools": "Bash(npx * --yes) Read"})
+    )
+
+    assert parsed is not None
+    assert SkillService.is_tool_allowed("Write", parsed) is False
+    assert SkillService.is_tool_allowed("Bash", parsed) is True

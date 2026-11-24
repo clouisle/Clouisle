@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Skills follow the open Agent Skills specification: packages import `name`, `description`, and optional `license`, `compatibility`, `metadata`, and `allowed-tools` (space-separated); imported names must be lowercase single-hyphen and at most 64 characters. The Clouisle-only `x-clouisle.execution` block is ignored and reported as an import warning, and the code path that parsed it is gone.
-- Skill activation returns the `SKILL.md` instructions plus the bundled file inventory under `/workspace/skills/<name>/`, so the Agent runs scripts with its own sandbox tools instead of a second built-in execution mode.
+- Skill activation returns the `SKILL.md` instructions plus the bundled file inventory under `/workspace/skills/<name>-<id>/`, so the Agent runs scripts with its own sandbox tools instead of a second built-in execution mode.
 
 ### Added
 

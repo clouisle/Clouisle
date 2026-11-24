@@ -155,8 +155,12 @@ class SkillPackageService:
         if not parsed.name:
             parsed.errors.append("skill_name_required")
         else:
+            # A package whose SKILL.md sits at the import root is staged under
+            # the importer's transport directory (``source``/``repo``), so that
+            # name says nothing about the package.
+            directory_name = "" if skill_root == source_root else skill_root.name
             name_errors, name_warnings = SkillPackageService._validate_name(
-                parsed.name, directory_name=skill_root.name
+                parsed.name, directory_name=directory_name
             )
             parsed.errors.extend(name_errors)
             parsed.warnings.extend(name_warnings)

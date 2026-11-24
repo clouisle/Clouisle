@@ -197,7 +197,7 @@ class Settings(BaseSettings):
     SKILL_SYNC_MAX_TOTAL_BYTES: int = Field(
         default=72 * 1024 * 1024, gt=0, le=256 * 1024 * 1024
     )
-    SKILL_SYNC_TIMEOUT_SECONDS: float = Field(default=120.0, gt=0, le=600)
+    SKILL_SYNC_TIMEOUT_SECONDS: float = Field(default=120.0, ge=1.0, le=600)
 
     # IM attachment reclamation: uploads that never became a message.
     IM_ORPHAN_ASSET_TTL_HOURS: int = Field(default=24, gt=0)

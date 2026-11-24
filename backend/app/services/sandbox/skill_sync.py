@@ -42,8 +42,14 @@ class SkillWorkspaceSync:
 
     @staticmethod
     def skill_dirname(skill: Skill) -> str:
-        safe_name = _SAFE_DIR_PATTERN.sub("_", skill.name).strip("._-")
-        return safe_name or str(skill.id)
+        """Workspace directory name, unique per Skill row.
+
+        Names are only unique per team, so a system Skill and a team Skill can
+        share one; the id suffix keeps each package in its own directory
+        instead of letting one staging run delete the other's files.
+        """
+        safe_name = _SAFE_DIR_PATTERN.sub("_", skill.name).strip("._-") or "skill"
+        return f"{safe_name}-{str(skill.id).replace('-', '')}"
 
     @classmethod
     def skill_root(cls, skill: Skill) -> str:

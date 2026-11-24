@@ -98,6 +98,25 @@ Run it.
     assert parsed.errors == expected_errors
 
 
+def test_parse_skill_ignores_transport_directory_for_root_packages(tmp_path: Path):
+    """A root-level package is staged under the importer's ``source`` dir."""
+    source_root = tmp_path / "source"
+    skill_root = write_skill(
+        source_root,
+        """---
+name: pdf-tools
+description: Extract text from PDFs.
+---
+Run it.
+""",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(source_root, skill_root)
+
+    assert parsed.valid is True
+    assert "skill_name_directory_mismatch" not in parsed.warnings
+
+
 def test_parse_skill_reports_directory_name_mismatch(tmp_path: Path):
     skill_root = write_skill(
         tmp_path / "some-folder",

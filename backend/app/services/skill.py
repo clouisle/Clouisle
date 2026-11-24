@@ -314,6 +314,31 @@ class SkillService:
         )
 
     @staticmethod
+    def _split_tool_patterns(value: str) -> list[str]:
+        """Split ``allowed-tools`` on spaces/commas outside parentheses.
+
+        Entries such as ``Bash(npx * --yes)`` carry their own spaces and a
+        wildcard; splitting inside the parentheses would produce a bare ``*``,
+        which ``is_tool_allowed`` treats as "every tool".
+        """
+        tokens: list[str] = []
+        current: list[str] = []
+        depth = 0
+        for char in value:
+            if char == "(":
+                depth += 1
+            elif char == ")" and depth:
+                depth -= 1
+            if depth or char not in " \t,":
+                current.append(char)
+            elif current:
+                tokens.append("".join(current))
+                current = []
+        if current:
+            tokens.append("".join(current))
+        return [token for token in (item.strip() for item in tokens) if token]
+
+    @staticmethod
     def parse_allowed_tools(skill: Skill) -> list[str] | None:
         """Parse ``allowed-tools`` from an Agent Skill frontmatter.
 
@@ -324,7 +349,7 @@ class SkillService:
         frontmatter = skill.frontmatter or {}
         allowed = frontmatter.get("allowed-tools")
         if isinstance(allowed, str):
-            tokens = allowed.replace(",", " ").split()
+            tokens = SkillService._split_tool_patterns(allowed)
             if tokens:
                 return tokens
         elif isinstance(allowed, list):
@@ -349,7 +374,7 @@ class SkillService:
             r"^allowed-tools:[ \t]*(?![ \t]*$)(.+)$", skill_md, re.MULTILINE
         )
         if match:
-            tokens = match.group(1).replace(",", " ").split()
+            tokens = SkillService._split_tool_patterns(match.group(1))
             if tokens:
                 return tokens
 

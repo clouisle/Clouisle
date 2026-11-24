@@ -11,7 +11,7 @@ import base64
 import json
 from types import SimpleNamespace
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from unittest.mock import AsyncMock
@@ -68,14 +68,29 @@ def make_skill(**overrides: Any) -> Skill:
 def test_skill_root_uses_workspace_skills_directory():
     skill = make_skill()
 
-    assert SkillWorkspaceSync.skill_root(skill) == "/workspace/skills/echo-skill"
+    assert SkillWorkspaceSync.skill_root(skill) == (
+        f"/workspace/skills/echo-skill-{str(skill.id).replace('-', '')}"
+    )
+
+
+def test_skill_root_separates_same_named_skills():
+    """Names are unique per team, so two scopes can share one."""
+    system_skill = make_skill()
+    team_skill = make_skill(
+        name="echo-skill",
+        id=UUID(str(system_skill.id)[:8] + "-0000-4000-8000-000000000001"),
+    )
+
+    assert SkillWorkspaceSync.skill_root(system_skill) != SkillWorkspaceSync.skill_root(
+        team_skill
+    )
 
 
 def test_skill_root_falls_back_to_id_for_unsafe_names():
     skill = make_skill(name="...---")
 
     assert SkillWorkspaceSync.skill_root(skill) == (
-        f"/workspace/{WORKSPACE_SKILLS_DIR}/{skill.id}"
+        f"/workspace/{WORKSPACE_SKILLS_DIR}/skill-{str(skill.id).replace('-', '')}"
     )
 
 
@@ -120,7 +135,10 @@ def test_sync_job_carries_package_through_input_files():
     ]
     assert job.input_files[1].mode == 0o755
     # The staging plan and the sync marker both target the workspace copy.
-    assert f"{WORKSPACE_SKILLS_DIR}/echo-skill/scripts/run.py" in job.code
+    assert (
+        f"{WORKSPACE_SKILLS_DIR}/{SkillWorkspaceSync.skill_dirname(skill)}"
+        "/scripts/run.py"
+    ) in job.code
     assert SYNC_MARKER_FILENAME in job.code
     assert job.metadata["skill_sync"][0]["package_hash"] == "hash-a"
 
@@ -335,7 +353,7 @@ async def test_ensure_skills_ignores_skills_without_package_files(monkeypatch):
 async def test_sync_job_materializes_package_inside_worker_workspace(
     tmp_path, monkeypatch
 ):
-    """End-to-end through the worker manager: files land under skills/<name>."""
+    """End-to-end through the worker manager: files land under skills/<name>-<id>."""
     from app.services.sandbox.manager import SandboxManager
     from app.services.sandbox.process_launcher import SandboxProcessLauncher
     from app.services.sandbox.worker_registry import WorkerPresence
@@ -431,7 +449,7 @@ async def test_sync_job_materializes_package_inside_worker_workspace(
 
     assert synced == [str(skill.id)]
     worker_root = workspace_manager.get_session_root(session_id)
-    skill_root = worker_root / "skills" / "echo-skill"
+    skill_root = worker_root / "skills" / SkillWorkspaceSync.skill_dirname(skill)
     assert (skill_root / "SKILL.md").read_bytes() == b"# Skill\n"
     run_py = skill_root / "scripts" / "run.py"
     assert run_py.read_bytes() == b"print('hi')\n"
