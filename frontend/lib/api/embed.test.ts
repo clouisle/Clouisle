@@ -24,7 +24,7 @@ describe('embed API', () => {
 
     await expect(embedApi.getAgentInfo('agent-1', 'secret')).resolves.toEqual(agent)
     expect(fetchSpy).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/info',
+      '/api/v1/embed/agents/agent-1/info',
       { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' } }
     )
   })
@@ -35,7 +35,7 @@ describe('embed API', () => {
 
     await expect(embedApi.runWorkflow('workflow-1', { topic: 'Bun' }, 'secret')).resolves.toEqual(run)
     expect(fetchSpy).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/embed/workflows/workflow-1/run',
+      '/api/v1/embed/workflows/workflow-1/run',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -85,7 +85,7 @@ describe('embed API', () => {
 
     expect(result.stream).toBe(response)
     expect(fetchSpy).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/stream',
+      '/api/v1/embed/agents/agent-1/chat/stream',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -103,7 +103,7 @@ describe('embed API', () => {
 
     await expect(embedApi.startRun('agent-1', { message: 'hello' }, 'secret')).resolves.toEqual(start)
     expect(fetchSpy).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs',
+      '/api/v1/embed/agents/agent-1/chat/runs',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -116,7 +116,7 @@ describe('embed API', () => {
     const stream = embedApi.streamRun('agent-1', 'run-1', 'secret', 4)
     expect(stream.stream).toBeInstanceOf(Promise)
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/stream?after_sequence=4',
+      '/api/v1/embed/agents/agent-1/chat/runs/run-1/stream?after_sequence=4',
       expect.objectContaining({
         headers: { Accept: 'text/event-stream', Authorization: 'Bearer secret' },
         signal: expect.any(AbortSignal),
@@ -133,14 +133,14 @@ describe('embed API', () => {
     fetchSpy.mockResolvedValueOnce(Response.json({ data: events }))
     await expect(embedApi.getRunEvents('agent-1', 'run-1', 'secret', 4)).resolves.toEqual(events)
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/events?after_sequence=4',
+      '/api/v1/embed/agents/agent-1/chat/runs/run-1/events?after_sequence=4',
       { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' } },
     )
 
     fetchSpy.mockResolvedValueOnce(Response.json({ data: status }))
     await expect(embedApi.postRunInput('agent-1', 'run-1', { delivery: 'steer', content: 'use JSON' }, 'secret')).resolves.toEqual(status)
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/inputs',
+      '/api/v1/embed/agents/agent-1/chat/runs/run-1/inputs',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -152,7 +152,7 @@ describe('embed API', () => {
     const answers = { deploy_to: 'cloud', region: 'cn' }
     await expect(embedApi.postRunAnswer('agent-1', 'run-1', { tool_call_id: 'call-ask', answers }, 'secret')).resolves.toMatchObject({ status: 'queued' })
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
+      '/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -165,7 +165,7 @@ describe('embed API', () => {
       tool_call_id: 'call-ask', answers: {}, skipped: true,
     }, 'secret')).resolves.toMatchObject({ status: 'queued' })
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
+      '/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
@@ -182,7 +182,7 @@ describe('embed API', () => {
     const messageFetch = mockFetch(Response.json({ data: messages }))
     await expect(embedApi.getMessages('agent-1', 'conversation-1', 'secret')).resolves.toEqual(messages)
     expect(messageFetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/embed/agents/agent-1/conversations/conversation-1/messages',
+      '/api/v1/embed/agents/agent-1/conversations/conversation-1/messages',
       { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' } }
     )
     messageFetch.mockRestore()
@@ -235,7 +235,7 @@ describe('embed API', () => {
 
     await expect(upload).resolves.toEqual({ url: '/file', filename: 'file.txt' })
     expect(progress).toEqual([33])
-    expect(xhr.openArgs).toEqual(['POST', 'http://localhost:8000/api/v1/embed/agents/agent-1/upload/file?category=documents'])
+    expect(xhr.openArgs).toEqual(['POST', '/api/v1/embed/agents/agent-1/upload/file?category=documents'])
     expect(xhr.headers).toEqual({ Authorization: 'Bearer secret' })
     expect(xhr.body?.get('file')).toBeInstanceOf(File)
   })

@@ -240,7 +240,9 @@ def test_gateway_client_uses_internal_api_default_or_override(monkeypatch, overr
     monkeypatch.setattr(settings, "API_BASE_URL", "http://api:8000/")
     monkeypatch.setattr(settings, "API_INTERNAL_BASE_URL", override)
     gateway = client()
-    assert str(gateway.base_url).rstrip("/") == (override or "http://api:8000").rstrip("/")
+    assert str(gateway.base_url).rstrip("/") == (override or "http://api:8000").rstrip(
+        "/"
+    )
 
 
 @pytest.fixture

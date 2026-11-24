@@ -46,7 +46,11 @@ def query(**methods):
 )
 @pytest.mark.anyio
 async def test_absolute_notification_url(link_url, expected):
-    with patch.object(tasks.SiteSetting, "get_value", new=AsyncMock(return_value="https://app.example.test/")):
+    with patch.object(
+        tasks.SiteSetting,
+        "get_value",
+        new=AsyncMock(return_value="https://app.example.test/"),
+    ):
         assert await tasks._get_absolute_notification_url(link_url) == expected
 
 

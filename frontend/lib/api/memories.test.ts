@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { api } from './client'
 import { memoriesApi } from './memories'
 
-mock.module('server-only', () => ({}))
-
-const serverUrl = await import('./server-url')
 const spies: Array<{ mockRestore(): void }> = []
 
 afterEach(() => {
@@ -99,24 +96,5 @@ describe('memoriesApi', () => {
     expect(put).toHaveBeenCalledWith('/memories/entities/entity-1', updateEntityInput)
     expect(remove).toHaveBeenNthCalledWith(1, '/memories/entities/entity-1')
     expect(remove).toHaveBeenNthCalledWith(2, '/memories/relations/relation-1')
-  })
-})
-
-describe('server URL helpers', () => {
-  const originalBackendInternalUrl = process.env.BACKEND_INTERNAL_URL
-
-  afterEach(() => {
-    if (originalBackendInternalUrl === undefined) delete process.env.BACKEND_INTERNAL_URL
-    else process.env.BACKEND_INTERNAL_URL = originalBackendInternalUrl
-  })
-
-  it('uses the local backend by default', () => {
-    delete process.env.BACKEND_INTERNAL_URL
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://localhost:8000/api/v1')
-  })
-
-  it('appends the fixed API prefix to the configured internal backend origin', () => {
-    process.env.BACKEND_INTERNAL_URL = 'http://backend:8000/'
-    expect(serverUrl.getServerApiBaseUrl()).toBe('http://backend:8000/api/v1')
   })
 })

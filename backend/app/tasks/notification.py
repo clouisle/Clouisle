@@ -565,7 +565,9 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
                 NotificationMessage(
                     title=title,
                     content=content,
-                    link_url=await _get_absolute_notification_url(ctx.notification.link_url),
+                    link_url=await _get_absolute_notification_url(
+                        ctx.notification.link_url
+                    ),
                     link_label=t("email_view_details", lang=locale),
                     recipient=feishu_user_id,
                 )

@@ -32,7 +32,6 @@ mock.module('@/lib/validation', () => ({
 mock.module('@/lib/api', () => ({
   ApiError: class ApiError extends Error { code = 0 },
 }))
-mock.module('@/lib/constants', () => ({ GENERAL_UPLOAD_MAX_FILE_SIZE_MB: 10, BYTES_PER_MB: 1024 * 1024, API_BASE_URL: 'http://localhost:8000' }))
 mock.module('@/components/ui/field', () => ({ FieldError: (p: Record<string, unknown>) => ({ type: 'alert', props: p }) }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 

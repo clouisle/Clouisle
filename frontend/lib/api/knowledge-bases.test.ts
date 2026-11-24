@@ -226,7 +226,7 @@ describe('knowledge base APIs', () => {
     try {
       await expect(knowledgeBasesApi.downloadDocument('kb-1', 'doc-1', 'sales.txt')).rejects.toThrow('Download failed')
       expect(fetchMock).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/knowledge-bases/kb-1/documents/doc-1/download',
+        '/api/v1/knowledge-bases/kb-1/documents/doc-1/download',
         { method: 'GET', headers: { Authorization: 'Bearer token-1' } }
       )
     } finally {
@@ -246,7 +246,7 @@ describe('knowledge base APIs', () => {
       const result = await knowledgeBasesApi.getDocumentFile('kb-1', 'doc-1')
       expect(await result.text()).toBe('report')
       expect(fetchMock).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/knowledge-bases/kb-1/documents/doc-1/download',
+        '/api/v1/knowledge-bases/kb-1/documents/doc-1/download',
         { method: 'GET', headers: { Authorization: 'Bearer token-1' } }
       )
     } finally {

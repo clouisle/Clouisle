@@ -42,7 +42,6 @@ mock.module('@/lib/utils', () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
   formatDateTime: (v: unknown) => String(v),
 }))
-mock.module('@/lib/constants', () => ({ GENERAL_UPLOAD_MAX_FILE_SIZE_MB: 10, BYTES_PER_MB: 1024 * 1024 }))
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
