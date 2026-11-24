@@ -219,6 +219,8 @@ async def test_ensure_skills_skips_already_synced_packages(monkeypatch):
     skill = make_skill()
     store = SimpleNamespace(
         get_binding=AsyncMock(return_value=binding_for()),
+        get_active_round=AsyncMock(return_value="round-1"),
+        get_workspace_round=AsyncMock(return_value="round-1"),
         get_skill_sync=AsyncMock(
             return_value=SandboxSkillSyncState(
                 generation=2, skills={str(skill.id): "hash-a"}

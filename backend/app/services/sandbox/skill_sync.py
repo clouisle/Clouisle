@@ -26,7 +26,7 @@ from .models import (
     SandboxLimits,
     SandboxSkillSyncState,
 )
-from .session_store import sandbox_session_store
+from .session_store import STANDALONE_ROUND, sandbox_session_store
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,19 @@ class SkillWorkspaceSync:
                 if state is None or state.generation != generation
                 else dict(state.skills)
             )
+
+            if synced:
+                active_round = (
+                    await sandbox_session_store.get_active_round(session_id)
+                    or STANDALONE_ROUND
+                )
+                workspace_round = await sandbox_session_store.get_workspace_round(
+                    session_id
+                )
+                if workspace_round is not None and workspace_round != active_round:
+                    # The next job restores an older checkpoint before staging.
+                    # Treat every cached package as missing, not just new ones.
+                    synced = {}
 
             missing = [
                 entry

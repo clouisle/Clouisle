@@ -76,6 +76,34 @@ def store_for(generation: int) -> SimpleNamespace:
 
 
 @pytest.mark.anyio
+async def test_pending_round_rollback_resyncs_all_cached_packages(monkeypatch):
+    first = make_skill()
+    second = make_skill(name="second")
+    store = store_for(2)
+    store.get_active_round = AsyncMock(return_value="new-round")
+    store.get_workspace_round = AsyncMock(return_value="interrupted-round")
+    store.get_skill_sync = AsyncMock(
+        return_value=SandboxSkillSyncState(
+            generation=2, skills={str(first.id): "hash-a"}
+        )
+    )
+    monkeypatch.setattr("app.services.sandbox.skill_sync.sandbox_session_store", store)
+    submit = AsyncMock(return_value=result_for(2))
+    monkeypatch.setattr(
+        "app.services.sandbox.skill_sync.sandbox_gateway.submit_and_wait", submit
+    )
+
+    synced = await SkillWorkspaceSync.ensure_skills(
+        session_id="session-1", skills=[first, second]
+    )
+
+    assert synced == [str(first.id), str(second.id)]
+    submit.assert_awaited_once()
+    _, state = store.set_skill_sync.await_args.args
+    assert state.skills == {str(first.id): "hash-a", str(second.id): "hash-a"}
+
+
+@pytest.mark.anyio
 async def test_generation_change_mid_push_is_not_recorded_and_retries(monkeypatch):
     """A push that lands in a replaced workspace must not mark the Skill synced."""
     skill = make_skill()
