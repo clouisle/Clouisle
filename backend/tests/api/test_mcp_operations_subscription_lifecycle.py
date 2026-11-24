@@ -838,6 +838,24 @@ async def test_a_resource_read_keeps_answer_values_out_of_the_approval_preview(
     assert captured["preview"] == {"uri": "file:///a.txt"}
 
 
+@pytest.mark.parametrize(
+    "schema,extra",
+    [
+        (tool_mcp.McpToolCallIn, {"name": "search"}),
+        (tool_mcp.McpResourceReadIn, {"uri": "file:///a.txt"}),
+        (tool_mcp.McpPromptGetIn, {"name": "weather"}),
+    ],
+)
+def test_every_round_trip_route_rejects_answers_without_state(schema, extra):
+    """All three MRTR routes reject half a round trip at the same boundary."""
+    answers = {"q": {"method": "elicitation/create", "result": {"action": "accept"}}}
+
+    with pytest.raises(ValidationError):
+        schema(**extra, input_responses=answers)
+
+    schema(**extra, input_responses=answers, request_state="state-1")
+
+
 def test_round_trip_requires_both_halves():
     """Answers without the server's state cannot resume a parked request.
 
