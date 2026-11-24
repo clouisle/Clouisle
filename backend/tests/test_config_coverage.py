@@ -88,6 +88,7 @@ def test_default_cors_origins_cover_both_loopback_spellings():
     assert "localhost" in hosts
     assert len(settings.BACKEND_CORS_ORIGINS) == len(set(settings.BACKEND_CORS_ORIGINS))
 
+
 def test_skill_sync_timeout_matches_sandbox_limits_floor():
     """A sub-second timeout passes settings but fails job construction."""
     from app.services.sandbox.models import SandboxLimits
