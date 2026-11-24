@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from uuid import UUID
+from uuid import uuid4
 
 import pytest
 
@@ -18,10 +18,6 @@ from app.llm.manager import ModelManager
 from app.schemas.response import BusinessError, ResponseCode
 from app.models.model import ModelProvider, ModelType
 
-# Fixed id keeps the generated parametrize ids identical in every process;
-# pytest-xdist compares collected test ids across workers.
-MODEL_ID = UUID("a1d9f3c8-2b64-4e17-9c05-7d8e2f4b6a90")
-
 
 @pytest.fixture(autouse=True)
 def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -31,7 +27,7 @@ def allow_model_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("identifier", "expected"),
     [
-        (str(MODEL_ID), "uuid"),
+        (str(uuid4()), "uuid"),
         ("openai/gpt-4o", "invalid"),
         ("gpt-4o", "invalid"),
     ],
@@ -49,7 +45,7 @@ def test_parse_model_identifier_accepts_only_uuid(identifier, expected):
 @pytest.mark.parametrize(
     ("identifier", "expected_filter"),
     [
-        (str(MODEL_ID), lambda value: {"id": value, "model_type": ModelType.EMBEDDING}),
+        (str(uuid4()), lambda value: {"id": value, "model_type": ModelType.EMBEDDING}),
         (None, lambda _value: {"model_type": ModelType.EMBEDDING, "is_default": True}),
     ],
 )

@@ -2,7 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -19,10 +19,6 @@ from app.services.workflow.benchmark import (
     WorkflowBenchmark,
     get_benchmark,
 )
-
-# Fixed id keeps the generated parametrize ids identical in every process;
-# pytest-xdist compares collected test ids across workers.
-SEARCH_RUN_ID = UUID("2f8d4a63-71b9-4c25-a3e7-58c1b9d6e420")
 
 
 class QueryStub:
@@ -157,7 +153,7 @@ async def test_workflow_stats_cover_empty_and_completed_runs(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("search", "expected_filter"),
-    [(str(SEARCH_RUN_ID), "id"), ("not-a-uuid", "id__isnull"), ("  ", None)],
+    [(str(uuid4()), "id"), ("not-a-uuid", "id__isnull"), ("  ", None)],
 )
 async def test_list_workflow_runs_search_paths(monkeypatch, search, expected_filter):
     query = QueryStub()

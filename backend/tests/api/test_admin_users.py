@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -12,10 +12,6 @@ from app.api import deps
 from app.api.v1.admin.endpoints import users
 from app.schemas.response import BusinessError, error
 from app.schemas.user import UserCreate, UserUpdate
-
-# Fixed path id keeps the generated parametrize ids identical in every process;
-# pytest-xdist compares collected test ids across workers.
-TARGET_USER_ID = UUID("5d2c8b41-9e77-4f02-8a19-6b3d4c7e2f58")
 
 
 class _Query:
@@ -161,8 +157,8 @@ def users_client():
                 "password": "not-a-real-secret",
             },
         ),
-        ("post", f"/api/v1/admin/users/{TARGET_USER_ID}/activate", None),
-        ("delete", f"/api/v1/admin/users/{TARGET_USER_ID}", None),
+        ("post", f"/api/v1/admin/users/{uuid4()}/activate", None),
+        ("delete", f"/api/v1/admin/users/{uuid4()}", None),
     ],
 )
 def test_user_routes_require_matching_permissions(users_client, method, path, json):
