@@ -1544,6 +1544,13 @@ def _log_level_uses_meta(protocol_version: str | None) -> bool:
     )
 
 
+#: A log-level request is observability: it may consume this fraction of the
+#: remaining operation budget, capped so a generous budget cannot hand it enough
+#: time to starve the call it is decorating.
+LOG_LEVEL_TIMEOUT_FRACTION = 0.25
+LOG_LEVEL_MAX_TIMEOUT_SECONDS = 2.0
+
+
 async def _request_server_log_level(
     session: ClientSession,
     capabilities: McpServerCapabilities,
@@ -1578,8 +1585,14 @@ async def _request_server_log_level(
             "MCP operation budget exhausted; log level %r not requested", level
         )
         return
+    # The request may use at most a fraction of what is left: observability is
+    # optional, and a server that stalls ``logging/setLevel`` must not leave the
+    # caller's real operation with only the minimum request budget.
+    budget = max(
+        min(timeout * LOG_LEVEL_TIMEOUT_FRACTION, LOG_LEVEL_MAX_TIMEOUT_SECONDS), 0.001
+    )
     try:
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout(budget):
             await session.set_logging_level(cast(Any, level))
     except TimeoutError:
         logger.warning("MCP server did not acknowledge log level %r in time", level)

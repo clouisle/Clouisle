@@ -440,7 +440,7 @@ async def _await_task(
         # ``tasks/get`` — abandons an accepted server task. MCP tasks are
         # durable operations: without this the task keeps running with no
         # poller left to read it. A normally completed task is never cancelled.
-        await _cancel(session, current, expires_at=expires_at)
+        await _cancel(session, current)
         raise
 
     if current.status == _COMPLETED:
@@ -488,19 +488,19 @@ async def _task_result(
     )
 
 
-async def _cancel(
-    session: ClientSession, task: types.Task, *, expires_at: float | None = None
-) -> None:
+async def _cancel(session: ClientSession, task: types.Task) -> None:
     """Best-effort ``tasks/cancel``: cleanup never masks the real failure.
 
     The request carries its own short read timeout. Without one it inherits the
     session timeout, which is far longer than the reserve left for cleanup, so
     a server that never answers ``tasks/cancel`` would hold the caller past its
     own budget instead of failing here.
+
+    The budget is that cleanup reserve, not what is left of the task deadline:
+    that deadline has usually just expired, which would leave a request far too
+    short to be delivered — abandoning the task exactly when cancelling matters.
     """
     budget = _CANCEL_REQUEST_TIMEOUT_SECONDS
-    if expires_at is not None:
-        budget = min(budget, max(_request_budget(expires_at), 0.001))
     try:
         async with asyncio.timeout(budget):
             await session.send_request(
@@ -510,5 +510,11 @@ async def _cancel(
                 types.CancelTaskResult,
                 request_read_timeout_seconds=budget,
             )
-    except BaseException:  # noqa: BLE001 - cleanup must not mask the real error
+    except asyncio.CancelledError:
+        # Cleanup must not swallow the caller's cancellation: the poll loop
+        # re-raises it, and converting it into a server error at the
+        # ``input_required`` branch would misreport a cancellation as a
+        # protocol failure.
+        raise
+    except Exception:
         logger.warning("Unable to cancel MCP task %s", task.task_id, exc_info=True)

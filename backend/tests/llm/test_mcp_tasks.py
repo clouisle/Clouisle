@@ -516,3 +516,53 @@ async def test_a_non_string_version_sends_no_protocol_header():
     await mcp_tasks._start_task(session, "index", {}, 5.0, {})
 
     assert "headers" not in dispatcher.calls[0][2]
+
+
+async def test_a_deadline_cancel_still_gets_the_cleanup_budget():
+    """The cancel must be deliverable after the task deadline has expired.
+
+    Deriving the cleanup budget from the expired task deadline left it at a
+    millisecond, so the ``tasks/cancel`` could never be sent — abandoning the
+    server task exactly when cancelling matters.
+    """
+    dispatcher = _FakeDispatcher(response={"task": _task_payload()})
+    session = _FakeSession(dispatcher=dispatcher, statuses=("working",))
+    seen: list[float | None] = []
+    original_send = session.send_request
+
+    async def recording_send(request, result_type, request_read_timeout_seconds=None):
+        if isinstance(request, types.CancelTaskRequest):
+            seen.append(request_read_timeout_seconds)
+        return await original_send(request, result_type, request_read_timeout_seconds)
+
+    session.send_request = recording_send
+
+    with pytest.raises(McpTimeout):
+        await mcp_tasks.call_tool_with_tasks(
+            session, "index", {}, _policy(poll_interval=0.01, timeout=0.05)
+        )
+
+    assert seen, "no tasks/cancel was sent"
+    assert seen[0] >= mcp_tasks._CANCEL_REQUEST_TIMEOUT_SECONDS / 2
+
+
+async def test_a_cancel_during_cleanup_propagates_the_cancellation():
+    """Cleanup must not turn a caller cancellation into a server error."""
+    dispatcher = _FakeDispatcher(response={"task": _task_payload()})
+    session = _FakeSession(dispatcher=dispatcher, statuses=("input_required",))
+
+    async def hang_cancel(request, result_type, **kwargs):
+        if isinstance(request, types.CancelTaskRequest):
+            await asyncio.sleep(10)
+        raise AssertionError("unexpected request")
+
+    session.send_request = hang_cancel
+
+    task = asyncio.create_task(
+        mcp_tasks.call_tool_with_tasks(session, "index", {}, _policy())
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task

@@ -348,6 +348,38 @@ async def test_a_live_budget_still_requests_the_log_level(monkeypatch):
     assert session.log_level_calls == ["debug"]
 
 
+async def test_a_stalled_log_level_request_keeps_budget_for_the_operation(
+    monkeypatch, caplog
+):
+    """Observability may use a slice of the budget, never all of it.
+
+    The request used to be bounded by the whole remaining budget, so a server
+    that stalled ``logging/setLevel`` left the real operation — the ``tools/list``
+    or ``tools/call`` that follows — with only the minimum request budget.
+    """
+    caplog.set_level(logging.WARNING, logger=mcp.logger.name)
+    client = mcp.McpClient({}, callbacks=_logging_callbacks())
+
+    async def stalled(self, level, **kwargs):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(_LegacySession, "set_logging_level", stalled)
+    monkeypatch.setattr(client, "_transport", _transport)
+    monkeypatch.setattr(mcp, "ClientSession", _LegacySession)
+
+    started = asyncio.get_running_loop().time()
+    async with client._open(mcp._Deadline(8.0, "test")) as opened:
+        assert opened[0] is not None
+        elapsed = asyncio.get_running_loop().time() - started
+
+    # At most a quarter of the budget, capped at the fixed maximum.
+    assert elapsed < 4.0
+    assert any(
+        "did not acknowledge log level" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 async def test_a_log_level_request_that_never_answers_is_logged_not_raised(
     monkeypatch, caplog
 ):
