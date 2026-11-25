@@ -673,4 +673,31 @@ describe('model management dialog', () => {
     expect(payload.capabilities.input_modalities).toEqual(['image', 'file'])
     expect(payload.capabilities.output_modalities).toEqual(['text'])
   })
+
+  test('editing a saved OCR model keeps its generation settings', async () => {
+    const renderer = render({
+      model: {
+        id: 'ocr-2',
+        name: 'Saved OCR',
+        provider: 'mistral',
+        model_id: 'mistral-ocr-latest',
+        model_type: 'ocr',
+        base_url: 'https://api.mistral.ai/v1',
+        is_enabled: true,
+        is_default: false,
+        has_api_key: true,
+        default_params: { temperature: 0, max_tokens: 512 },
+        capabilities: { input_modalities: ['image'], output_modalities: ['text'] },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    const payload = updateModel.mock.calls.at(-1)?.[1] as {
+      default_params: Record<string, unknown>
+    }
+    // OCR renders no parameter inputs, so the values live in the extension JSON;
+    // an edit must not drop the adapter's configured temperature or output cap.
+    expect(payload.default_params).toMatchObject({ temperature: 0, max_tokens: 512 })
+  })
 })

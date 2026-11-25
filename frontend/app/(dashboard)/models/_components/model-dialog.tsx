@@ -533,8 +533,15 @@ export function ModelDialog({
           ? JSON.stringify(params.extra_body, null, 2)
           : ''
       )
+      // Managed keys are lifted into their own inputs and rebuilt on save, so they
+      // must be stripped here or they would be duplicated. OCR renders no
+      // parameter inputs at all, so nothing is managed for it: leaving every key
+      // in the textarea is what makes an edit round-trip its temperature and
+      // max_tokens instead of dropping them from the update.
+      const managedParamKeys =
+        getModelCategory(model.model_type) === 'ocr' ? new Set<string>() : MANAGED_DEFAULT_PARAM_KEYS
       setDefaultParamsExtensionText(
-        JSON.stringify(omitManagedKeys(params, MANAGED_DEFAULT_PARAM_KEYS), null, 2)
+        JSON.stringify(omitManagedKeys(params, managedParamKeys), null, 2)
       )
 
       const caps = model.capabilities || {}

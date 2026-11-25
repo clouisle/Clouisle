@@ -22,6 +22,7 @@ DEFAULT_MODEL_ENDPOINT_ALLOWLIST = [
     "https://openspeech.bytedance.com",
     "https://api.siliconflow.cn",
     "https://api.x.ai",
+    "https://api.mistral.ai",
     "http://localhost:11434",
     "https://api.dev.runwayml.com",
     "https://api.pika.art",
