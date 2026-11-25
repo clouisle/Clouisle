@@ -67,10 +67,46 @@ def map_http_error(
 
 
 class BaseOCRAdapter(ABC):
-    """文字识别模型适配器基类"""
+    """文字识别模型适配器基类
+
+    ``SUPPORTED_FEATURES`` names the optional ``OCRRequest`` fields this wire
+    format can honour. ``recognize`` rejects anything outside it before any
+    network work, so a provider that cannot select pages fails here instead of
+    silently recognizing the whole document.
+    """
+
+    SUPPORTED_FEATURES: frozenset[str] = frozenset()
 
     def __init__(self, model_config: Any):
         self.model_config = model_config
+
+    async def recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
+        """识别图像或文档中的文字，按页返回结果。"""
+        self._reject_unsupported_features(request)
+        return await self._recognize(request, **kwargs)
+
+    def _reject_unsupported_features(self, request: OCRRequest) -> None:
+        """Fail a request that asks for something this wire format cannot do."""
+        unsupported = [
+            name
+            for name, requested in (
+                ("pages", bool(request.pages)),
+                ("include_blocks", request.include_blocks),
+            )
+            if requested and name not in self.SUPPORTED_FEATURES
+        ]
+        if not unsupported:
+            return
+        provider = provider_value(self.model_config) or None
+        raise InvalidRequestError(
+            message=(
+                f"{provider or 'OCR'} OCR cannot honour these request fields: "
+                f"{', '.join(unsupported)}"
+            ),
+            field=unsupported[0],
+            provider=provider,
+            model=request.model or getattr(self.model_config, "model_id", None),
+        )
 
     def _parse_http_response(
         self, response: httpx.Response, request: OCRRequest
@@ -93,6 +129,5 @@ class BaseOCRAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
-        """识别图像或文档中的文字，按页返回结果。"""
+    async def _recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
         raise NotImplementedError

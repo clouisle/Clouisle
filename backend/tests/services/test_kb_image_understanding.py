@@ -611,7 +611,8 @@ async def test_ocr_model_type_routes_to_document_endpoint(monkeypatch) -> None:
     assert results[0].ocr_text == "LINE ONE\nLINE TWO"
     team_chat.assert_not_awaited()
     request = team_ocr.await_args.kwargs["request"]
-    assert request.instruction is None
+    # Only the source is set: the service never asks the model for anything.
+    assert request.model_fields_set == {"source"}
     assert request.source.base64
     assert request.source.mime_type == "image/jpeg"
 

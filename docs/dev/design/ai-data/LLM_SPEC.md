@@ -370,8 +370,7 @@ class OCRBlock(BaseModel):
 class OCRRequest(BaseModel):
     source: MediaContent                  # 待识别的图像或文档
     pages: str | list[int] | None = None  # 0 起始的页码，支持 "0-5" 形式
-    include_blocks: bool = False          # 是否返回逐块文本与坐标
-    instruction: str | None = None        # 可选提取指令；省略即供应商默认转写提示词
+    include_blocks: bool = False          # 是否返回逐块文本与坐标（仅 mistral）
     model: str | None = None              # 覆盖供应商配置的模型
 
 class OCRPage(BaseModel):
@@ -397,6 +396,25 @@ class OCRResponse(BaseModel):
 streaming、JSON mode 等对话专属开关。目前实现的供应商：
 `mistral`（`/v1/ocr`，图像 + PDF）、`qwen` 与 `custom`（OpenAI 兼容
 chat completions，仅图像）。
+
+请求形状按供应商能力收窄，适配器不会静默忽略字段：`BaseOCRAdapter.SUPPORTED_FEATURES`
+声明该线格式能兑现的可选字段，`recognize` 在发出任何网络请求前拒绝其余字段
+（`InvalidRequestError`，带 `field`）：
+
+| 请求字段 | `mistral` | `qwen` / `custom` |
+| --- | --- | --- |
+| `pages` | ✓ | 拒绝 |
+| `include_blocks` | ✓ | 拒绝 |
+| 图像输入 | ✓ | ✓ |
+| PDF 输入 | ✓ | 模态在校验阶段即被剔除 |
+
+`OCRRequest.source` 只接受远程 URL 或内联 base64。适配器通过 HTTP 发送文档，读不到
+本地路径，因此 `file_path` 在构造请求时就被拒绝——这是调用方的错误，不该等供应商
+调用失败后以 `ProviderError` 的形式出现。
+
+请求不携带任何提示词：OCR 模型按定义只接收图像，转写提示词由供应商自身提供。
+供应商级的结构化提取（Mistral 的 `document_annotation`）暂不支持，因为它需要请求侧
+JSON schema 与响应侧字段一起设计；在没有调用方之前不暴露半成品字段。
 
 团队 OCR 配额优先使用供应商上报的 token 数。未上报时（例如 Mistral 只返回
 `usage_info.pages_processed`），按供应商上报的页数折算；若没有正的页数，则用

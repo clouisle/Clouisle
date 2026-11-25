@@ -116,29 +116,29 @@ def _as_page(raw: Any, fallback_index: int) -> OCRPage:
 
 
 def _as_source_chunk(source: MediaContent) -> dict[str, Any]:
-    """Build the ``document`` chunk Mistral expects for an image or a PDF."""
+    """Build the ``document`` chunk Mistral expects for an image or a PDF.
+
+    ``OCRRequest`` guarantees a url or a base64 payload, so no other case is
+    reachable here.
+    """
     is_pdf = (source.mime_type or "").split(";", 1)[0].strip().lower() == _PDF_MIME_TYPE
+    chunk_type = "document_url" if is_pdf else "image_url"
     if source.url:
-        chunk_type = "document_url" if is_pdf else "image_url"
-        return {
-            "type": chunk_type,
-            chunk_type: source.url,
-            "document_name": source.filename,
-        }
-    if source.base64:
+        location = source.url
+    else:
         mime_type = source.mime_type or ("image/jpeg" if not is_pdf else _PDF_MIME_TYPE)
-        data_uri = f"data:{mime_type};base64,{source.base64}"
-        chunk_type = "document_url" if is_pdf else "image_url"
-        return {
-            "type": chunk_type,
-            chunk_type: data_uri,
-            "document_name": source.filename,
-        }
-    raise ProviderError(message="OCR source carries no url or base64 payload")
+        location = f"data:{mime_type};base64,{source.base64}"
+    return {
+        "type": chunk_type,
+        chunk_type: location,
+        "document_name": source.filename,
+    }
 
 
 class MistralOCRAdapter(BaseOCRAdapter):
     """调用 Mistral ``/v1/ocr`` 文档识别端点"""
+
+    SUPPORTED_FEATURES = frozenset({"pages", "include_blocks"})
 
     def _get_endpoint(self) -> str:
         base_url = get_effective_model_base_url(
@@ -166,8 +166,6 @@ class MistralOCRAdapter(BaseOCRAdapter):
             payload["pages"] = request.pages
         if request.include_blocks:
             payload["include_blocks"] = True
-        if request.instruction:
-            payload["document_annotation_prompt"] = request.instruction
         return payload
 
     def _parse_response(self, data: dict[str, Any], request: OCRRequest) -> OCRResponse:
@@ -187,7 +185,7 @@ class MistralOCRAdapter(BaseOCRAdapter):
             usage=Usage(),
         )
 
-    async def recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
+    async def _recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
         timeout = kwargs.get("timeout") or DEFAULT_OCR_REQUEST_TIMEOUT
         provider = provider_value(self.model_config) or None
         model = str(getattr(self.model_config, "model_id", "") or "") or None

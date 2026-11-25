@@ -3,10 +3,9 @@ OCR types (text recognition over images and documents).
 
 An OCR model is handed an image or a document and returns the literal text it
 contains, page by page. Nothing is asked of it, so the request carries no
-conversation: only the source to recognize plus optional extraction options.
-Some providers accept an ``instruction`` to steer structured extraction; it is
-never required, and an omitted instruction means the provider's own default
-transcription prompt.
+prompt: only the source to recognize plus the optional page and block options that
+some providers expose. The source must be a URL or an inline base64 payload,
+because adapters transmit it over HTTP.
 """
 
 from __future__ import annotations
@@ -51,18 +50,15 @@ class OCRRequest(BaseModel):
         default=None,
         description=(
             "Pages to process, 0-based. Accepts a list of integers or a string of "
-            "comma-separated numbers and ranges such as '0-5'."
+            "comma-separated numbers and ranges such as '0-5'. Mistral only; other "
+            "OCR adapters reject it."
         ),
     )
     include_blocks: bool = Field(
         default=False,
-        description="Return per-block text and bounding boxes instead of page text only",
-    )
-    instruction: str | None = Field(
-        default=None,
         description=(
-            "Optional extraction instruction. Omitted means the provider's default "
-            "transcription prompt."
+            "Return per-block text and bounding boxes instead of page text only. "
+            "Mistral only; other OCR adapters reject it."
         ),
     )
     model: str | None = Field(
@@ -71,10 +67,10 @@ class OCRRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_source(self) -> "OCRRequest":
-        if not self.source.has_content():
-            raise ValueError("source must carry a url, base64 payload, or file path")
-        if self.instruction is not None and not self.instruction.strip():
-            raise ValueError("instruction must be omitted or non-empty")
+        # Adapters transmit the document over HTTP, so a local path can never be
+        # sent: reject it here instead of failing later as a provider error.
+        if not (self.source.url or self.source.base64):
+            raise ValueError("source must carry a url or a base64 payload")
         return self
 
 

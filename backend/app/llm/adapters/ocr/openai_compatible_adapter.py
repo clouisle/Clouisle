@@ -3,9 +3,10 @@ OCR through a chat-completions endpoint.
 
 Some vision models are purpose-built for transcription (Qwen-OCR and gateways
 exposing the same protocol). They recognize text when sent an image with no text
-part at all: an omitted instruction means the provider's own default prompt.
-This adapter therefore serializes the image alone, and only appends a text part
-when the caller supplies an instruction.
+part at all, which is also the only shape this adapter ever sends: an OCR request
+carries no prompt, so the provider's own transcription prompt applies. Page
+selection and block structure are not expressible here, so the base adapter
+rejects them instead of dropping them.
 
 The wire format is the OpenAI chat shape, so this adapter also covers
 ``custom`` gateways that implement transcription-only image input.
@@ -30,11 +31,13 @@ _DEFAULT_IMAGE_MIME_TYPE = "image/jpeg"
 
 
 def _as_data_uri(source: MediaContent) -> str:
-    """Inline the payload as a data URI; these endpoints take no file handle."""
+    """Inline the payload as a data URI; these endpoints take no file handle.
+
+    ``OCRRequest`` guarantees a url or a base64 payload, so no other case is
+    reachable here.
+    """
     if source.url:
         return source.url
-    if not source.base64:
-        raise ProviderError(message="OCR source carries no url or base64 payload")
     mime_type = source.mime_type or _DEFAULT_IMAGE_MIME_TYPE
     return f"data:{mime_type};base64,{source.base64}"
 
@@ -94,8 +97,6 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
 
     def _build_payload(self, request: OCRRequest) -> dict[str, Any]:
         content: list[dict[str, Any]] = []
-        if request.instruction:
-            content.append({"type": "text", "text": request.instruction})
         content.append(
             {"type": "image_url", "image_url": {"url": _as_data_uri(request.source)}}
         )
@@ -128,7 +129,7 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
             usage=_as_usage(data.get("usage")),
         )
 
-    async def recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
+    async def _recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
         timeout = kwargs.get("timeout") or DEFAULT_OCR_REQUEST_TIMEOUT
         provider = provider_value(self.model_config) or None
         model = str(getattr(self.model_config, "model_id", "") or "") or None

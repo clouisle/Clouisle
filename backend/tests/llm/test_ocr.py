@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from app.llm.adapters.ocr import (
     MistralOCRAdapter,
@@ -106,11 +107,6 @@ def test_request_requires_source_content() -> None:
         OCRRequest(source=MediaContent())
 
 
-def test_request_rejects_blank_instruction() -> None:
-    with pytest.raises(ValueError, match="instruction must be omitted or non-empty"):
-        build_request(instruction="   ")
-
-
 def test_response_text_joins_pages_and_skips_blanks() -> None:
     from app.llm.types import OCRPage, OCRResponse
 
@@ -155,9 +151,7 @@ def test_mistral_headers_omit_missing_token() -> None:
 
 def test_mistral_payload_inlines_image_and_options() -> None:
     adapter = MistralOCRAdapter(build_config())
-    request = build_request(
-        pages="0-2", include_blocks=True, instruction="Extract tables"
-    )
+    request = build_request(pages="0-2", include_blocks=True)
     payload = adapter._build_payload(request)
 
     assert payload["model"] == "mistral-ocr-latest"
@@ -165,7 +159,6 @@ def test_mistral_payload_inlines_image_and_options() -> None:
     assert payload["document"]["image_url"].startswith("data:image/png;base64,")
     assert payload["pages"] == "0-2"
     assert payload["include_blocks"] is True
-    assert payload["document_annotation_prompt"] == "Extract tables"
 
 
 def test_mistral_payload_omits_optional_fields() -> None:
@@ -174,7 +167,6 @@ def test_mistral_payload_omits_optional_fields() -> None:
 
     assert "pages" not in payload
     assert "include_blocks" not in payload
-    assert "document_annotation_prompt" not in payload
 
 
 def test_mistral_payload_sends_pdf_as_document_url() -> None:
@@ -193,12 +185,48 @@ def test_mistral_payload_sends_pdf_as_document_url() -> None:
     }
 
 
-def test_mistral_payload_requires_source_bytes() -> None:
+def test_ocr_request_rejects_a_local_file_path() -> None:
+    # Adapters post the document over HTTP, so a local path can never be sent.
+    with pytest.raises(ValidationError, match="url or a base64 payload"):
+        OCRRequest(
+            source=MediaContent(file_path="/tmp/page.png", mime_type="image/png")
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "kwargs"),
+    [("pages", {"pages": "0-2"}), ("include_blocks", {"include_blocks": True})],
+)
+async def test_chat_adapter_rejects_unsupported_request_fields(field, kwargs) -> None:
+    adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
+    with patch("httpx.AsyncClient") as client_cls:
+        with pytest.raises(InvalidRequestError) as error:
+            await adapter.recognize(build_request(**kwargs))
+
+    assert error.value.field == field
+    assert field in error.value.message
+    assert error.value.details["field"] == field
+    # Rejected before any request leaves the process.
+    client_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mistral_adapter_accepts_page_selection_and_blocks() -> None:
     adapter = MistralOCRAdapter(build_config())
-    request = build_request()
-    object.__setattr__(request.source, "base64", None)
-    with pytest.raises(ProviderError, match="no url or base64"):
-        adapter._build_payload(request)
+    client = AsyncMock()
+    client.post = AsyncMock(
+        return_value=text_response({"pages": [{"index": 0, "markdown": "hi"}]})
+    )
+
+    with patch("app.llm.adapters.ocr.mistral_adapter.httpx.AsyncClient") as client_cls:
+        client_cls.return_value.__aenter__ = AsyncMock(return_value=client)
+        client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        result = await adapter.recognize(
+            build_request(pages="0-2", include_blocks=True)
+        )
+
+    assert result.text == "hi"
 
 
 def test_mistral_parses_pages_blocks_and_dimensions() -> None:
@@ -383,13 +411,13 @@ def test_chat_payload_omits_text_part_without_instruction() -> None:
     assert payload["stream"] is False
 
 
-def test_chat_payload_prepends_instruction_text_part() -> None:
+def test_chat_payload_sends_the_image_alone() -> None:
+    # An OCR model is never addressed as a conversation, so no text part is sent
+    # and the provider's own transcription prompt applies.
     adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
-    payload = adapter._build_payload(build_request(instruction="Return a table"))
+    content = adapter._build_payload(build_request())["messages"][0]["content"]
 
-    content = payload["messages"][0]["content"]
-    assert [part["type"] for part in content] == ["text", "image_url"]
-    assert content[0]["text"] == "Return a table"
+    assert [part["type"] for part in content] == ["image_url"]
 
 
 def test_chat_payload_forwards_generation_caps() -> None:
@@ -413,11 +441,17 @@ def test_chat_payload_falls_back_to_max_output_tokens() -> None:
     assert adapter._build_payload(build_request())["max_tokens"] == 256
 
 
-def test_chat_payload_requires_payload_bytes() -> None:
+def test_request_requires_a_transmittable_source() -> None:
     from app.llm.adapters.ocr.openai_compatible_adapter import _as_data_uri
 
-    with pytest.raises(ProviderError, match="no url or base64"):
-        _as_data_uri(MediaContent())
+    # Nothing to send: the request type rejects it before any adapter sees it.
+    with pytest.raises(ValidationError, match="url or a base64 payload"):
+        OCRRequest(source=MediaContent(mime_type="image/png"))
+
+    # A url still passes straight through to the wire format.
+    assert (
+        _as_data_uri(MediaContent(url="https://x.test/a.png")) == "https://x.test/a.png"
+    )
 
 
 def test_chat_data_uri_passthroughs_url() -> None:
