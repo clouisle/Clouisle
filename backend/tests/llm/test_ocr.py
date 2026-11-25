@@ -570,6 +570,31 @@ def test_chat_parse_accepts_blank_transcription() -> None:
                 "usage": {"total_tokens": "bad"},
             },
         ),
+        (
+            ModelProvider.QWEN,
+            {
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"total_tokens": True},
+            },
+        ),
+        (
+            ModelProvider.QWEN,
+            {
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"prompt_tokens": -1},
+            },
+        ),
+        (
+            ModelProvider.QWEN,
+            {
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"prompt_tokens": 1.5},
+            },
+        ),
+        (
+            ModelProvider.QWEN,
+            {"choices": [{"message": {"content": "x"}}], "usage": "none"},
+        ),
         (ModelProvider.MISTRAL, {}),
         (ModelProvider.MISTRAL, {"pages": []}),
         (ModelProvider.MISTRAL, {"pages": [None]}),
