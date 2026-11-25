@@ -2165,29 +2165,31 @@ export function ModelDialog({
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+            {isChatOnly(modelType) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+                  </div>
+                  <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
                 </div>
-                <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+                  </div>
+                  <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
                 </div>
-                <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+                  </div>
+                  <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
                 </div>
-                <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

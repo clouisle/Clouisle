@@ -621,4 +621,29 @@ describe('model management dialog', () => {
     expect(JSON.stringify(renderer.toJSON())).not.toContain('modality.file')
     expect(JSON.stringify(renderer.toJSON())).toContain('modality.image')
   })
+
+  test('hides conversation-only capabilities for OCR models', () => {
+    const providersOption = [
+      { code: 'mistral', base_url: 'https://api.mistral.test' },
+    ] as React.ComponentProps<typeof ModelDialog>['providers']
+    const modelTypesOption = [{ code: 'ocr' }, { code: 'chat' }] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+    const renderer = render({ providers: providersOption, modelTypes: modelTypesOption })
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'ocr' } }))
+    selectProvider(renderer, 'mistral')
+
+    // An OCR model is addressed with an image alone, so these switches are never
+    // saved for it: showing them offered controls with no effect.
+    const ocrTree = JSON.stringify(renderer.toJSON())
+    expect(ocrTree).toContain('modality.image')
+    expect(ocrTree).not.toContain('supportsFunctionCall')
+    expect(ocrTree).not.toContain('supportsStreaming')
+    expect(ocrTree).not.toContain('supportsJsonMode')
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    const chatTree = JSON.stringify(renderer.toJSON())
+    expect(chatTree).toContain('supportsFunctionCall')
+    expect(chatTree).toContain('supportsStreaming')
+    expect(chatTree).toContain('supportsJsonMode')
+  })
 })
