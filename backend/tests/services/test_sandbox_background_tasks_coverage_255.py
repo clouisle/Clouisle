@@ -18,7 +18,7 @@ def test_invalid_payload_records_terminal_failure_without_execution(sandbox_runt
     payload = {
         "job_id": "invalid",
         "source": "invalid-source",
-        "deadline_at": time.time() + 2,
+        "deadline_at": r.deadline(),
     }
     ack = tasks.run_sandbox_job_task.run(payload)
     assert not ack["success"]
@@ -80,7 +80,7 @@ def test_expired_session_job_fails_before_command_execution(sandbox_runtime, tmp
             f"from pathlib import Path; Path({str(marker)!r}).touch()",
         ],
         session_id="expired-session",
-        deadline_at=time.time() + 2,
+        deadline_at=r.deadline(),
     )
 
     ack = tasks.run_sandbox_job_task.run(job.model_dump(mode="json"))
@@ -100,19 +100,19 @@ def test_cleanup_waits_for_active_round_then_applies_retention(sandbox_runtime):
     r.run(r.sessions.begin_round("session", "round", ttl_seconds=60))
 
     active = tasks.cleanup_sandbox_session_task.run(
-        "session", False, expected, time.time() + 2
+        "session", False, expected, r.deadline()
     )
     assert active["skipped"] == "active_round"
     assert workspace.is_dir()
 
     r.run(r.sessions.finish_round("session", "round", expected_binding=binding))
     retained = tasks.cleanup_sandbox_session_task.run(
-        "session", True, expected, time.time() + 2
+        "session", True, expected, r.deadline()
     )
     assert retained["skipped"] == "retention_refreshed"
 
     cleaned = tasks.cleanup_sandbox_session_task.run(
-        "session", False, expected, time.time() + 2
+        "session", False, expected, r.deadline()
     )
     assert cleaned["cleaned"] is True
     assert r.run(r.sessions.get("session")) is None
@@ -123,7 +123,7 @@ def test_checkpoint_task_rejects_superseded_round(sandbox_runtime):
     r = sandbox_runtime
     binding = r.bind_session()
     expected = binding.model_dump(mode="json")
-    deadline = time.time() + 2
+    deadline = r.deadline()
     r.run(r.sessions.begin_round("session", "current-round", ttl_seconds=60))
     r.run(
         r.results.create_queued_result(
@@ -157,13 +157,13 @@ def test_eviction_skips_recent_and_active_work_then_restores_last_commit(
     expected = binding.model_dump(mode="json")
     workspace = SandboxWorkspaceManager(root=str(r.roots["a"]))
     recent = tasks.evict_sandbox_session_task.run(
-        "session", time.time() - 1, expected, time.time() + 2
+        "session", time.time() - 1, expected, r.deadline()
     )
     assert recent["skipped"] == "not_idle"
 
     r.run(r.sessions.begin_round("session", "active-round", ttl_seconds=60))
     active = tasks.evict_sandbox_session_task.run(
-        "session", time.time() + 1, expected, time.time() + 2
+        "session", time.time() + 1, expected, r.deadline()
     )
     assert active["skipped"] == "active_round"
     r.run(r.sessions.finish_round("session", "active-round", expected_binding=binding))
@@ -175,7 +175,7 @@ def test_eviction_skips_recent_and_active_work_then_restores_last_commit(
         )
     )
     evicted = tasks.evict_sandbox_session_task.run(
-        "session", time.time() + 1, expected, time.time() + 2
+        "session", time.time() + 1, expected, r.deadline()
     )
     assert evicted["evicted"] is True
     assert not workspace.get_session_root(binding.workspace_id).exists()
@@ -242,7 +242,7 @@ def test_lifecycle_binding_rejects_missing_stale_and_expired_session_descriptors
 ):
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     expected = binding.model_dump(mode="json")
 
     assert r.run(tasks._lifecycle_binding("session", expected, deadline)) == binding
@@ -263,7 +263,7 @@ def test_workspace_preparation_rejects_a_different_worker_identity(sandbox_runti
 
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     job_id = "wrong-worker-prepare"
     r.run(r.results.create_queued_result(job_id, deadline_at=deadline))
     candidate = WorkerPresence(
@@ -295,7 +295,7 @@ def test_workspace_preparation_aborts_when_recovery_lease_expires(
 ):
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     job_id = "expired-recovery-lease"
     r.run(r.results.create_queued_result(job_id, deadline_at=deadline))
     monkeypatch.setattr(r.sessions, "recovery_matches", AsyncMock(return_value=False))
@@ -335,7 +335,7 @@ def test_cleanup_rechecks_binding_after_lock_and_keeps_workspace_on_store_confli
 
     monkeypatch.setattr(tasks, "_lifecycle_binding", lose_binding_after_lock)
     stale = tasks.cleanup_sandbox_session_task.run(
-        "session", False, expected, time.time() + 2
+        "session", False, expected, r.deadline()
     )
     assert stale["skipped"] == "obsolete_binding"
     assert r.run(r.sessions.get("session")) is not None
@@ -343,7 +343,7 @@ def test_cleanup_rechecks_binding_after_lock_and_keeps_workspace_on_store_confli
 
     monkeypatch.setattr(r.sessions, "delete", AsyncMock(return_value=False))
     conflict = tasks.cleanup_sandbox_session_task.run(
-        "session", False, expected, time.time() + 2
+        "session", False, expected, r.deadline()
     )
     assert conflict["skipped"] == "retention_refreshed"
     assert (r.roots["a"] / "sessions" / binding.workspace_id).is_dir()
@@ -352,7 +352,7 @@ def test_cleanup_rechecks_binding_after_lock_and_keeps_workspace_on_store_confli
 def test_checkpoint_claim_and_empty_workspace_paths(sandbox_runtime, monkeypatch):
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     expected = binding.model_dump(mode="json")
     r.run(
         r.results.create_queued_result(
@@ -404,7 +404,7 @@ def test_eviction_rechecks_binding_before_deleting_workspace(
 
     monkeypatch.setattr(tasks, "_lifecycle_binding", lose_binding_after_checkpoint)
     result = tasks.evict_sandbox_session_task.run(
-        "session", time.time() + 1, expected, time.time() + 2
+        "session", time.time() + 1, expected, r.deadline()
     )
 
     assert result["evicted"] is False
@@ -418,7 +418,7 @@ def test_workspace_preparation_fences_worker_lease_and_session_changes(
 
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     candidate = r.workers[binding.worker_id]
     other = WorkerPresence(
         worker_id="worker-b",
@@ -499,7 +499,7 @@ def test_workspace_preparation_rejects_duplicate_and_reused_namespaces(
     r = sandbox_runtime
     binding = r.bind_session()
     candidate = r.workers[binding.worker_id]
-    deadline = time.time() + 2
+    deadline = r.deadline()
     ids = ("duplicate-prepare", "wrong-restore", "occupied-workspace")
     for job_id in ids:
         r.run(r.results.create_queued_result(job_id, deadline_at=deadline))
@@ -552,7 +552,7 @@ def test_checkpoint_fails_if_session_expires_before_locked_save(
 ):
     r = sandbox_runtime
     binding = r.bind_session()
-    deadline = time.time() + 2
+    deadline = r.deadline()
     r.run(
         r.results.create_queued_result(
             "expired-checkpoint",
@@ -597,7 +597,7 @@ def test_eviction_keeps_workspace_when_checkpoint_cannot_be_saved(
     )
 
     result = tasks.evict_sandbox_session_task.run(
-        "session", time.time() + 1, binding.model_dump(mode="json"), time.time() + 2
+        "session", time.time() + 1, binding.model_dump(mode="json"), r.deadline()
     )
 
     assert result["evicted"] is False
@@ -639,7 +639,7 @@ def test_manager_fences_missing_binding_expired_deadline_and_wrong_scope(
         command=[sys.executable, "-c", "print('must not run')"],
         session_id="session",
         binding=stale,
-        deadline_at=time.time() + 2,
+        deadline_at=r.deadline(),
     )
     with pytest.raises(SandboxGuardLost):
         r.run(service.execute(stale_job))
@@ -652,7 +652,7 @@ def test_manager_fences_missing_binding_expired_deadline_and_wrong_scope(
             command=[sys.executable, "-c", "print('must not run')"],
             session_id="session",
             binding=binding,
-            deadline_at=time.time() + 2,
+            deadline_at=r.deadline(),
         )
         with pytest.raises(ValueError, match="Sandbox session not found or expired"):
             r.run(service.execute(job, **scope))
@@ -674,7 +674,7 @@ def test_manager_does_not_start_command_if_round_binding_changes(
         ],
         session_id="session",
         binding=binding,
-        deadline_at=time.time() + 2,
+        deadline_at=r.deadline(),
     )
     monkeypatch.setattr(
         r.sessions, "mark_workspace_round", AsyncMock(return_value=False)
