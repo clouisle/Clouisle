@@ -57,13 +57,18 @@ def _as_text(content: Any) -> str:
     raise ValueError("missing or malformed completion text")
 
 
-def _usage_counter(raw: Any) -> int:
-    """Read one usage counter: absent means zero, present-but-malformed is an error.
+_ABSENT: Any = object()
 
-    Booleans are rejected explicitly: ``True`` would otherwise become one token
-    and be recorded as a real charge.
+
+def _usage_counter(raw: Any) -> int:
+    """Read one usage counter.
+
+    An omitted counter means zero: document endpoints report no usage at all. An
+    explicit ``null`` or any non-integer is malformed instead, because it states
+    nothing about what was billed. Booleans are rejected explicitly, since
+    ``True`` would otherwise be recorded as one token.
     """
-    if raw is None:
+    if raw is _ABSENT:
         return 0
     if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
         raise ValueError("malformed usage counter")
@@ -78,12 +83,12 @@ def _as_usage(raw: Any) -> Usage:
         return Usage()
     if not isinstance(raw, dict):
         raise ValueError("malformed usage")
-    prompt_tokens = _usage_counter(raw.get("prompt_tokens"))
-    completion_tokens = _usage_counter(raw.get("completion_tokens"))
+    prompt_tokens = _usage_counter(raw.get("prompt_tokens", _ABSENT))
+    completion_tokens = _usage_counter(raw.get("completion_tokens", _ABSENT))
     return Usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-        total_tokens=_usage_counter(raw.get("total_tokens"))
+        total_tokens=_usage_counter(raw.get("total_tokens", _ABSENT))
         or prompt_tokens + completion_tokens,
         total_input_tokens=prompt_tokens,
     )

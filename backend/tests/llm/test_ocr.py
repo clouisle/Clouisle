@@ -595,6 +595,13 @@ def test_chat_parse_accepts_blank_transcription() -> None:
             ModelProvider.QWEN,
             {"choices": [{"message": {"content": "x"}}], "usage": "none"},
         ),
+        (
+            ModelProvider.QWEN,
+            {
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"prompt_tokens": None},
+            },
+        ),
         (ModelProvider.MISTRAL, {}),
         (ModelProvider.MISTRAL, {"pages": []}),
         (ModelProvider.MISTRAL, {"pages": [None]}),
