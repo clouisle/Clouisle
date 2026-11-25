@@ -81,7 +81,9 @@ def _as_block(raw: Any) -> OCRBlock | None:
     return OCRBlock(
         type=_as_block_type(block_type),
         text=str(text) if text is not None else None,
-        bbox=_as_bbox(raw.get("bbox") or raw.get("bounding_box")),
+        # Mistral reports the four corner fields directly on the block; the
+        # nested forms stay supported for gateways that reshape the payload.
+        bbox=_as_bbox(raw.get("bbox") or raw.get("bounding_box") or raw),
         confidence=_as_confidence(raw.get("confidence")),
     )
 

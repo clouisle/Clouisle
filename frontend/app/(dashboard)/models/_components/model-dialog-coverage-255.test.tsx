@@ -646,4 +646,31 @@ describe('model management dialog', () => {
     expect(chatTree).toContain('supportsStreaming')
     expect(chatTree).toContain('supportsJsonMode')
   })
+
+  test('editing a saved OCR model never reintroduces a text input', async () => {
+    const renderer = render({
+      model: {
+        id: 'ocr-1',
+        name: 'Saved OCR',
+        provider: 'mistral',
+        model_id: 'mistral-ocr-latest',
+        model_type: 'ocr',
+        base_url: 'https://api.mistral.ai/v1',
+        is_enabled: true,
+        is_default: false,
+        has_api_key: true,
+        capabilities: { input_modalities: ['image', 'file'], output_modalities: ['text'] },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    const payload = updateModel.mock.calls.at(-1)?.[1] as {
+      capabilities: { input_modalities: string[]; output_modalities: string[] }
+    }
+    // The API rejects a text input on an OCR model, and the dialog offers no way
+    // to clear one, so editing must preserve exactly the declared modalities.
+    expect(payload.capabilities.input_modalities).toEqual(['image', 'file'])
+    expect(payload.capabilities.output_modalities).toEqual(['text'])
+  })
 })

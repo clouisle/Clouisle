@@ -300,6 +300,33 @@ def test_mistral_parse_tolerates_malformed_blocks() -> None:
     assert blocks[-1].text == "9"
 
 
+def test_mistral_reads_block_coordinates_from_the_block_itself() -> None:
+    adapter = MistralOCRAdapter(build_config())
+    response = adapter._parse_response(
+        {
+            "pages": [
+                {
+                    "markdown": "Body",
+                    "blocks": [
+                        {
+                            "type": "text",
+                            "content": "Body",
+                            "top_left_x": 0,
+                            "top_left_y": 30,
+                            "bottom_right_x": 100,
+                            "bottom_right_y": 50,
+                        }
+                    ],
+                }
+            ]
+        },
+        build_request(),
+    )
+
+    # Mistral reports the four corner fields on the block, not under bbox.
+    assert response.pages[0].blocks[0].bbox == (0.0, 30.0, 100.0, 50.0)
+
+
 def test_mistral_normalizes_out_of_range_confidence() -> None:
     from app.llm.adapters.ocr.mistral_adapter import _as_confidence
 
@@ -468,6 +495,21 @@ def test_chat_data_uri_defaults_mime_type() -> None:
     assert _as_data_uri(MediaContent(base64="abc")).startswith(
         "data:image/jpeg;base64,"
     )
+
+
+def test_chat_parse_marks_a_length_limited_transcription() -> None:
+    adapter = OpenAICompatibleOCRAdapter(build_config(provider=ModelProvider.QWEN))
+    truncated = adapter._parse_response(
+        {"choices": [{"message": {"content": "partial"}, "finish_reason": "length"}]},
+        build_request(),
+    )
+    complete = adapter._parse_response(
+        {"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]},
+        build_request(),
+    )
+
+    assert truncated.truncated is True
+    assert complete.truncated is False
 
 
 def test_chat_parse_reads_usage() -> None:

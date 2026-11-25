@@ -100,7 +100,7 @@ afterEach(() => {
 test('loads bounded image settings and saves through site settings API', async () => {
   renderer = await render()
   expect(getKnowledgeBaseImages).toHaveBeenCalledTimes(1)
-  expect(getModels).toHaveBeenCalledWith({ model_type: ['chat', 'ocr'], is_enabled: true, pageSize: 100 })
+  expect(getModels).toHaveBeenCalledWith({ model_type: ['chat', 'ocr'], is_enabled: true, page: 1, pageSize: 100 })
   expect(renderer.root.findAll((node) => node.children.includes('Acme / Vision Chat')).length).toBeGreaterThan(0)
   expect(renderer.root.findAll((node) => node.children.includes('Text Chat'))).toHaveLength(0)
   await act(async () => saveButton(renderer!).props.onClick())
@@ -119,7 +119,7 @@ test('routes dedicated OCR models to the OCR slot only', async () => {
   })
   renderer = await render()
   // Both slots are populated from one request that already includes OCR models.
-  expect(getModels).toHaveBeenCalledWith({ model_type: ['chat', 'ocr'], is_enabled: true, pageSize: 100 })
+  expect(getModels).toHaveBeenCalledWith({ model_type: ['chat', 'ocr'], is_enabled: true, page: 1, pageSize: 100 })
   // Each model is offered by exactly one slot: the dedicated OCR type by the OCR
   // slot, the vision chat model by the description slot.
   expect(renderer.root.findAll((node) => node.children.includes('Mistral / Ocr Only')).length).toBe(1)
@@ -322,4 +322,40 @@ test('falls back to a toast when the save failure has no field errors', async ()
   renderer = await render()
   await act(async () => saveButton(renderer!).props.onClick())
   expect(toastError).toHaveBeenCalledWith('server down')
+})
+
+test('walks every model page so a later page still reaches the selectors', async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({
+    id: `ocr-${index}`,
+    name: `Ocr ${index}`,
+    provider: 'mistral',
+    model_type: 'ocr',
+    is_enabled: true,
+    capabilities: { input_modalities: ['image'] },
+  }))
+  getModels.mockResolvedValueOnce({ items: firstPage, total: 101, page: 1, pageSize: 100 })
+  getModels.mockResolvedValueOnce({
+    items: [
+      {
+        id: 'vision-late',
+        name: 'Late Vision',
+        provider: 'openai',
+        provider_display_name: 'Acme',
+        model_type: 'chat',
+        is_enabled: true,
+        capabilities: { input_modalities: ['text', 'image'] },
+      },
+    ],
+    total: 101,
+    page: 2,
+    pageSize: 100,
+  })
+
+  renderer = await render()
+
+  // Splitting one page between chat and OCR would push a chat model out of the
+  // description selector, so the loader has to read the rest of the list.
+  expect(getModels).toHaveBeenCalledTimes(2)
+  expect(getModels).toHaveBeenLastCalledWith({ model_type: ['chat', 'ocr'], is_enabled: true, page: 2, pageSize: 100 })
+  expect(renderer!.root.findAll((node) => node.children.includes('Acme / Late Vision')).length).toBeGreaterThan(0)
 })

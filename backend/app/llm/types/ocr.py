@@ -99,6 +99,13 @@ class OCRResponse(BaseModel):
         strict=True,
         description="Page count reported by the provider, if available",
     )
+    truncated: bool = Field(
+        default=False,
+        description=(
+            "The provider stopped at its output limit, so the text is a prefix of "
+            "the page rather than a complete transcription."
+        ),
+    )
     usage: Usage = Field(default_factory=Usage, description="使用统计")
 
     @property

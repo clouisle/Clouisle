@@ -50,6 +50,28 @@ const DEFAULTS: KnowledgeBaseImageSettings = {
   kb_image_understanding_max_image_pixels: 20000000,
   kb_image_understanding_concurrency: 2,
 }
+const MODEL_PAGE_SIZE = 100
+// A hard stop so a server that keeps reporting more results cannot loop forever.
+const MODEL_MAX_PAGES = 50
+
+// Both selectors need every enabled chat and OCR model. Requesting one page per
+// type split would let a chat model fall off the end of the first page and
+// vanish from the description selector, so walk the pages until they are all in.
+async function loadImageModels(): Promise<Model[]> {
+  const models: Model[] = []
+  for (let page = 1; page <= MODEL_MAX_PAGES; page += 1) {
+    const data = await modelsApi.getModels({
+      model_type: ['chat', 'ocr'],
+      is_enabled: true,
+      page,
+      pageSize: MODEL_PAGE_SIZE,
+    })
+    models.push(...data.items)
+    if (data.items.length < MODEL_PAGE_SIZE || models.length >= data.total) break
+  }
+  return models
+}
+
 const NUMBER_FIELDS = [
   'kb_image_understanding_max_images',
   'kb_image_understanding_max_image_bytes',
@@ -85,7 +107,7 @@ export default function SiteSettingsParsingPage() {
     setModelsLoading(true)
     const [settingsResult, modelsResult] = await Promise.allSettled([
       siteSettingsApi.getKnowledgeBaseImages(),
-      modelsApi.getModels({ model_type: ['chat', 'ocr'], is_enabled: true, pageSize: 100 }),
+      loadImageModels(),
     ])
 
     if (settingsResult.status === 'fulfilled') {
@@ -99,7 +121,7 @@ export default function SiteSettingsParsingPage() {
       // The description slot needs a chat model that understands images; the OCR
       // slot needs a dedicated OCR model, which takes the image alone and never
       // a prompt. A previously saved vision chat model can be kept unchanged.
-      const imageCapable = (modelsResult.value.items || []).filter((model) => {
+      const imageCapable = modelsResult.value.filter((model) => {
         const modalities = model.capabilities?.input_modalities
         return Boolean(IMAGE_INPUT_PROVIDERS[model.provider])
           && Array.isArray(modalities)

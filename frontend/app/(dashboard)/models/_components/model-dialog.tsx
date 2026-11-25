@@ -158,6 +158,24 @@ function supportsInputModalities(modelType: string): boolean {
   return modelType === 'chat' || modelType === 'ocr'
 }
 
+// Initialize modality state from what the model declares, keeping only what the
+// type accepts. `text` is a chat default only: an OCR model never takes a text
+// prompt, and the API rejects the declaration outright.
+function initialModalities(
+  modelType: string,
+  provider: string,
+  declared: unknown,
+  direction: 'input' | 'output',
+): string[] {
+  const options = getModalityOptions(modelType, provider)
+  const allowed = new Set(direction === 'input' ? options.input : options.output)
+  const kept = (Array.isArray(declared) ? declared : []).filter(
+    (modality): modality is string => typeof modality === 'string' && allowed.has(modality),
+  )
+  const textDefault = isChatOnly(modelType) || (direction === 'output' && supportsInputModalities(modelType))
+  return [...new Set([...(textDefault ? ['text'] : []), ...kept])]
+}
+
 function requiresApiKey(provider: string): boolean {
   return provider !== 'ollama'
 }
@@ -520,8 +538,8 @@ export function ModelDialog({
       )
 
       const caps = model.capabilities || {}
-      setInputModalities([...new Set(['text', ...(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : [])])])
-      setOutputModalities([...new Set(['text', ...(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])])])
+      setInputModalities(initialModalities(model.model_type, model.provider, caps.input_modalities, 'input'))
+      setOutputModalities(initialModalities(model.model_type, model.provider, caps.output_modalities, 'output'))
       setSupportsFunctionCall(!!caps.function_call)
       setSupportsStreaming(caps.streaming !== false)
       setSupportsJsonMode(!!caps.json_mode)
@@ -777,8 +795,8 @@ export function ModelDialog({
     }
     if (discoveredModel.capabilities) {
       const capabilities = discoveredModel.capabilities
-      if (Array.isArray(capabilities.input_modalities)) setInputModalities([...new Set(['text', ...capabilities.input_modalities as unknown as string[]])])
-      if (Array.isArray(capabilities.output_modalities)) setOutputModalities([...new Set(['text', ...capabilities.output_modalities as unknown as string[]])])
+      if (Array.isArray(capabilities.input_modalities)) setInputModalities(initialModalities(modelType, provider, capabilities.input_modalities, 'input'))
+      if (Array.isArray(capabilities.output_modalities)) setOutputModalities(initialModalities(modelType, provider, capabilities.output_modalities, 'output'))
       if ('function_call' in capabilities) setSupportsFunctionCall(capabilities.function_call)
       if ('streaming' in capabilities) setSupportsStreaming(capabilities.streaming)
       if ('json_mode' in capabilities) setSupportsJsonMode(capabilities.json_mode)

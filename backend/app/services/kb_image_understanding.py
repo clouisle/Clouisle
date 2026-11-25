@@ -684,6 +684,13 @@ class KBImageUnderstandingService:
                 ),
                 timeout=_MODEL_TIMEOUT_SECONDS,
             )
+            if ocr_response.truncated:
+                # The provider stopped at its output limit. Indexing the prefix
+                # would silently drop the rest of the page, so fail instead.
+                raise KBImageUnderstandingError(
+                    f"{label} model reached its output limit",
+                    code=f"{label}_response_truncated",
+                )
             return ocr_response.text
 
         image = ImageContent(

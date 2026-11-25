@@ -618,6 +618,37 @@ async def test_ocr_model_type_routes_to_document_endpoint(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_truncated_ocr_output_is_not_indexed_as_a_complete_page(
+    monkeypatch,
+) -> None:
+    """A page cut off at the provider's output limit must fail, not be indexed."""
+    model_id = uuid4()
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_model",
+        AsyncMock(return_value=(_ocr_model(), SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_ocr",
+        AsyncMock(
+            return_value=OCRResponse(
+                model="qwen-vl-ocr",
+                pages=[OCRPage(index=0, markdown="LINE ONE")],
+                truncated=True,
+            )
+        ),
+    )
+
+    with pytest.raises(KBImageUnderstandingError) as error:
+        await _service().extract_ocr_images(
+            [_png_bytes()], team_id="team-1", model_id=model_id
+        )
+
+    assert error.value.code == "ocr_response_truncated"
+
+
+@pytest.mark.asyncio
 async def test_split_payload_sends_ocr_model_to_document_endpoint(monkeypatch) -> None:
     """Split mode dispatches per model type: OCR endpoint plus chat description."""
     monkeypatch.setattr(

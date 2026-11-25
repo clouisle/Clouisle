@@ -127,6 +127,8 @@ class OpenAICompatibleOCRAdapter(BaseOCRAdapter):
             model=str(data.get("model") or request.model or self.model_config.model_id),
             pages=[OCRPage(index=0, markdown=_as_text(message.get("content")).strip())],
             usage=_as_usage(data.get("usage")),
+            # ``length`` means the provider ran out of output budget mid-page.
+            truncated=choices[0].get("finish_reason") == "length",
         )
 
     async def _recognize(self, request: OCRRequest, **kwargs: Any) -> OCRResponse:
