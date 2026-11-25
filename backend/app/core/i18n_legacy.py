@@ -2107,6 +2107,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The decision model returned no answers",
         "zh": "决策模型未返回任何答案",
     },
+    "model_test_empty_ocr_result": {
+        "en": "The OCR model returned no pages",
+        "zh": "OCR 模型未返回任何页面",
+    },
     "model_test_empty_embedding_result": {
         "en": "The embedding model returned an empty result",
         "zh": "Embedding 模型返回了空结果",

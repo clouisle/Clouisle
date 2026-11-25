@@ -217,6 +217,7 @@ async def test_saved_connection_rejects_unhandled_enum_member(monkeypatch):
         TTS = ModelType.TTS
         AUDIO_GENERATION = ModelType.AUDIO_GENERATION
         STT = ModelType.STT
+        OCR = ModelType.OCR
 
         def __new__(cls, value):
             return object.__new__(cls)

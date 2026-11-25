@@ -83,6 +83,7 @@
 | 嵌入 | `embedding` | 文本 | 向量 | OpenAI, Cohere |
 | 重排序 | `rerank` | Query + Docs | 分数 | Cohere, Jina |
 | 决策 | `decision` | state + 类型化问题 | 类型化答案 + 概率 | TypeSafe AI |
+| 文字识别 | `ocr` | 图片/文档 | 按页 Markdown + 可选块结构 | Mistral AI, Qwen |
 | 语音合成 | `tts` | 文本 | 音频 | OpenAI, Azure |
 | 语音识别 | `stt` | 音频 | 文本 | OpenAI Whisper |
 | 文生图 | `text_to_image` | 文本 | 图片 | DALL-E, Midjourney |
@@ -208,6 +209,25 @@ answer = decision.answers["refund"]
 answer.choice          # 概率最高的选项
 answer.probabilities   # 每个选项/等级的概率分布
 answer.confidence      # 由分布推导的确定性（noul 不返回）
+
+# ========== OCR（文字识别，按页返回） ==========
+recognized = await model_manager.ocr(
+    OCRRequest(
+        source=MediaContent(base64=image_base64, mime_type="image/png"),
+        include_blocks=True,   # 需要逐块文本与坐标时开启
+    ),
+    model_id="ocr-1.13.0",
+)
+recognized.pages[0].markdown   # 单页 Markdown
+recognized.text                # 所有页拼接后的纯文本
+
+# 团队级调用带配额检查与用量记录；OCR 模型不接受文本提示，
+# 只把图像（Mistral 还接受 PDF）交给模型。
+recognized = await model_manager.team_ocr(
+    team_id=team_id,
+    request=OCRRequest(source=MediaContent(url="https://example.com/scan.png")),
+    model_id="ocr-1.13.0",
+)
 ```
 
 ---
@@ -333,6 +353,94 @@ class DecisionResponse(BaseModel):
     usage: Usage
 ```
 
+### 5.5 文字识别类型
+
+```python
+OCRBlockType = Literal[
+    "text", "title", "table", "figure",
+    "caption", "footnote", "formula", "signature",
+]
+
+class OCRBlock(BaseModel):
+    type: OCRBlockType = "text"           # 块类型
+    text: str | None = None               # 识别出的文本
+    bbox: tuple[float, float, float, float] | None = None  # (x0, y0, x1, y1)，页面像素
+    confidence: float | None = None       # 识别置信度（0-1）
+
+class OCRRequest(BaseModel):
+    source: MediaContent                  # 待识别的图像或文档
+    pages: str | list[int] | None = None  # 0 起始的页码，支持 "0-5" 形式
+    include_blocks: bool = False          # 是否返回逐块文本与坐标（仅 mistral）
+    model: str | None = None              # 覆盖供应商配置的模型
+
+class OCRPage(BaseModel):
+    index: int                            # 页序号，0 起始
+    markdown: str = ""                    # 该页 Markdown
+    blocks: list[OCRBlock] = []           # 需要时返回的逐块内容
+    width: float | None = None            # 页面宽度（像素）
+    height: float | None = None           # 页面高度（像素）
+
+class OCRResponse(BaseModel):
+    model: str                            # 产生识别结果的模型
+    pages: list[OCRPage] = []             # 按源文档顺序排列
+    pages_processed: int | None = None    # 供应商报告的处理页数（如果有）
+    usage: Usage
+
+    @property
+    def text(self) -> str: ...            # 各页 Markdown 拼接后的纯文本
+```
+
+`ocr` 与 `chat` 的关键差异：OCR 模型**不接受文本提示**，因此它的
+`input_modalities` 不含 `text`（见 `app/llm/capabilities.py` 的
+`_OCR_ADAPTER_INPUTS`），管理端也不会为它展示 function calling、
+streaming、JSON mode 等对话专属开关。目前实现的供应商：
+`mistral`（`/v1/ocr`，图像 + PDF）、`qwen` 与 `custom`（OpenAI 兼容
+chat completions，仅图像）。
+
+请求形状按供应商能力收窄，适配器不会静默忽略字段：`BaseOCRAdapter.SUPPORTED_FEATURES`
+声明该线格式能兑现的可选字段，`recognize` 在发出任何网络请求前拒绝其余字段
+（`InvalidRequestError`，带 `field`）：
+
+| 请求字段 | `mistral` | `qwen` / `custom` |
+| --- | --- | --- |
+| `pages` | ✓ | 拒绝 |
+| `include_blocks` | ✓ | 拒绝 |
+| 图像输入 | ✓ | ✓ |
+| PDF 输入 | ✓ | 模态在校验阶段即被剔除 |
+
+`OCRRequest.source` 只接受远程 URL 或内联 base64。适配器通过 HTTP 发送文档，读不到
+本地路径，因此 `file_path` 在构造请求时就被拒绝——这是调用方的错误，不该等供应商
+调用失败后以 `ProviderError` 的形式出现。
+
+请求不携带任何提示词：OCR 模型按定义只接收图像，转写提示词由供应商自身提供。
+供应商级的结构化提取（Mistral 的 `document_annotation`）暂不支持，因为它需要请求侧
+JSON schema 与响应侧字段一起设计；在没有调用方之前不暴露半成品字段。
+
+团队 OCR 配额优先使用供应商上报的 token 数。未上报时（例如 Mistral 只返回
+`usage_info.pages_processed`），按供应商上报的页数折算；若没有正的页数，则用
+返回的页数（至少一页）。折算率固定为每页 1,000 token，仅用于内部配额估算，
+不代表供应商计费或实测 token 数。
+
+知识库 OCR 槽位允许保留已保存且仍启用、支持图像的旧 `chat` 模型。新选或更换
+模型时必须使用专用 `ocr` 类型。
+
+写入时会按模型类型校验声明的模态（`app/schemas/model.py` 的
+`_MODEL_TYPE_MODALITIES`），而不只校验词表，因此 OCR 模型无法声明
+`text` 输入或非 `text` 输出：
+
+| 模型类型 | 允许的 `input_modalities` | 允许的 `output_modalities` |
+| --- | --- | --- |
+| `chat` | text, image, audio, video, file | text, image, audio, video, file |
+| `ocr` | image, file | text |
+| `tts` / `audio_generation` | text | audio |
+| `stt` | audio | text |
+| `text_to_image` | text | image |
+| `text_to_video` | text | video |
+| `embedding` / `rerank` / `decision` | text | —（无媒体输出） |
+
+`input_limits` 的键同样必须是该类型允许的输入模态。`ModelUpdate` 不含
+`model_type`，因此更新端点会用库中已存的类型重新校验，返回 422。
+
 ---
 
 ## 6. 错误处理
@@ -384,7 +492,8 @@ backend/app/llm/
 │   ├── image.py                   # 图像生成类型
 │   ├── video.py                   # 视频生成类型
 │   ├── audio.py                   # 音频类型
-│   └── decision.py                # 决策类型（choice / score / noul）
+│   ├── decision.py                # 决策类型（choice / score / noul）
+│   └── ocr.py                     # 文字识别类型（按页 Markdown + 可选块结构）
 ├── adapters/
 │   ├── __init__.py
 │   ├── chat/                      # Chat 适配器（LangChain）
@@ -403,6 +512,8 @@ backend/app/llm/
 │   ├── audio/                     # base.py + openai_tts / openai_stt / minimax_tts /
 │   │                              #   volcengine_tts / volcengine_generation
 │   ├── decision/                  # base.py / factory.py / typesafe_adapter.py
+│   ├── ocr/                       # base.py / factory.py / mistral_adapter.py /
+│   │                              #   openai_compatible_adapter.py
 │   ├── *_client.py                # 供应商直连客户端（runway / luma / pika / kling /
 │   │                              #   minimax / dashscope_video / siliconflow / volcengine）
 │   └── media_utils.py

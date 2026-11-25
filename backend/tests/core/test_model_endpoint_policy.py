@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.model_endpoint_policy import (
+    DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
     ModelEndpointPolicyError,
     ensure_model_endpoint_allowed,
     model_endpoint_origin_is_allowed,
@@ -12,6 +13,7 @@ from app.core.model_endpoint_policy import (
 )
 from app.llm.manager import ModelManager
 from app.models.model import (
+    PROVIDER_DEFAULTS,
     ModelProvider,
     ModelType,
     get_effective_model_base_url,
@@ -118,6 +120,28 @@ def test_effective_model_endpoint_fallbacks(
     expected: str | None,
 ) -> None:
     assert get_effective_model_base_url(provider, model_type, base_url) == expected
+
+
+def test_every_provider_default_is_reachable_under_the_default_allowlist() -> None:
+    """A seeded default the policy rejects makes that provider unusable on a fresh install.
+
+    Creating or testing a model enforces the endpoint policy before the adapter
+    runs, so a provider listed in ``PROVIDER_DEFAULTS`` without its origin in the
+    default allowlist fails with ``model_endpoint_not_allowlisted``.
+    """
+    allowed = {
+        normalize_model_endpoint_origin(entry)
+        for entry in DEFAULT_MODEL_ENDPOINT_ALLOWLIST
+    }
+
+    unreachable = {
+        provider.value: normalize_model_endpoint_origin(default["base_url"])
+        for provider, default in PROVIDER_DEFAULTS.items()
+        if default.get("base_url")
+        and normalize_model_endpoint_origin(default["base_url"]) not in allowed
+    }
+
+    assert unreachable == {}
 
 
 def test_effective_model_endpoint_matches_runtime_adapter_defaults() -> None:

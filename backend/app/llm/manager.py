@@ -37,6 +37,7 @@ from .adapters import (
     create_decision_adapter,
     create_embedding_model,
     create_image_adapter,
+    create_ocr_adapter,
     create_rerank_adapter,
     create_stt_adapter,
     create_tts_adapter,
@@ -74,6 +75,8 @@ from .types import (
     ChatStreamChunk,
     DecisionRequest,
     DecisionResponse,
+    OCRRequest,
+    OCRResponse,
     ToolDefinition,
     ImageGenerationRequest,
     ImageGenerationResponse,
@@ -89,6 +92,10 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Quota estimate for providers that do not report tokens. This is a fixed
+# policy rate, not measured token usage or the provider's billing rate.
+_OCR_TOKENS_PER_PAGE = 1000
 
 
 class ModelManager:
@@ -132,9 +139,13 @@ class ModelManager:
         return identifier
 
     async def _get_model_config(
-        self, model_id: str | None = None, model_type: ModelType = ModelType.CHAT
+        self, model_id: str | None = None, model_type: ModelType | None = ModelType.CHAT
     ) -> Model:
-        """Load an enabled model configuration by UUID or type default."""
+        """Load an enabled model configuration by UUID or type default.
+
+        ``model_type`` of ``None`` accepts any type and requires ``model_id``;
+        callers that branch on the resolved type use it.
+        """
         if model_id:
             parsed_uuid = self._parse_model_identifier(model_id)
             if parsed_uuid is None:
@@ -142,8 +153,15 @@ class ModelManager:
                     code=ResponseCode.MODEL_NOT_FOUND,
                     msg_key="model_not_found",
                 )
-            model = await Model.filter(id=parsed_uuid, model_type=model_type).first()
+            filters: dict[str, Any] = {"id": parsed_uuid}
+            if model_type is not None:
+                filters["model_type"] = model_type
+            model = await Model.filter(**filters).first()
         else:
+            if model_type is None:
+                raise ValueError(
+                    "A model_type is required to resolve the default model"
+                )
             model = await Model.filter(model_type=model_type, is_default=True).first()
 
         if not model:
@@ -206,6 +224,8 @@ class ModelManager:
             return OpenAICompatibleAdapter(model_config, provider_hint="volcengine")
         elif provider_value == ModelProvider.SILICONFLOW.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="siliconflow")
+        elif provider_value == ModelProvider.MISTRAL.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="mistral")
         elif provider_value == ModelProvider.CUSTOM.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="custom")
 
@@ -284,7 +304,7 @@ class ModelManager:
         self,
         team_id: str,
         model_id: str | None,
-        model_type: ModelType = ModelType.CHAT,
+        model_type: ModelType | None = ModelType.CHAT,
     ) -> tuple[Model, TeamModel]:
         """
         获取团队授权的模型
@@ -335,6 +355,17 @@ class ModelManager:
         default chat model.
         """
         return await self._get_team_model(team_id, model_id, ModelType.CHAT)
+
+    async def resolve_team_model(
+        self, team_id: str, model_id: str
+    ) -> tuple[Model, TeamModel]:
+        """Resolve a team-authorized model of any type by UUID.
+
+        Callers that branch on the resolved model type (a chat model or a
+        dedicated OCR model) resolve first and then pick the matching call
+        path, so the same provenance and quota checks apply to both.
+        """
+        return await self._get_team_model(team_id, model_id, model_type=None)
 
     async def _check_and_record_usage(
         self,
@@ -637,6 +668,38 @@ class ModelManager:
             raise
         except Exception as e:
             logger.exception(f"Decision error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    # ==================== OCR 方法 ====================
+
+    async def ocr(
+        self,
+        request: OCRRequest | dict[str, Any],
+        model_id: str | None = None,
+        **kwargs: Any,
+    ) -> OCRResponse:
+        """
+        识别图像或文档中的文字（OCR 模型）
+
+        Args:
+            request: 识别请求（source + 可选提取选项）
+            model_id: 模型 ID
+
+        Returns:
+            OCRResponse: 按页返回的识别结果
+        """
+        if isinstance(request, dict):
+            request = OCRRequest(**request)
+
+        model_config = await self._get_model_config(model_id, ModelType.OCR)
+        adapter = create_ocr_adapter(model_config)
+
+        try:
+            return await adapter.recognize(request, **kwargs)
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"OCR error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
     # ==================== Image 方法 ====================
@@ -1246,6 +1309,57 @@ class ModelManager:
             raise
         except Exception as e:
             logger.exception(f"Team decision error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def team_ocr(
+        self,
+        team_id: str,
+        request: OCRRequest | dict[str, Any],
+        model_id: str | None = None,
+        **kwargs: Any,
+    ) -> OCRResponse:
+        """
+        团队级文字识别（带配额检查和用量追踪）
+        """
+        if isinstance(request, dict):
+            request = OCRRequest(**request)
+
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.OCR
+        )
+
+        try:
+            await usage_tracker.check_quota_with_model(team_model)
+        except QuotaExceededError as e:
+            raise LLMQuotaExceededError(
+                message=str(e),
+                quota_type=e.quota_type,
+                team_id=team_id,
+                model=str(model_config.id),
+            )
+
+        adapter = create_ocr_adapter(model_config)
+
+        try:
+            result = await adapter.recognize(request, **kwargs)
+
+            total_tokens = result.usage.total_tokens if result.usage else 0
+            if total_tokens <= 0:
+                # Convert billed pages into the token units quota accounting uses.
+                page_count = result.pages_processed or max(len(result.pages), 1)
+                total_tokens = page_count * _OCR_TOKENS_PER_PAGE
+
+            await self._check_and_record_usage(
+                team_id=team_id,
+                model_id=str(model_config.id),
+                tokens_used=total_tokens,
+            )
+
+            return result
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Team OCR error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
 

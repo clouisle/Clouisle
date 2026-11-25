@@ -600,4 +600,104 @@ describe('model management dialog', () => {
       default_params: { speaker: 'speaker-123', speed: 1.25 },
     }))
   })
+
+  test('offers the PDF modality only for Mistral OCR models', () => {
+    const ocrProviders = [
+      { code: 'mistral', base_url: 'https://api.mistral.test' },
+      { code: 'qwen', base_url: 'https://dashscope.test' },
+    ] as React.ComponentProps<typeof ModelDialog>['providers']
+    const ocrModelTypes = [{ code: 'ocr' }] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+    const renderer = render({ providers: ocrProviders, modelTypes: ocrModelTypes })
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'ocr' } }))
+
+    // Mistral's document endpoint accepts a PDF alongside the image.
+    selectProvider(renderer, 'mistral')
+    expect(JSON.stringify(renderer.toJSON())).toContain('modality.file')
+
+    // The OpenAI-compatible OCR endpoints take an image alone, so the PDF option
+    // must disappear rather than save a modality the backend drops.
+    selectProvider(renderer, 'qwen')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('modality.file')
+    expect(JSON.stringify(renderer.toJSON())).toContain('modality.image')
+  })
+
+  test('hides conversation-only capabilities for OCR models', () => {
+    const providersOption = [
+      { code: 'mistral', base_url: 'https://api.mistral.test' },
+    ] as React.ComponentProps<typeof ModelDialog>['providers']
+    const modelTypesOption = [{ code: 'ocr' }, { code: 'chat' }] as React.ComponentProps<typeof ModelDialog>['modelTypes']
+    const renderer = render({ providers: providersOption, modelTypes: modelTypesOption })
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'ocr' } }))
+    selectProvider(renderer, 'mistral')
+
+    // An OCR model is addressed with an image alone, so these switches are never
+    // saved for it: showing them offered controls with no effect.
+    const ocrTree = JSON.stringify(renderer.toJSON())
+    expect(ocrTree).toContain('modality.image')
+    expect(ocrTree).not.toContain('supportsFunctionCall')
+    expect(ocrTree).not.toContain('supportsStreaming')
+    expect(ocrTree).not.toContain('supportsJsonMode')
+
+    act(() => modelTypeSelect(renderer).props.onChange({ target: { value: 'chat' } }))
+    const chatTree = JSON.stringify(renderer.toJSON())
+    expect(chatTree).toContain('supportsFunctionCall')
+    expect(chatTree).toContain('supportsStreaming')
+    expect(chatTree).toContain('supportsJsonMode')
+  })
+
+  test('editing a saved OCR model never reintroduces a text input', async () => {
+    const renderer = render({
+      model: {
+        id: 'ocr-1',
+        name: 'Saved OCR',
+        provider: 'mistral',
+        model_id: 'mistral-ocr-latest',
+        model_type: 'ocr',
+        base_url: 'https://api.mistral.ai/v1',
+        is_enabled: true,
+        is_default: false,
+        has_api_key: true,
+        capabilities: { input_modalities: ['image', 'file'], output_modalities: ['text'] },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    const payload = updateModel.mock.calls.at(-1)?.[1] as {
+      capabilities: { input_modalities: string[]; output_modalities: string[] }
+    }
+    // The API rejects a text input on an OCR model, and the dialog offers no way
+    // to clear one, so editing must preserve exactly the declared modalities.
+    expect(payload.capabilities.input_modalities).toEqual(['image', 'file'])
+    expect(payload.capabilities.output_modalities).toEqual(['text'])
+  })
+
+  test('editing a saved OCR model keeps its generation settings', async () => {
+    const renderer = render({
+      model: {
+        id: 'ocr-2',
+        name: 'Saved OCR',
+        provider: 'mistral',
+        model_id: 'mistral-ocr-latest',
+        model_type: 'ocr',
+        base_url: 'https://api.mistral.ai/v1',
+        is_enabled: true,
+        is_default: false,
+        has_api_key: true,
+        default_params: { temperature: 0, max_tokens: 512 },
+        capabilities: { input_modalities: ['image'], output_modalities: ['text'] },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    const payload = updateModel.mock.calls.at(-1)?.[1] as {
+      default_params: Record<string, unknown>
+    }
+    // OCR renders no parameter inputs, so the values live in the extension JSON;
+    // an edit must not drop the adapter's configured temperature or output cap.
+    expect(payload.default_params).toMatchObject({ temperature: 0, max_tokens: 512 })
+  })
 })

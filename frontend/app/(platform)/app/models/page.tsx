@@ -18,6 +18,7 @@ const MODEL_TYPES = [
   'embedding', 
   'rerank',
   'decision',
+  'ocr',
   'tts',
   'stt',
   'text_to_image',

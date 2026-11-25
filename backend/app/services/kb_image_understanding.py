@@ -35,7 +35,16 @@ from app.llm.errors import (
     QuotaExceededError as LLMQuotaExceededError,
     TimeoutError as LLMTimeoutError,
 )
-from app.llm.types import ContentPart, ContentType, ImageContent, Message, MessageRole
+from app.llm.types import (
+    ContentPart,
+    ContentType,
+    ImageContent,
+    MediaContent,
+    Message,
+    MessageRole,
+    OCRRequest,
+)
+from app.models.model import ModelType
 from app.schemas.response import BusinessError
 
 _FENCED_JSON_PREFIXES = ("```json", "```JSON", "```")
@@ -365,7 +374,9 @@ class KBImageUnderstandingService:
             )
 
         unique_payloads, source_indices = self._dedupe_payloads(image_bytes)
-        await self._resolve_image_model(team_id, ocr_model_id, role="ocr")
+        ocr_model_type = await self._resolve_image_model(
+            team_id, ocr_model_id, role="ocr"
+        )
         await self._resolve_image_model(team_id, vision_model_id, role="vision")
 
         # Validate every image before the first paid OCR/vision request.
@@ -384,6 +395,7 @@ class KBImageUnderstandingService:
                     payload,
                     team_id=team_id,
                     ocr_model_id=ocr_model_id,
+                    ocr_model_type=ocr_model_type,
                     vision_model_id=vision_model_id,
                 )
             )
@@ -423,7 +435,7 @@ class KBImageUnderstandingService:
             )
 
         unique_payloads, source_indices = self._dedupe_payloads(image_bytes)
-        await self._resolve_image_model(team_id, model_id, role="ocr")
+        model_type = await self._resolve_image_model(team_id, model_id, role="ocr")
         for payload in unique_payloads:
             async with self._normalization_semaphore:
                 await asyncio.to_thread(
@@ -434,7 +446,12 @@ class KBImageUnderstandingService:
                 )
         tasks = [
             asyncio.create_task(
-                self._analyze_ocr_payload(payload, team_id=team_id, model_id=model_id)
+                self._analyze_ocr_payload(
+                    payload,
+                    team_id=team_id,
+                    model_id=model_id,
+                    model_type=model_type,
+                )
             )
             for payload in unique_payloads
         ]
@@ -449,7 +466,12 @@ class KBImageUnderstandingService:
         return [unique_results[index] for index in source_indices]
 
     async def _analyze_ocr_payload(
-        self, image_bytes: bytes, *, team_id: str, model_id: UUID
+        self,
+        image_bytes: bytes,
+        *,
+        team_id: str,
+        model_id: UUID,
+        model_type: str,
     ) -> KBImageUnderstandingResult:
         async with self._normalization_semaphore:
             normalized = await asyncio.to_thread(
@@ -462,6 +484,7 @@ class KBImageUnderstandingService:
             normalized,
             team_id=team_id,
             model_id=model_id,
+            model_type=model_type,
             system_prompt=_OCR_SYSTEM_PROMPT,
             user_prompt=_OCR_USER_PROMPT,
             label="ocr",
@@ -477,9 +500,15 @@ class KBImageUnderstandingService:
 
     async def _resolve_image_model(
         self, team_id: str, model_id: UUID, *, role: str
-    ) -> None:
+    ) -> str:
+        """Resolve the team-authorized model and return its type.
+
+        The type decides the call path: ``chat`` models are prompted with the
+        image plus an instruction, while ``ocr`` models recognize text from the
+        image alone and are never prompted.
+        """
         try:
-            resolved_model, _team_model = await model_manager.resolve_team_chat_model(
+            resolved_model, _team_model = await model_manager.resolve_team_model(
                 team_id=team_id,
                 model_id=str(model_id),
             )
@@ -491,6 +520,8 @@ class KBImageUnderstandingService:
                 f"{role} model could not be resolved",
                 code=f"{role}_model_resolution_failed",
             ) from None
+        model_type = resolved_model.model_type
+        return str(getattr(model_type, "value", model_type))
 
     async def _analyze_split_payload(
         self,
@@ -498,6 +529,7 @@ class KBImageUnderstandingService:
         *,
         team_id: str,
         ocr_model_id: UUID,
+        ocr_model_type: str,
         vision_model_id: UUID,
     ) -> KBImageUnderstandingResult:
         async with self._normalization_semaphore:
@@ -512,6 +544,7 @@ class KBImageUnderstandingService:
                 normalized,
                 team_id=team_id,
                 model_id=ocr_model_id,
+                model_type=ocr_model_type,
                 system_prompt=_OCR_SYSTEM_PROMPT,
                 user_prompt=_OCR_USER_PROMPT,
                 label="ocr",
@@ -523,6 +556,7 @@ class KBImageUnderstandingService:
                 normalized,
                 team_id=team_id,
                 model_id=vision_model_id,
+                model_type=str(ModelType.CHAT.value),
                 system_prompt=_DESCRIPTION_SYSTEM_PROMPT,
                 user_prompt=_DESCRIPTION_USER_PROMPT,
                 label="description",
@@ -551,45 +585,37 @@ class KBImageUnderstandingService:
         *,
         team_id: str,
         model_id: UUID,
+        model_type: str,
         system_prompt: str,
         user_prompt: str,
         label: str,
         allow_empty: bool,
     ) -> str:
-        encoded = base64.b64encode(normalized.image_bytes).decode("ascii")
-        image = ImageContent(
-            base64=encoded,
-            mime_type=normalized.mime_type,
-            format="jpeg",
-            width=normalized.width,
-            height=normalized.height,
-        )
-        messages = [
-            Message(role=MessageRole.SYSTEM, content=system_prompt),
-            Message(
-                role=MessageRole.USER,
-                content=[
-                    ContentPart(type=ContentType.TEXT, text=user_prompt),
-                    ContentPart(type=ContentType.IMAGE, image=image),
-                ],
-            ),
-        ]
+        """Send one normalized image to the resolved model and return its text.
+
+        ``model_type`` selects the call path. OCR models recognize text from the
+        image alone, so they are never prompted; chat models receive the image
+        plus the role's instruction.
+        """
         async with self._semaphore:
             try:
-                response = await asyncio.wait_for(
-                    model_manager.team_chat(
-                        team_id=team_id,
-                        model_id=str(model_id),
-                        messages=messages,
-                        temperature=0,
-                        max_tokens=_MODEL_MAX_OUTPUT_TOKENS,
-                    ),
-                    timeout=_MODEL_TIMEOUT_SECONDS,
+                content = await self._invoke_image_model(
+                    normalized,
+                    team_id=team_id,
+                    model_id=model_id,
+                    model_type=model_type,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    label=label,
                 )
             except (TimeoutError, LLMTimeoutError):
                 raise KBImageUnderstandingError(
                     f"{label} model request timed out", code=f"{label}_timeout"
                 ) from None
+            except KBImageUnderstandingError:
+                # Already carries the precise failure code (e.g. an invalid
+                # response body); re-wrapping would lose it.
+                raise
             except (
                 ModelNotFoundError,
                 ModelDisabledError,
@@ -606,12 +632,6 @@ class KBImageUnderstandingService:
                     f"{label} model request failed", code=f"{label}_provider_error"
                 ) from None
 
-        content: Any = getattr(response, "content", None)
-        if not isinstance(content, str):
-            raise KBImageUnderstandingError(
-                f"{label} model returned an invalid response",
-                code=f"invalid_{label}_response",
-            )
         if len(content.encode("utf-8")) > _MAX_RESPONSE_BYTES:
             raise KBImageUnderstandingError(
                 f"{label} model response exceeds the configured output limit",
@@ -631,6 +651,83 @@ class KBImageUnderstandingService:
                 code=f"empty_{label}_response",
             )
         return text
+
+    async def _invoke_image_model(
+        self,
+        normalized: NormalizedKBImage,
+        *,
+        team_id: str,
+        model_id: UUID,
+        model_type: str,
+        system_prompt: str,
+        user_prompt: str,
+        label: str,
+    ) -> str:
+        """Run one model call and return its raw text.
+
+        OCR models take the image with no text part; chat models take the image
+        plus the role's instruction as a conversation.
+        """
+        encoded = base64.b64encode(normalized.image_bytes).decode("ascii")
+        if model_type == ModelType.OCR.value:
+            ocr_response = await asyncio.wait_for(
+                model_manager.team_ocr(
+                    team_id=team_id,
+                    model_id=str(model_id),
+                    request=OCRRequest(
+                        source=MediaContent(
+                            base64=encoded,
+                            mime_type=normalized.mime_type,
+                            filename="page.jpg",
+                        )
+                    ),
+                ),
+                timeout=_MODEL_TIMEOUT_SECONDS,
+            )
+            if ocr_response.truncated:
+                # The provider stopped at its output limit. Indexing the prefix
+                # would silently drop the rest of the page, so fail instead.
+                raise KBImageUnderstandingError(
+                    f"{label} model reached its output limit",
+                    code=f"{label}_response_truncated",
+                )
+            return ocr_response.text
+
+        image = ImageContent(
+            base64=encoded,
+            mime_type=normalized.mime_type,
+            format="jpeg",
+            width=normalized.width,
+            height=normalized.height,
+        )
+        messages = [
+            Message(role=MessageRole.SYSTEM, content=system_prompt),
+            Message(
+                role=MessageRole.USER,
+                content=[
+                    ContentPart(type=ContentType.TEXT, text=user_prompt),
+                    ContentPart(type=ContentType.IMAGE, image=image),
+                ],
+            ),
+        ]
+        chat_response = await asyncio.wait_for(
+            model_manager.team_chat(
+                team_id=team_id,
+                model_id=str(model_id),
+                messages=messages,
+                temperature=0,
+                max_tokens=_MODEL_MAX_OUTPUT_TOKENS,
+            ),
+            timeout=_MODEL_TIMEOUT_SECONDS,
+        )
+        content = getattr(chat_response, "content", None)
+
+        if not isinstance(content, str):
+            raise KBImageUnderstandingError(
+                f"{label} model returned an invalid response",
+                code=f"invalid_{label}_response",
+            )
+        return content
 
     async def _analyze_payload(
         self, image_bytes: bytes, *, team_id: str, model_id: UUID

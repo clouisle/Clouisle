@@ -83,6 +83,15 @@ from .decision import (
     DecisionResponse,
 )
 
+# OCR types
+from .ocr import (
+    OCRBlockType,
+    OCRBlock,
+    OCRRequest,
+    OCRPage,
+    OCRResponse,
+)
+
 __all__ = [
     # Base
     "MediaContent",
@@ -141,4 +150,10 @@ __all__ = [
     "DecisionRequest",
     "DecisionAnswer",
     "DecisionResponse",
+    # OCR
+    "OCRBlockType",
+    "OCRBlock",
+    "OCRRequest",
+    "OCRPage",
+    "OCRResponse",
 ]

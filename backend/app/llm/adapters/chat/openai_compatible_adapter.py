@@ -48,6 +48,7 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
         "baichuan": "https://api.baichuan-ai.com/v1",
         "minimax": "https://api.minimax.chat/v1",
         "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+        "mistral": "https://api.mistral.ai/v1",
         "ollama": "http://localhost:11434/v1",
     }
 

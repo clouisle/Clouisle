@@ -102,25 +102,6 @@ def _reject_integration_setting(key: str) -> None:
         )
 
 
-async def _validate_image_capable_chat_model(value: str) -> None:
-    try:
-        model_id = UUID(value)
-    except ValueError as exc:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
-        ) from exc
-    model = await Model.filter(id=model_id).first()
-    if (
-        not model
-        or not model.is_enabled
-        or model.model_type != "chat"
-        or ContentType.IMAGE not in get_effective_input_capabilities(model).modalities
-    ):
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
-        )
-
-
 async def _validate_setting_value(
     key: str, value: object, pending_settings: dict[str, Any] | None = None
 ) -> None:
@@ -432,7 +413,24 @@ async def _validate_setting_value(
                 if not configured_model_id:
                     raise_validation_error()
             return
-        await _validate_image_capable_chat_model(value)
+        # Preserve the existing vision-chat model on upgrades, but only accept
+        # dedicated OCR models for new selections.
+        try:
+            model_id = UUID(value)
+        except ValueError:
+            raise_validation_error()
+        model = await Model.filter(id=model_id).first()
+        if (
+            not model
+            or not model.is_enabled
+            or ContentType.IMAGE
+            not in get_effective_input_capabilities(model).modalities
+        ):
+            raise_validation_error()
+        if model.model_type != "ocr" and (
+            model.model_type != "chat" or value != await SiteSetting.get_value(key, "")
+        ):
+            raise_validation_error()
         return
 
     bounds = KB_IMAGE_UNDERSTANDING_INTEGER_BOUNDS.get(key)

@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 
-from app.llm.types import ContentType
+from app.llm.types import ContentType, OCRPage, OCRResponse
 from app.models.model import ModelProvider, ModelType
 from app.services import kb_image_understanding as image_service_module
 from app.services.kb_image_understanding import (
@@ -44,6 +44,15 @@ def _vision_model():
         provider=ModelProvider.OPENAI,
         base_url=None,
         capabilities={"input_modalities": ["text", "image"]},
+    )
+
+
+def _ocr_model():
+    return SimpleNamespace(
+        model_type=ModelType.OCR,
+        provider=ModelProvider.MISTRAL,
+        base_url=None,
+        capabilities={"input_modalities": ["image", "file"]},
     )
 
 
@@ -232,7 +241,7 @@ async def test_split_models_extract_ocr_and_description_separately(monkeypatch):
     ocr_model_id, vision_model_id = uuid4(), uuid4()
     monkeypatch.setattr(
         image_service_module.model_manager,
-        "resolve_team_chat_model",
+        "resolve_team_model",
         AsyncMock(return_value=(_vision_model(), SimpleNamespace())),
     )
     calls: list[str] = []
@@ -264,7 +273,7 @@ async def test_ocr_only_extracts_text_without_description(monkeypatch):
     model_id = uuid4()
     monkeypatch.setattr(
         image_service_module.model_manager,
-        "resolve_team_chat_model",
+        "resolve_team_model",
         AsyncMock(return_value=(_vision_model(), SimpleNamespace())),
     )
     monkeypatch.setattr(
@@ -439,6 +448,7 @@ async def test_split_payload_cancels_peer_when_one_call_fails(monkeypatch) -> No
             _png_bytes(),
             team_id="t",
             ocr_model_id=uuid4(),
+            ocr_model_type=str(ModelType.CHAT.value),
             vision_model_id=uuid4(),
         )
 
@@ -470,6 +480,7 @@ async def test_image_prompt_response_validation(
                 normalized,
                 team_id="t",
                 model_id=uuid4(),
+                model_type=str(ModelType.CHAT.value),
                 system_prompt="s",
                 user_prompt="u",
                 label="ocr" if allow_empty else "description",
@@ -482,6 +493,7 @@ async def test_image_prompt_response_validation(
                 normalized,
                 team_id="t",
                 model_id=uuid4(),
+                model_type=str(ModelType.CHAT.value),
                 system_prompt="s",
                 user_prompt="u",
                 label="ocr",
@@ -538,6 +550,7 @@ async def test_image_prompt_strips_fence_language_label(monkeypatch):
             normalized,
             team_id="t",
             model_id=uuid4(),
+            model_type=str(ModelType.CHAT.value),
             system_prompt="s",
             user_prompt="u",
             label="ocr",
@@ -562,6 +575,7 @@ async def test_image_prompt_strips_empty_fence_info_line(monkeypatch):
             normalized,
             team_id="t",
             model_id=uuid4(),
+            model_type=str(ModelType.CHAT.value),
             system_prompt="s",
             user_prompt="u",
             label="ocr",
@@ -569,3 +583,101 @@ async def test_image_prompt_strips_empty_fence_info_line(monkeypatch):
         )
         == "visible text"
     )
+
+
+@pytest.mark.asyncio
+async def test_ocr_model_type_routes_to_document_endpoint(monkeypatch) -> None:
+    """An ``ocr`` model is called through ``team_ocr``, never ``team_chat``."""
+    model_id = uuid4()
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_model",
+        AsyncMock(return_value=(_ocr_model(), SimpleNamespace())),
+    )
+    team_chat = AsyncMock(side_effect=AssertionError("chat path must not run"))
+    monkeypatch.setattr(image_service_module.model_manager, "team_chat", team_chat)
+    team_ocr = AsyncMock(
+        return_value=OCRResponse(
+            model="mistral-ocr-latest",
+            pages=[OCRPage(index=0, markdown="LINE ONE\nLINE TWO")],
+        )
+    )
+    monkeypatch.setattr(image_service_module.model_manager, "team_ocr", team_ocr)
+
+    results = await _service().extract_ocr_images(
+        [_png_bytes()], team_id="team-1", model_id=model_id
+    )
+
+    assert results[0].ocr_text == "LINE ONE\nLINE TWO"
+    team_chat.assert_not_awaited()
+    request = team_ocr.await_args.kwargs["request"]
+    # Only the source is set: the service never asks the model for anything.
+    assert request.model_fields_set == {"source"}
+    assert request.source.base64
+    assert request.source.mime_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_truncated_ocr_output_is_not_indexed_as_a_complete_page(
+    monkeypatch,
+) -> None:
+    """A page cut off at the provider's output limit must fail, not be indexed."""
+    model_id = uuid4()
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_model",
+        AsyncMock(return_value=(_ocr_model(), SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "team_ocr",
+        AsyncMock(
+            return_value=OCRResponse(
+                model="qwen-vl-ocr",
+                pages=[OCRPage(index=0, markdown="LINE ONE")],
+                truncated=True,
+            )
+        ),
+    )
+
+    with pytest.raises(KBImageUnderstandingError) as error:
+        await _service().extract_ocr_images(
+            [_png_bytes()], team_id="team-1", model_id=model_id
+        )
+
+    assert error.value.code == "ocr_response_truncated"
+
+
+@pytest.mark.asyncio
+async def test_split_payload_sends_ocr_model_to_document_endpoint(monkeypatch) -> None:
+    """Split mode dispatches per model type: OCR endpoint plus chat description."""
+    monkeypatch.setattr(
+        image_service_module.model_manager,
+        "resolve_team_model",
+        AsyncMock(
+            side_effect=[
+                (_ocr_model(), SimpleNamespace()),
+                (_vision_model(), SimpleNamespace()),
+            ]
+        ),
+    )
+    team_ocr = AsyncMock(
+        return_value=OCRResponse(
+            model="mistral-ocr-latest", pages=[OCRPage(index=0, markdown="OCR BODY")]
+        )
+    )
+    monkeypatch.setattr(image_service_module.model_manager, "team_ocr", team_ocr)
+    team_chat = AsyncMock(return_value=SimpleNamespace(content="A red square."))
+    monkeypatch.setattr(image_service_module.model_manager, "team_chat", team_chat)
+
+    results = await _service().analyze_images_split(
+        [_png_bytes()],
+        team_id="team-1",
+        ocr_model_id=uuid4(),
+        vision_model_id=uuid4(),
+    )
+
+    assert results[0].ocr_text == "OCR BODY"
+    assert results[0].description == "A red square."
+    team_ocr.assert_awaited_once()
+    team_chat.assert_awaited_once()

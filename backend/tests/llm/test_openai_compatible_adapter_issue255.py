@@ -82,6 +82,11 @@ def test_base_url_provider_detection_and_message_conversion():
     assert (
         adapter(provider_hint="Ollama")._get_base_url() == "http://localhost:11434/v1"
     )
+    # Without this entry the SDK default (api.openai.com) would receive a
+    # Mistral key when an editor leaves base_url empty.
+    assert (
+        adapter(provider_hint="mistral")._get_base_url() == "https://api.mistral.ai/v1"
+    )
     assert adapter(provider_hint="unknown")._get_base_url() is None
     assert adapter(base_url="https://custom.invalid")._get_base_url() == (
         "https://custom.invalid"

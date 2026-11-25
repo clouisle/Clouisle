@@ -68,7 +68,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {
-  international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability', 'typesafe'],
+  international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'mistral', 'runway', 'luma', 'stability', 'typesafe'],
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine'],
   other: ['ollama', 'custom'],
 }
@@ -108,9 +108,34 @@ const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
   rerank: ['rerank'],
   decision: ['decision'],
+  ocr: ['ocr'],
   image: ['text_to_image'],
   video: ['text_to_video'],
   audio: ['tts', 'stt', 'audio_generation'],
+}
+
+// Input/output modalities offered per model type. OCR models recognize text from
+// an image or document and never take a text prompt, so TEXT is not offered as
+// an input and the only output is text.
+const CHAT_MODALITY_OPTIONS = {
+  input: ['text', 'image', 'audio', 'video', 'file'],
+  output: ['text', 'image', 'audio', 'video', 'file'],
+}
+
+// Only Mistral's document endpoint accepts a PDF alongside the image; the
+// OpenAI-compatible OCR endpoints take an image alone. Offering `file` there
+// would be silently dropped when capabilities are resolved server-side.
+const OCR_MODALITY_OPTIONS: Record<string, { input: string[]; output: string[] }> = {
+  mistral: { input: ['image', 'file'], output: ['text'] },
+}
+const DEFAULT_OCR_MODALITY_OPTIONS = { input: ['image'], output: ['text'] }
+
+function getModalityOptions(
+  modelType: string,
+  provider: string,
+): { input: string[]; output: string[] } {
+  if (isChatOnly(modelType)) return CHAT_MODALITY_OPTIONS
+  return OCR_MODALITY_OPTIONS[provider] ?? DEFAULT_OCR_MODALITY_OPTIONS
 }
 
 function getModelCategory(modelType: string): keyof typeof MODEL_CATEGORIES | null {
@@ -124,6 +149,31 @@ function getModelCategory(modelType: string): keyof typeof MODEL_CATEGORIES | nu
 
 function isChatOnly(modelType: string): boolean {
   return modelType === 'chat'
+}
+
+// OCR models take an image or document and answer with text, so they share the
+// chat model's input-modality declaration without the chat-only controls
+// (inference parameters, function calling).
+function supportsInputModalities(modelType: string): boolean {
+  return modelType === 'chat' || modelType === 'ocr'
+}
+
+// Initialize modality state from what the model declares, keeping only what the
+// type accepts. `text` is a chat default only: an OCR model never takes a text
+// prompt, and the API rejects the declaration outright.
+function initialModalities(
+  modelType: string,
+  provider: string,
+  declared: unknown,
+  direction: 'input' | 'output',
+): string[] {
+  const options = getModalityOptions(modelType, provider)
+  const allowed = new Set(direction === 'input' ? options.input : options.output)
+  const kept = (Array.isArray(declared) ? declared : []).filter(
+    (modality): modality is string => typeof modality === 'string' && allowed.has(modality),
+  )
+  const textDefault = isChatOnly(modelType) || (direction === 'output' && supportsInputModalities(modelType))
+  return [...new Set([...(textDefault ? ['text'] : []), ...kept])]
 }
 
 function requiresApiKey(provider: string): boolean {
@@ -483,13 +533,20 @@ export function ModelDialog({
           ? JSON.stringify(params.extra_body, null, 2)
           : ''
       )
+      // Managed keys are lifted into their own inputs and rebuilt on save, so they
+      // must be stripped here or they would be duplicated. OCR renders no
+      // parameter inputs at all, so nothing is managed for it: leaving every key
+      // in the textarea is what makes an edit round-trip its temperature and
+      // max_tokens instead of dropping them from the update.
+      const managedParamKeys =
+        getModelCategory(model.model_type) === 'ocr' ? new Set<string>() : MANAGED_DEFAULT_PARAM_KEYS
       setDefaultParamsExtensionText(
-        JSON.stringify(omitManagedKeys(params, MANAGED_DEFAULT_PARAM_KEYS), null, 2)
+        JSON.stringify(omitManagedKeys(params, managedParamKeys), null, 2)
       )
 
       const caps = model.capabilities || {}
-      setInputModalities([...new Set(['text', ...(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : [])])])
-      setOutputModalities([...new Set(['text', ...(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])])])
+      setInputModalities(initialModalities(model.model_type, model.provider, caps.input_modalities, 'input'))
+      setOutputModalities(initialModalities(model.model_type, model.provider, caps.output_modalities, 'output'))
       setSupportsFunctionCall(!!caps.function_call)
       setSupportsStreaming(caps.streaming !== false)
       setSupportsJsonMode(!!caps.json_mode)
@@ -745,8 +802,8 @@ export function ModelDialog({
     }
     if (discoveredModel.capabilities) {
       const capabilities = discoveredModel.capabilities
-      if (Array.isArray(capabilities.input_modalities)) setInputModalities([...new Set(['text', ...capabilities.input_modalities as unknown as string[]])])
-      if (Array.isArray(capabilities.output_modalities)) setOutputModalities([...new Set(['text', ...capabilities.output_modalities as unknown as string[]])])
+      if (Array.isArray(capabilities.input_modalities)) setInputModalities(initialModalities(modelType, provider, capabilities.input_modalities, 'input'))
+      if (Array.isArray(capabilities.output_modalities)) setOutputModalities(initialModalities(modelType, provider, capabilities.output_modalities, 'output'))
       if ('function_call' in capabilities) setSupportsFunctionCall(capabilities.function_call)
       if ('streaming' in capabilities) setSupportsStreaming(capabilities.streaming)
       if ('json_mode' in capabilities) setSupportsJsonMode(capabilities.json_mode)
@@ -824,6 +881,13 @@ export function ModelDialog({
     setSelectedDiscoveredModel('')
     setModelDiscoveryResult(null)
     setIsDiscoveringModels(false)
+    // Dropping a provider can remove an accepted modality (Mistral's PDF), so
+    // prune the selection to what the new provider actually supports.
+    if (supportsInputModalities(modelType)) {
+      const options = getModalityOptions(modelType, value)
+      setInputModalities((current) => current.filter((modality) => options.input.includes(modality)))
+      setOutputModalities((current) => current.filter((modality) => options.output.includes(modality)))
+    }
     if (value !== 'custom') setProviderDisplayName('')
     const isVolcengineOpenSpeech = value === 'volcengine'
       && ['tts', 'audio_generation'].includes(modelType)
@@ -837,6 +901,15 @@ export function ModelDialog({
     if (value) {
       setModelType(value)
       setErrors((prev) => clearValidationError(prev, 'modelType'))
+      // Modality defaults follow the type: an OCR model takes an image and
+      // answers with text, a chat model takes text unless told otherwise.
+      if (value === 'ocr') {
+        setInputModalities(['image'])
+        setOutputModalities(['text'])
+      } else if (value === 'chat') {
+        setInputModalities(['text'])
+        setOutputModalities(['text'])
+      }
       const newCategory = getModelCategory(value)
       const currentCategory = getModelCategory(modelType)
       if (newCategory !== currentCategory) {
@@ -860,6 +933,7 @@ export function ModelDialog({
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
       decision: ['typesafe'],
+      ocr: ['qwen', 'custom', 'mistral'],
       image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'volcengine', 'minimax', 'runway', 'luma', 'stability'],
       video: ['volcengine', 'minimax', 'runway', 'luma'],
       audio: modelType === 'tts'
@@ -968,18 +1042,22 @@ export function ModelDialog({
       if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
 
       let capabilities: Record<string, unknown> | null = null
-      if (modelType === 'chat') {
+      if (supportsInputModalities(modelType)) {
         const currentCapabilities = model?.capabilities || discoveredModelsById.get(selectedDiscoveredModel)?.capabilities || {}
         capabilities = { ...currentCapabilities }
         delete capabilities.vision
         capabilities.input_modalities = inputModalities
         capabilities.output_modalities = outputModalities
-        if (supportsFunctionCall) capabilities.function_call = true
-        else delete capabilities.function_call
-        if (!supportsStreaming) capabilities.streaming = false
-        else delete capabilities.streaming
-        if (supportsJsonMode) capabilities.json_mode = true
-        else delete capabilities.json_mode
+        // Function calling, streaming, and JSON mode only make sense for a model
+        // that is addressed as a conversation, which OCR models are not.
+        if (isChatOnly(modelType)) {
+          if (supportsFunctionCall) capabilities.function_call = true
+          else delete capabilities.function_call
+          if (!supportsStreaming) capabilities.streaming = false
+          else delete capabilities.streaming
+          if (supportsJsonMode) capabilities.json_mode = true
+          else delete capabilities.json_mode
+        }
       }
 
       const config: Record<string, unknown> = {
@@ -1048,7 +1126,7 @@ export function ModelDialog({
   }
   
   const category = modelType ? getModelCategory(modelType) : null
-  const showAdvancedTab = modelType && (isChatOnly(modelType) || provider === 'azure_openai')
+  const showAdvancedTab = modelType && (supportsInputModalities(modelType) || provider === 'azure_openai')
   const showParamsTab = category === 'text'
   const tabCount = 1 + (showParamsTab ? 1 : 0) + (showAdvancedTab ? 1 : 0)
   const showTabs = tabCount > 1
@@ -2084,7 +2162,7 @@ export function ModelDialog({
 
   const advancedContent = (
     <>
-      {isChatOnly(modelType) && (
+      {supportsInputModalities(modelType) && (
         <div className="space-y-4">
           <SectionTitle>{t('capabilities')}</SectionTitle>
           <div className="space-y-3">
@@ -2092,7 +2170,7 @@ export function ModelDialog({
               <Label className="text-sm font-medium">{t('inputModalities')}</Label>
               <p className="text-xs text-muted-foreground">{t('inputModalitiesHint')}</p>
               <div className="grid grid-cols-2 gap-2">
-                {['text', 'image', 'audio', 'video', 'file'].map((modality) => (
+                {getModalityOptions(modelType, provider).input.map((modality) => (
                   <label key={modality} className="flex items-center gap-2 text-sm">
                     <Checkbox checked={inputModalities.includes(modality)} disabled={modality === 'text'} onCheckedChange={(checked) => setInputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
                     {t(`modality.${modality}`)}
@@ -2104,7 +2182,7 @@ export function ModelDialog({
               <Label className="text-sm font-medium">{t('outputModalities')}</Label>
               <p className="text-xs text-muted-foreground">{t('outputModalitiesHint')}</p>
               <div className="grid grid-cols-2 gap-2">
-                {['text', 'image', 'audio', 'video', 'file'].map((modality) => (
+                {getModalityOptions(modelType, provider).output.map((modality) => (
                   <label key={modality} className="flex items-center gap-2 text-sm">
                     <Checkbox checked={outputModalities.includes(modality)} disabled={modality === 'text'} onCheckedChange={(checked) => setOutputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
                     {t(`modality.${modality}`)}
@@ -2112,29 +2190,31 @@ export function ModelDialog({
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+            {isChatOnly(modelType) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+                  </div>
+                  <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
                 </div>
-                <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+                  </div>
+                  <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
                 </div>
-                <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+                  </div>
+                  <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
                 </div>
-                <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

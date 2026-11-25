@@ -26,6 +26,14 @@ from app.tasks import sandbox as tasks
 from tests.services.fake_redis import AsyncFakeRedis, FakeRedis
 
 
+# Normal fixture work can include physical workspace setup on a busy CI runner.
+_SANDBOX_TEST_OPERATION_SECONDS = 30
+
+
+def _sandbox_test_deadline() -> float:
+    return time.time() + _SANDBOX_TEST_OPERATION_SECONDS
+
+
 @pytest.fixture
 def sandbox_redis_clients():
     sync_client = FakeRedis()
@@ -46,6 +54,7 @@ def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
     runtime = SimpleNamespace(
         loop=loop,
         run=loop.run_until_complete,
+        deadline=_sandbox_test_deadline,
         client=client,
         redis=sync_client,
         sessions=sessions,
@@ -157,7 +166,15 @@ def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
         if worker_id not in runtime.workers:
             register(worker_id)
         runtime.run(sessions.create(session_id=session_id, **authorization))
-        binding = runtime.run(recovery.ensure_ready(session_id, time.time() + 2))
+        # ensure_ready also caps the caller deadline by the recovery setting.
+        # Give setup time to finish without changing the cap in recovery tests.
+        with monkeypatch.context() as setup:
+            setup.setattr(
+                settings,
+                "SANDBOX_WORKER_RECOVERY_SECONDS",
+                _SANDBOX_TEST_OPERATION_SECONDS,
+            )
+            binding = runtime.run(recovery.ensure_ready(session_id, runtime.deadline()))
         select(binding.worker_id)
         return binding
 
