@@ -103,6 +103,73 @@ async def test_policy_starts_empty_and_inherits(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_api_key_gate_matches_the_requesting_credential():
+    """A ``view`` gate naming one key must admit that key's own requests.
+
+    History routes evaluate the policy with the authenticated key so a key
+    audience stays reachable; passing only the owner's user identity made the
+    gate unmatchable and refused the key the policy explicitly allowed.
+    """
+    async with _database():
+        owner = await _member("owner")
+        team = await _team_with(owner)
+        key_id = uuid4()
+        workflow = await _workflow(
+            team,
+            owner,
+            access_policy={
+                "operations": {
+                    "view": {
+                        "decision": "allow",
+                        "gates": [{"kind": "api_key", "api_key_ids": [str(key_id)]}],
+                    }
+                }
+            },
+        )
+
+        allowed = await workflows_endpoint.check_workflow_access(
+            workflow.id, owner, api_key=SimpleNamespace(id=key_id)
+        )
+        assert allowed.id == workflow.id
+
+        with pytest.raises(BusinessError) as denied:
+            await workflows_endpoint.check_workflow_access(
+                workflow.id, owner, api_key=SimpleNamespace(id=uuid4())
+            )
+        assert denied.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_debug_run_honours_a_denied_run_operation(monkeypatch):
+    """Debug execution is a run, so a denied ``run`` must stop it.
+
+    The draft editor needs write access, but checking only that let a policy
+    denying ``run`` (while editing stays inherited) still dispatch a debug run.
+    """
+    async with _database():
+        owner = await _member("owner", "workflow:run")
+        team = await _team_with(owner)
+        workflow = await _workflow(
+            team, owner, access_policy={"operations": {"run": {"decision": "deny"}}}
+        )
+        dispatch = AsyncMock()
+        monkeypatch.setattr(
+            "app.tasks.workflow.run_workflow_task", dispatch, raising=False
+        )
+
+        with pytest.raises(BusinessError) as denied:
+            await workflows_endpoint.debug_workflow(
+                workflow_id=workflow.id,
+                run_request=SimpleNamespace(inputs={}),
+                request=SimpleNamespace(),
+                current_user=owner,
+            )
+
+        assert denied.value.status_code == 404
+        dispatch.delay.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_policy_update_persists_audits_and_limits_run(monkeypatch):
     async with _database():
         owner = await _member("owner")

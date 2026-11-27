@@ -1,6 +1,6 @@
 """Shared workflow access helpers."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from tortoise.expressions import Q
@@ -52,6 +52,7 @@ async def check_workflow_access(
     *,
     operation: "WorkflowOperation | None" = None,
     enforce_policy: bool = True,
+    api_key: Any = None,
 ) -> Workflow:
     """Check whether a user can access a workflow.
 
@@ -81,7 +82,7 @@ async def check_workflow_access(
     assert_workflow_access(
         workflow,
         WorkflowOperation(effective),
-        AccessPrincipal.from_parts(user, team_role=role),
+        AccessPrincipal.from_parts(user, team_role=role, api_key=api_key),
         hidden=WorkflowOperation(effective)
         in {WorkflowOperation.VIEW, WorkflowOperation.RUN},
     )

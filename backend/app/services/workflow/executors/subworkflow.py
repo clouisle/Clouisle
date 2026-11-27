@@ -10,6 +10,7 @@ import os
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
+from app.models.workflow import RunStatus
 from app.schemas.response import BusinessError
 from app.services import upload_gateway
 
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
 
     from ..context import ExecutionContext
-
 logger = logging.getLogger(__name__)
 
 # Maximum nesting depth
@@ -188,6 +188,13 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             sub_run.root_run_id = run.root_run_id or run.id
             sub_run.depth = current_depth + 1
             await sub_run.save()
+
+            # A child that parked for external input or tool approval cannot be
+            # reported as a finished child: its outputs are still empty and the
+            # resume hook only wakes the child. Park the parent too, so neither
+            # side runs downstream nodes on an unfinished result.
+            if sub_run.status == RunStatus.WAITING:
+                return ExecutionResult(waiting=True)
 
             # Check sub-workflow result
             if sub_run.status == "failed":

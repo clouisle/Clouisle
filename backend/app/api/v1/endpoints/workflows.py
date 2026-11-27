@@ -1449,8 +1449,11 @@ async def debug_workflow(
     """
     from app.tasks.workflow import run_workflow_task
 
+    # The draft editor still requires write access, and a debug run is a run, so
+    # the policy's ``run`` operation applies here too. Without it a policy that
+    # denies ``run`` but allows ``edit`` could execute the workflow anyway.
     workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+        workflow_id, current_user, require_write=True, operation="run"
     )
 
     try:
@@ -1563,6 +1566,9 @@ async def stream_workflow_run(
         if not api_key_may_read_run(run, api_key):
             raise run_not_found_error()
         await deps.check_api_key_workflow_access(api_key, run.workflow_id)
+        # The policy's view gate may name this exact key, so evaluate it with the
+        # credential; a key audience is unreachable through the user alone.
+        await check_workflow_access(run.workflow_id, current_user, api_key=api_key)
     else:
         if (
             getattr(run, "api_key_origin_unknown", False)
@@ -2087,7 +2093,7 @@ async def list_my_workflow_runs(
     every source (see ``app.api.workflow_run_access``).
     """
     current_user, api_key = split_run_principal(auth_result)
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, api_key=api_key)
     await deps.check_api_key_workflow_access(api_key, workflow_id)
 
     scope = run_history_filter(current_user, api_key)
@@ -2139,7 +2145,7 @@ async def get_my_workflow_run(
 ) -> Any:
     """Get one run from the caller's own history."""
     current_user, api_key = split_run_principal(auth_result)
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, api_key=api_key)
     await deps.check_api_key_workflow_access(api_key, workflow_id)
 
     scope = run_history_filter(current_user, api_key)
@@ -2172,7 +2178,7 @@ async def list_my_run_node_executions(
 ) -> Any:
     """Get node executions for one run in the caller's own history."""
     current_user, api_key = split_run_principal(auth_result)
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, api_key=api_key)
     await deps.check_api_key_workflow_access(api_key, workflow_id)
 
     scope = run_history_filter(current_user, api_key)

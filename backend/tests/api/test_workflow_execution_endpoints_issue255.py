@@ -319,10 +319,13 @@ async def test_run_endpoints_create_dispatch_and_audit(
     assert delay.call_args.kwargs.get("is_debug", False) is is_debug
     assert audit.await_args.kwargs["metadata"]["is_debug"] is is_debug
     if is_debug:
-        # Debug runs are an authoring surface: they derive ``edit`` from
-        # ``require_write`` instead of passing ``run``.
+        # A debug run is still a run: keep the authoring surface's write
+        # requirement and enforce the policy's ``run`` operation as well.
         access.assert_awaited_once_with(
-            workflow_id, SimpleNamespace(id=user_id), require_write=True
+            workflow_id,
+            SimpleNamespace(id=user_id),
+            require_write=True,
+            operation="run",
         )
     else:
         access.assert_awaited_once_with(

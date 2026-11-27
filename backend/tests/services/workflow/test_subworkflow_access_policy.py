@@ -11,7 +11,12 @@ import pytest
 from tortoise import Tortoise
 
 from app.models.user import Team, TeamMember, User
-from app.models.workflow import Workflow, WorkflowStatus, WorkflowVisibility
+from app.models.workflow import (
+    RunStatus,
+    Workflow,
+    WorkflowStatus,
+    WorkflowVisibility,
+)
 from app.services.workflow.executors.subworkflow import SubWorkflowNodeExecutor
 
 
@@ -124,3 +129,70 @@ class _Missing:
 
     async def first(self):
         return None
+
+
+class _Existing:
+    """Stand-in for a query returning one persisted child run."""
+
+    def __init__(self, run):
+        self.run = run
+
+    async def first(self):
+        return self.run
+
+
+@pytest.mark.asyncio
+async def test_waiting_child_parks_the_parent_instead_of_completing_it():
+    """A child parked for approval must not look like a finished child.
+
+    Its outputs are still empty, and the resume hook only wakes the child, so
+    treating it as complete would let the parent run downstream nodes on a
+    result that never arrives.
+    """
+    async with _database():
+        owner, workflow = await _fixture_workflow(
+            {"operations": {"run": {"decision": "allow"}}}
+        )
+        parent = SimpleNamespace(
+            id=uuid4(),
+            depth=0,
+            triggered_by_id=owner.id,
+            api_key_id=None,
+            workflow_id=uuid4(),
+            context_snapshot={},
+            root_run_id=None,
+        )
+        child_id = uuid4()
+        waiting_child = SimpleNamespace(
+            id=child_id,
+            status=RunStatus.WAITING,
+            outputs={},
+            error_message=None,
+            parent_run_id=None,
+            root_run_id=None,
+            depth=0,
+            save=AsyncMock(),
+        )
+        monkey = pytest.MonkeyPatch()
+        try:
+            from app.models.workflow import WorkflowRun as WorkflowRunModel
+            from app.services.workflow.orchestrator import WorkflowOrchestrator
+
+            monkey.setattr(
+                WorkflowOrchestrator, "run", AsyncMock(return_value=child_id)
+            )
+            monkey.setattr(
+                WorkflowRunModel,
+                "filter",
+                MagicMock(return_value=_Existing(waiting_child)),
+            )
+            result = await SubWorkflowNodeExecutor().execute(
+                _node(workflow.id), MagicMock(), parent
+            )
+        finally:
+            monkey.undo()
+
+        assert result.waiting is True
+        assert not result.error
+        # The parent must not publish the child's still-empty outputs.
+        assert result.outputs == {}

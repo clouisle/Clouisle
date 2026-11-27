@@ -270,13 +270,13 @@ export function AccessPolicyEditor({ workflowId, teamId, readOnly = false }: Acc
                     <div className="flex flex-wrap gap-2">
                       {members.map((member) => (
                         <button
-                          key={member.id}
+                          key={member.user_id}
                           type="button"
                           disabled={readOnly}
-                          onClick={() => toggle(operation, member.id, 'userIds')}
+                          onClick={() => toggle(operation, member.user_id, 'userIds')}
                           className="disabled:opacity-50"
                         >
-                          <Badge variant={audience.userIds.includes(member.id) ? 'default' : 'outline'}>
+                          <Badge variant={audience.userIds.includes(member.user_id) ? 'default' : 'outline'}>
                             {member.username}
                           </Badge>
                         </button>

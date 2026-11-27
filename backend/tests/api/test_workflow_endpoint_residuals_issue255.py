@@ -405,7 +405,7 @@ async def test_list_my_workflow_runs_applies_filters_and_handles_invalid_uuid_se
         auth_result=user,
     )
 
-    access.assert_awaited_once_with(workflow_id, user)
+    access.assert_awaited_once_with(workflow_id, user, api_key=None)
     kwargs_list = [call[1] for call in run_query.filters]
     assert {
         "workflow_id": workflow_id,
