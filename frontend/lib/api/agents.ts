@@ -327,6 +327,7 @@ export interface ConversationListItem {
 }
 
 export interface AgentConversationQueryParams {
+  apiKeyId?: string
   page?: number
   pageSize?: number
   search?: string
@@ -802,13 +803,13 @@ export const agentsApi = {
   // ============ Conversation API ============
 
   /**
-   * 获取 Agent 的对话列表
+   * 获取 Agent 的编排日志对话列表（当前用户在该 Agent 下的全部对话，含 API Key 来源）
    */
-  getAgentConversations: async (
+  getAgentLogConversations: async (
     agentId: string,
     params: AgentConversationQueryParams = {}
   ): Promise<PageData<ConversationListItem>> => {
-    const { page = 1, pageSize = 20, search, createdAfter, createdBefore, sortBy } = params
+    const { page = 1, pageSize = 20, search, createdAfter, createdBefore, sortBy, apiKeyId } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -816,13 +817,33 @@ export const agentsApi = {
     if (createdAfter) queryParams.append('created_after', createdAfter)
     if (createdBefore) queryParams.append('created_before', createdBefore)
     if (sortBy) queryParams.append('sort_by', sortBy)
+    if (apiKeyId) queryParams.append('api_key_id', apiKeyId)
     return api.get<PageData<ConversationListItem>>(
-      `/agents/${agentId}/conversations?${queryParams.toString()}`
+      `/agents/${agentId}/logs/conversations?${queryParams.toString()}`
     )
   },
 
   /**
-   * 获取对话详情（含消息）
+   * 获取编排日志中的对话详情（含消息）
+   */
+  getAgentLogConversation: async (
+    agentId: string,
+    conversationId: string
+  ): Promise<ConversationWithMessages> => {
+    return api.get<ConversationWithMessages>(
+      `/agents/${agentId}/logs/conversations/${conversationId}`
+    )
+  },
+
+  /**
+   * 删除编排日志中的对话
+   */
+  deleteAgentLogConversation: async (agentId: string, conversationId: string): Promise<void> => {
+    return api.delete<void>(`/agents/${agentId}/logs/conversations/${conversationId}`)
+  },
+
+  /**
+   * 获取对话详情（含消息），仅限非 API Key 来源的平台对话
    */
   getConversation: async (conversationId: string): Promise<ConversationWithMessages> => {
     return api.get<ConversationWithMessages>(`/agents/conversations/${conversationId}`)
@@ -1276,6 +1297,7 @@ export interface ConversationTrends {
 }
 
 export interface AdminConversationQueryParams {
+  api_key_id?: string
   team_id?: string[]
   agent_id?: string[]
   user_id?: string[]
@@ -1294,7 +1316,7 @@ export const conversationsApi = {
   listAll: async (
     params: AdminConversationQueryParams = {}
   ): Promise<PageData<AdminConversationListItem>> => {
-    const { page = 1, pageSize = 20, team_id, agent_id, user_id, search, untitled_only } = params
+    const { page = 1, pageSize = 20, team_id, agent_id, user_id, search, untitled_only, api_key_id } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -1302,6 +1324,7 @@ export const conversationsApi = {
     agent_id?.forEach((value) => queryParams.append('agent_id', value))
     user_id?.forEach((value) => queryParams.append('user_id', value))
     if (search) queryParams.append('search', search)
+    if (api_key_id) queryParams.append('api_key_id', api_key_id)
     if (untitled_only) queryParams.append('untitled_only', 'true')
     return api.get<PageData<AdminConversationListItem>>(
       `/conversations?${queryParams.toString()}`

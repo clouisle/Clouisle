@@ -498,7 +498,7 @@ Content-Type: application/json
   "comment": "Reviewed and looks good to proceed"
 }
 ```
-Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`. The SSE stream requires an authenticated user with access to the workflow; a webhook token or stream URL is not a public authorization mechanism.
+Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter). Replay an API-triggered run with the exact key that started it, not a login token or another key from the same account. The key must still have access to the workflow. A webhook token or stream URL does not authorize replay.
 
 ## Get Execution Status
 
@@ -565,7 +565,7 @@ curl -X GET "https://your-domain.com/api/v1/workflows/runs/run-789" \
 }
 ```
 
-**Note:** A user's own published-workflow runs can also be retrieved via `GET /api/v1/workflows/{workflow_id}/runs/mine/{run_id}` (requires `workflow:run`). Node-level execution detail is available at `GET /api/v1/workflows/runs/{run_id}/nodes`.
+**Personal run history:** `GET /api/v1/workflows/{workflow_id}/runs/mine` lists published-workflow runs for the current credential. Append `/{run_id}` for details or `/{run_id}/nodes` for node executions. A login token requires `workflow:run` and excludes API-key runs. An API key only returns runs started by that exact key for a workflow it can still access. The orchestration log is separate. The platform log page requests `GET /api/v1/workflows/{workflow_id}/runs?own_only=true` to show the signed-in user's runs from all sources, including API-key calls. Authorized team-wide log queries can omit `own_only`.
 
 **Run status values:** `pending`, `running`, `success`, `waiting`, `failed`, `cancelled`, `timeout`.
 
@@ -869,6 +869,67 @@ curl -X GET "https://your-domain.com/api/v1/workflows/550e8400-e29b-41d4-a716-44
 ```
 
 A trends endpoint is also available: `GET /api/v1/workflows/{workflow_id}/stats/trends?period=7d` (period: `7d`, `30d`).
+
+## Workflow Access Policy
+
+A workflow can narrow who may use it. The policy sits on top of the team role and
+`workflow:read/update/delete/publish/run` permissions: it can only restrict what
+those already allow. An empty policy (the default) inherits the previous rules,
+so existing workflows behave exactly as before.
+
+Operations are `view`, `run`, `edit`, `publish`, `delete`. An operation that is
+absent from the policy is inherited. A `deny` always wins; an `allow` with gates
+requires the caller to match at least one gate (`team_role`, `user`, `api_key`).
+Superusers are never locked out. `require_approval` is not supported: a workflow
+run starts a worker and a sandbox, so gating it on a person before it starts is a
+separate feature rather than a policy value.
+
+Denials are reported as `404` (`workflow_not_found`) for `view` and `run`, so a
+workflow the caller may not use is indistinguishable from one that does not
+exist. Management operations (`edit`, `publish`, `delete`) return `403` with
+`data.reason`.
+
+### 1. Read the Policy
+
+```http
+GET /api/v1/workflows/{workflow_id}/access-policy HTTP/1.1
+Authorization: Bearer <token>
+```
+
+Requires the workflow owner or a team admin. Returns the stored policy, its
+version, and `effective`: this caller's answer for every operation (`source` is
+`policy` or `inherit`).
+
+### 2. Replace the Policy
+
+```http
+PUT /api/v1/workflows/{workflow_id}/access-policy HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "operations": {
+    "run":  {"decision": "allow", "gates": [{"kind": "team_role", "roles": ["owner", "admin"]}]},
+    "edit": {"decision": "deny"}
+  }
+}
+```
+
+An empty `{"operations": {}}` restores full inheritance. Invalid policies are
+rejected with `400` (`workflow_access_policy_invalid`) and nothing is saved. The
+change is audited as `update_workflow_access_policy` with field-level before and
+after values.
+
+### 3. Preview a Decision
+
+```http
+POST /api/v1/workflows/{workflow_id}/access-policy/evaluate?user_id=<uuid>&api_key_id=<uuid> HTTP/1.1
+Authorization: Bearer <token>
+```
+
+Reports the policy answer for a chosen user (and optionally that key) without
+changing anything. Use it in the editor before saving so an administrator can see
+whether a change would lock someone out.
 
 ## Error Codes
 

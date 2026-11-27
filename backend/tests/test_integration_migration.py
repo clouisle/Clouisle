@@ -258,3 +258,33 @@ async def test_unsupported_legacy_provider_rolls_back_schema_cutover(database):
     columns = await database.execute_query_dict("PRAGMA table_info(sso_providers)")
     assert "allow_signup" in {row["name"] for row in columns}
     assert "credentials" not in {row["name"] for row in columns}
+
+
+@pytest.mark.asyncio
+async def test_postgres_catalog_lookups_use_information_schema():
+    """The cutover reads Postgres catalogs, not the SQLite ones it shares code with."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.core.integration_migration import _columns, _tables
+
+    connection = SimpleNamespace(
+        capabilities=SimpleNamespace(dialect="postgres"),
+        execute_query_dict=AsyncMock(
+            side_effect=[
+                [{"table_name": "integrations"}, {"table_name": "users"}],
+                [{"column_name": "id"}, {"column_name": "provider_type"}],
+            ]
+        ),
+    )
+
+    assert await _tables(connection) == {"integrations", "users"}
+    assert (
+        "information_schema.tables"
+        in connection.execute_query_dict.await_args_list[0].args[0]
+    )
+
+    assert await _columns(connection, "integrations") == {"id", "provider_type"}
+    column_call = connection.execute_query_dict.await_args_list[1]
+    assert "information_schema.columns" in column_call.args[0]
+    assert column_call.args[1] == ["integrations"]

@@ -508,6 +508,7 @@ class AgentService:
         from app.services.asset_access import (
             authorize_asset_for_scope,
             authorize_asset_scope,
+            authorize_history_asset_import,
             resolve_authorized_asset_ref,
         )
 
@@ -577,16 +578,17 @@ class AgentService:
                         code=ResponseCode.VALIDATION_ERROR,
                         msg_key="validation_error",
                     ) from exc
-                return (
-                    await authorize_asset_for_scope(
-                        asset_uuid,
-                        scope_type=scope_type,
-                        scope_id=scope_id,
-                        user=user,
-                        expected_team_id=team_id,
-                    ),
-                    None,
+                asset = await authorize_asset_for_scope(
+                    asset_uuid,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    expected_team_id=team_id,
                 )
+                await authorize_history_asset_import(
+                    asset, scope_type=scope_type, scope_id=scope_id, user=user
+                )
+                return asset, None
             url = attachment_url(item)
             if not url:
                 raise BusinessError(

@@ -1,23 +1,14 @@
 import { embedApi, type EmbedAgentInfo } from '@/lib/api/embed'
 import type { ChatPageAdapter } from '@/lib/chat/chat-adapter'
+import { purgeLegacyEmbedHistory } from '@/lib/embed/legacy-history-cache'
+import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import type {
   PublicAgent,
-  ConversationListItem,
   VariableDefinition,
   VariableType,
   AttachmentConfig,
   AgentRunAnswerInput,
 } from '@/lib/api'
-import type { ChatMessage } from '@/components/chat'
-
-interface EmbedHistoryEntry {
-  id: string
-  title: string
-  createdAt: number
-  messages: ChatMessage[]
-}
-
-const MAX_ENTRIES = 20
 
 function normalizeVariables(vars: Array<Record<string, unknown>>): VariableDefinition[] {
   const normalized: VariableDefinition[] = []
@@ -64,69 +55,41 @@ function mapAgentInfo(info: EmbedAgentInfo): PublicAgent {
   }
 }
 
-function deriveTitle(messages: ChatMessage[]): string {
-  for (const m of messages) {
-    if (m.role !== 'user') continue
-    for (const p of m.parts) {
-      if (p.type === 'text') return p.text
-    }
-  }
-  return 'Untitled'
-}
-
 /**
- * Create a ChatPageAdapter backed by the API-key embedApi + browser localStorage
- * for conversation history. Used by the embed agent page.
+ * Create a ChatPageAdapter for the embed agent page.
+ *
+ * Conversation history belongs to the server: the list, the messages and the
+ * rename/delete mutations all travel to the API-key scoped routes, which filter
+ * by the exact key that created each conversation. A page loaded with another
+ * key - or with a logged-in session - therefore cannot list, open or continue
+ * this key's conversations.
+ *
+ * Nothing is written to browser storage. `localStorage` is readable by every
+ * script on the origin, so caching messages there would defeat the isolation
+ * however the key is named, and the caches left by earlier releases are purged
+ * when the adapter is created.
  */
 export function createEmbedChatAdapter(agentId: string, apiKey: string): ChatPageAdapter {
-  const storageKey = `clouisle:embed:history:agent:${agentId}`
-
-  function readEntries(): EmbedHistoryEntry[] {
-    try {
-      const raw = localStorage.getItem(storageKey)
-      return raw ? (JSON.parse(raw) as EmbedHistoryEntry[]) : []
-    } catch {
-      return []
-    }
-  }
-
-  function writeEntries(entries: EmbedHistoryEntry[]) {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(entries.slice(0, MAX_ENTRIES)))
-    } catch {
-      // localStorage may be full or disabled
-    }
-  }
+  purgeLegacyEmbedHistory()
 
   return {
     getAgent: async (id) => mapAgentInfo(await embedApi.getAgentInfo(id, apiKey)),
 
-    getConversations: async (_agentId, { page, pageSize }) => {
-      const entries = readEntries()
-      const items: ConversationListItem[] = entries.map((e) => ({
-        id: e.id,
-        agent_id: _agentId,
-        title: e.title,
-        message_count: e.messages.length,
-        created_at: new Date(e.createdAt).toISOString(),
-        updated_at: new Date(e.createdAt).toISOString(),
-      }))
-      const start = (page - 1) * pageSize
-      return { items: items.slice(start, start + pageSize), total: items.length }
-    },
+    getConversations: (_agentId, { page, pageSize }) =>
+      embedApi.getConversations(agentId, apiKey, { page, pageSize }),
 
     getConversation: async (id) => {
-      const entry = readEntries().find((e) => e.id === id)
-      if (!entry) throw new Error('Conversation not found')
-      return { messages: entry.messages }
+      const conversation = await embedApi.getConversation(id, apiKey)
+      return {
+        messages: convertBackendMessages(conversation.messages as unknown as BackendMessage[]),
+        activeRunId: conversation.active_run_id ?? null,
+      }
     },
 
-    deleteConversation: async (id) => {
-      writeEntries(readEntries().filter((e) => e.id !== id))
-    },
+    deleteConversation: (id) => embedApi.deleteConversation(agentId, id, apiKey),
 
     updateConversation: async (id, data) => {
-      writeEntries(readEntries().map((e) => (e.id === id ? { ...e, title: data.title } : e)))
+      await embedApi.renameConversation(agentId, id, data.title, apiKey)
     },
 
     uploadFile: (file, _category, onProgress) =>
@@ -146,19 +109,5 @@ export function createEmbedChatAdapter(agentId: string, apiKey: string): ChatPag
     regenerateStream: () => { throw new Error('Not supported in embed mode') },
     getMessageVersions: async () => [],
     switchMessageVersion: async () => {},
-
-    saveConversation: (messages, conversationId) => {
-      if (messages.length === 0) return
-      const id = conversationId || `conv-${Date.now()}`
-      const title = deriveTitle(messages)
-      const entries = readEntries()
-      const existing = entries.findIndex((e) => e.id === id)
-      if (existing >= 0) {
-        entries[existing] = { ...entries[existing], title, messages }
-      } else {
-        entries.unshift({ id, title, createdAt: Date.now(), messages })
-      }
-      writeEntries(entries)
-    },
   }
 }

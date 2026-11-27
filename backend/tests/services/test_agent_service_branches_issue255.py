@@ -231,6 +231,7 @@ async def test_bind_scoped_attachments_resolves_private_asset_id():
 
     with (
         patch("app.services.asset_access.authorize_asset_for_scope", authorize),
+        patch("app.services.asset_access.authorize_history_asset_import", AsyncMock()),
         patch(
             "app.services.asset_access.authorize_asset_scope",
             AsyncMock(return_value=team_id),
@@ -734,3 +735,109 @@ async def test_agent_service_retrieve_rag_context_handles_empty_and_failure(
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("db down")),
     )
     assert await service._retrieve_rag_context(_agent(), "query") is None
+
+
+@pytest.mark.anyio
+async def test_bind_scoped_attachments_binds_into_a_conversation_scope():
+    """Chat attachments bind to the conversation the request continues."""
+    from app.models.asset import AssetScopeType
+    from app.schemas.response import BusinessError
+
+    team_id, conversation_id, user_id = uuid4(), uuid4(), uuid4()
+    asset = SimpleNamespace(
+        id=uuid4(),
+        storage_key="general/2026/10/notes.txt",
+        content_type="text/plain",
+        display_filename="notes.txt",
+        size=7,
+    )
+    user = SimpleNamespace(id=user_id)
+    authorize = AsyncMock(return_value=asset)
+    history_gate = AsyncMock()
+    scope = AsyncMock(return_value=team_id)
+    service = AgentService()
+
+    with (
+        patch("app.services.asset_access.authorize_asset_for_scope", authorize),
+        patch("app.services.asset_access.authorize_history_asset_import", history_gate),
+        patch("app.services.asset_access.authorize_asset_scope", scope),
+        patch(
+            "app.services.asset.asset_service.get_or_create_ref",
+            AsyncMock(return_value=SimpleNamespace(ref="e5f6")),
+        ),
+        patch("app.models.user.User.get_or_none", AsyncMock(return_value=user)),
+    ):
+        _, files = await service._bind_scoped_attachments(
+            agent=_agent(team_id=team_id, enable_attachments=True),
+            images=None,
+            files=[{"asset_id": str(asset.id)}],
+            user_id=str(user_id),
+            conversation_id=conversation_id,
+        )
+        assert files[0]["asset_ref"] == "e5f6"
+        assert scope.await_args.kwargs["scope_type"] == AssetScopeType.CONVERSATION
+        assert scope.await_args.kwargs["scope_id"] == conversation_id
+        # The retargeted import is checked against the same persisted origin.
+        assert history_gate.await_args.kwargs["scope_id"] == conversation_id
+        assert history_gate.await_args.kwargs["user"] is user
+
+        with pytest.raises(BusinessError):
+            await service._bind_scoped_attachments(
+                agent=_agent(team_id=team_id, enable_attachments=True),
+                images=None,
+                files=[{"asset_id": str(asset.id)}],
+                user_id=None,
+                conversation_id=conversation_id,
+            )
+    scope.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_bind_scoped_attachments_reads_nested_and_object_attachment_urls():
+    """Attachment items reach the importer through every supported shape."""
+    from app.schemas.response import BusinessError
+    from app.services.asset_url_import import InternalDocument
+
+    team_id, run_id = uuid4(), uuid4()
+    asset = SimpleNamespace(
+        id=uuid4(),
+        storage_key="general/2026/10/report.txt",
+        content_type="text/plain",
+        display_filename="report.txt",
+        size=3,
+    )
+    nested_only = {"image_url": {"url": "https://example.test/nested.png"}}
+    url_object = SimpleNamespace(url="https://example.test/object.txt")
+    unloadable = SimpleNamespace()
+    load = AsyncMock(
+        return_value=InternalDocument(asset=asset, ref="g7h8", url="https://x.test")
+    )
+    service = AgentService()
+
+    with (
+        patch("app.services.asset_url_import.load_url_document", load),
+        patch(
+            "app.services.asset_access.authorize_asset_scope",
+            AsyncMock(return_value=team_id),
+        ),
+        patch("app.models.user.User.get_or_none", AsyncMock(return_value=None)),
+    ):
+        _, files = await service._bind_scoped_attachments(
+            agent=_agent(team_id=team_id, enable_attachments=True),
+            images=[nested_only],
+            files=[url_object],
+            user_id=None,
+            workflow_run_id=run_id,
+        )
+        assert load.await_args_list[0].args[0] == "https://example.test/nested.png"
+        assert load.await_args_list[1].args[0] == "https://example.test/object.txt"
+        assert [item["asset_ref"] for item in files] == ["g7h8"]
+
+        with pytest.raises(BusinessError):
+            await service._bind_scoped_attachments(
+                agent=_agent(team_id=team_id, enable_attachments=True),
+                images=None,
+                files=[unloadable],
+                user_id=None,
+                workflow_run_id=run_id,
+            )

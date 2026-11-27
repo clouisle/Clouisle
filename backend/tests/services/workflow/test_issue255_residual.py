@@ -151,7 +151,7 @@ async def test_stream_and_cancel_reject_runs_without_workflow_id():
 
     with patch.object(workflows.WorkflowRun, "filter", return_value=query):
         with pytest.raises(BusinessError) as exc_info:
-            await workflows.stream_workflow_run(run_id, current_user=user)
+            await workflows.stream_workflow_run(run_id, auth_result=(user, None))
 
     assert exc_info.value.code == ResponseCode.NOT_FOUND
     assert exc_info.value.msg_key == "workflow_not_found"

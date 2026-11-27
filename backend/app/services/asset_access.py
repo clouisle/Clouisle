@@ -38,6 +38,7 @@ async def authorize_asset_for_scope(
     user: User | None,
     api_key: APIKey | None = None,
     expected_team_id: UUID | None = None,
+    enforce_history_origin: bool = False,
 ) -> Asset:
     """Authorize an Asset against its owner/team and execution scope."""
     team_id = await authorize_asset_scope(
@@ -46,14 +47,48 @@ async def authorize_asset_for_scope(
         user=user,
         api_key=api_key,
         expected_team_id=expected_team_id,
+        enforce_history_origin=enforce_history_origin,
     )
     from app.services.asset import asset_service
 
-    return await asset_service.get_authorized(
+    asset = await asset_service.get_authorized(
         asset_id,
         team_id=team_id,
         user_id=user.id if user is not None else None,
     )
+
+    if enforce_history_origin:
+        # Raw asset IDs must not rebind files from another credential's history.
+        refs = await AssetScopeRef.filter(asset_id=asset.id)
+        if refs:
+            await _authorize_via_ref(asset, refs, user=user, api_key=api_key)
+    return asset
+
+
+async def authorize_history_asset_import(
+    asset: Asset, *, scope_type: AssetScopeType, scope_id: UUID, user: User | None
+) -> None:
+    """Keep worker-side URL/ID imports within their persisted history origin."""
+    refs = await AssetScopeRef.filter(asset_id=asset.id)
+    if not refs or any(
+        ref.scope_type == scope_type and ref.scope_id == scope_id for ref in refs
+    ):
+        return
+    target: Conversation | WorkflowRun | None
+    if scope_type == AssetScopeType.CONVERSATION:
+        target = await Conversation.get_or_none(id=scope_id)
+    elif scope_type == AssetScopeType.WORKFLOW_RUN:
+        target = await WorkflowRun.get_or_none(id=scope_id)
+    else:
+        raise _access_denied()
+    if target is None or target.api_key_origin_unknown:
+        raise _access_denied()
+    api_key = None
+    if target.api_key_id is not None:
+        api_key = await APIKey.get_or_none(id=target.api_key_id, is_active=True)
+        if api_key is None or user is None or api_key.user_id != user.id:
+            raise _access_denied()
+    await _authorize_via_ref(asset, refs, user=user, api_key=api_key)
 
 
 async def resolve_authorized_asset_ref(
@@ -64,6 +99,7 @@ async def resolve_authorized_asset_ref(
     user: User | None,
     api_key: APIKey | None = None,
     expected_team_id: UUID | None = None,
+    enforce_history_origin: bool = False,
 ) -> Asset:
     """Resolve a scope-local ref after authorizing its conversation or run."""
     team_id = await authorize_asset_scope(
@@ -72,6 +108,7 @@ async def resolve_authorized_asset_ref(
         user=user,
         api_key=api_key,
         expected_team_id=expected_team_id,
+        enforce_history_origin=enforce_history_origin,
     )
     from app.services.asset import asset_service
 
@@ -199,18 +236,28 @@ async def authorize_asset_scope(
     user: User | None,
     api_key: APIKey | None = None,
     expected_team_id: UUID | None = None,
+    enforce_history_origin: bool = False,
 ) -> UUID | None:
     """Authorize the execution scope itself and return its team id.
 
     Call this before any attachment fetch or storage write so network and disk
     IO only happen for callers allowed to use the conversation/run.
     """
+    team_id: UUID | None
     if scope_type == AssetScopeType.CONVERSATION:
         conversation = (
             await Conversation.filter(id=scope_id).prefetch_related("agent").first()
         )
-        if conversation is None or conversation.agent is None:
+        if (
+            conversation is None
+            or conversation.agent is None
+            or conversation.agent_id is None
+        ):
             raise _not_found()
+        if (enforce_history_origin or api_key is not None) and not _matches_origin(
+            conversation, conversation.user_id, user, api_key
+        ):
+            raise _access_denied()
         if user is None or not await can_access_conversation(conversation, user):
             raise _access_denied()
         try:
@@ -219,11 +266,16 @@ async def authorize_asset_scope(
             if error.msg_key == "api_key_no_agent_access":
                 raise _access_denied() from error
             raise
-        team_id = conversation.agent.team_id
+        agent_team_id = conversation.agent.team_id
+        team_id = UUID(str(agent_team_id)) if agent_team_id else None
     elif scope_type == AssetScopeType.WORKFLOW_RUN:
         run = await WorkflowRun.filter(id=scope_id).prefetch_related("workflow").first()
         if run is None or run.workflow is None or run.workflow_id is None:
             raise _not_found()
+        if (enforce_history_origin or api_key is not None) and not _matches_origin(
+            run, run.triggered_by_id, user, api_key
+        ):
+            raise _access_denied()
         if user is not None and not await _can_access_workflow_run(run, user):
             raise _access_denied()
         try:
@@ -234,6 +286,8 @@ async def authorize_asset_scope(
             raise
         team_id = run.workflow.team_id
     elif scope_type == AssetScopeType.IM_CONVERSATION:
+        if api_key is not None:
+            raise _access_denied()
         from app.models.im import ImConversation
 
         conv = await ImConversation.filter(id=scope_id).first()
@@ -254,11 +308,55 @@ async def authorize_asset_scope(
     return team_id
 
 
+def _matches_origin(
+    record: Conversation | WorkflowRun,
+    owner_id: UUID | None,
+    user: User | None,
+    api_key: APIKey | None,
+) -> bool:
+    if record.api_key_origin_unknown:
+        return False
+    if api_key is None:
+        return record.api_key_id is None
+    return user is not None and user.id == owner_id and record.api_key_id == api_key.id
+
+
 def _access_denied() -> BusinessError:
     return BusinessError(
         code=ResponseCode.PERMISSION_DENIED,
         msg_key="access_denied",
         status_code=403,
+    )
+
+
+async def authorize_agent_log_asset(
+    storage_key: str, *, conversation_id: UUID, user: User
+) -> Asset:
+    """Allow a log viewer to read only files bound to their logged conversation."""
+    from app.api.deps import user_has_global_permission
+    from app.api.v1.endpoints.agents import check_agent_access
+
+    if not user.is_active or not user_has_global_permission(user, "conversation:read"):
+        raise _access_denied()
+    conversation = await Conversation.get_or_none(id=conversation_id, user=user)
+    if conversation is None or conversation.agent_id is None:
+        raise _not_found()
+    await check_agent_access(conversation.agent_id, user)
+    asset = await Asset.get_or_none(storage_key=storage_key)
+    if (
+        asset is None
+        or not await AssetScopeRef.filter(
+            asset_id=asset.id,
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+        ).exists()
+    ):
+        raise _not_found()
+    return await authorize_asset_for_scope(
+        asset.id,
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation_id,
+        user=user,
     )
 
 
@@ -287,26 +385,42 @@ async def authorize_protected_asset(
 
     refs = await AssetScopeRef.filter(asset_id=asset.id)
     if not refs:
-        if user.is_superuser or (
-            api_key is None and getattr(asset, "created_by_id", None) == user.id
+        if api_key is None and (
+            user.is_superuser or getattr(asset, "created_by_id", None) == user.id
         ):
             return asset
         raise _not_found()
 
+    await _authorize_via_ref(asset, refs, user=user, api_key=api_key)
+    return asset
+
+
+async def _authorize_via_ref(
+    asset: Asset,
+    refs: list[AssetScopeRef],
+    *,
+    user: User | None,
+    api_key: APIKey | None,
+) -> None:
+    from app.services.asset import asset_service
+
     for ref in refs:
         try:
-            await authorize_asset_for_scope(
-                asset.id,
+            team_id = await authorize_asset_scope(
                 scope_type=ref.scope_type,
                 scope_id=ref.scope_id,
                 user=user,
                 api_key=api_key,
+                enforce_history_origin=True,
+            )
+            await asset_service.get_authorized(
+                asset.id, team_id=team_id, user_id=user.id if user is not None else None
             )
         except BusinessError as error:
             if error.status_code in (403, 404):
                 continue
             raise
-        return asset
+        return
 
     raise _access_denied()
 
@@ -316,6 +430,8 @@ async def _can_access_workflow_run(run: WorkflowRun, user: User) -> bool:
 
     if run.triggered_by_id == user.id or user.is_superuser:
         return True
+    if run.workflow_id is None:
+        return False
     try:
         await check_workflow_access(run.workflow_id, user)
     except BusinessError:

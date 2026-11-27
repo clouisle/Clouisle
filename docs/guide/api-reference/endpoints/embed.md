@@ -11,6 +11,8 @@ Embed endpoints authenticate via API Key only (prefixed with `clou_`). Authentic
 - **Authorization Header**: `Authorization: Bearer clou_...`
 - **Query Parameter**: `?token=clou_...`
 
+Conversation history and run replay are tied to the exact key used to start the conversation or run. A different key cannot open them, even if it belongs to the same account and can access the same Agent or Workflow.
+
 ### Allowed Domains Restriction
 
 When an agent or workflow specifies `allowed_domains` in its `embed_config`:
@@ -144,7 +146,20 @@ Authorization: Bearer clou_api_key
 ### 7. Embed Conversation Messages and File Upload
 
 - `GET /api/v1/embed/agents/{agent_id}/conversations/{conversation_id}/messages`: Get message history for an embed session.
+- `PATCH /api/v1/embed/agents/{agent_id}/conversations/{conversation_id}`: Rename one of this key's conversations (`{"title": "..."}`).
+- `DELETE /api/v1/embed/agents/{agent_id}/conversations/{conversation_id}`: Delete one of this key's conversations.
 - `POST /api/v1/embed/agents/{agent_id}/upload/file`: Upload attachments for embed conversations (`multipart/form-data`).
+
+All four resolve the conversation with the same filter as the chat surfaces: the
+row must belong to the key owner **and** carry this exact key. A conversation
+created by another key of the same owner, or by the owner's browser session, is
+reported as `404` (`conversation_not_found`) so its existence is not disclosed.
+
+The embed widget does not cache history in the browser. Its conversation list
+comes from `GET /api/v1/agents/{agent_id}/conversations` and the messages from
+`GET /api/v1/agents/conversations/{conversation_id}` - the dual-auth routes that
+filter by the exact key - so a page loaded with a different credential lists and
+opens nothing of this one.
 
 ---
 
@@ -157,7 +172,12 @@ GET /api/v1/embed/workflows/{workflow_id}/info HTTP/1.1
 Authorization: Bearer clou_api_key
 ```
 
-Returns workflow name, description, icon, input parameter schema, and status.
+Returns the workflow name, description, icon, `variables`, `embed_config`, and
+`input_parameters`: the start node's input parameters, projected field by field
+(`name`, `type`, `required`, and optional `label`, `description`, `default`,
+`options`, at most 50 entries). The embed page has no definition editor, so this
+projection is what renders its run form; the definition itself, which can hold
+internal endpoints and credentials, is never returned.
 
 ---
 

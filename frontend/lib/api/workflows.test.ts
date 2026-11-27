@@ -23,6 +23,13 @@ afterEach(() => {
 })
 
 describe('workflowsApi request construction', () => {
+  it('serializes API key filters for both log views', async () => {
+    getSpy = spyOn(api, 'get').mockResolvedValue(undefined as never)
+    await workflowsApi.getAllWorkflowRuns({ apiKeyId: 'key-1' })
+    await workflowsApi.getWorkflowRuns('workflow-1', { ownOnly: true, apiKeyId: 'key-1' })
+    expect(getSpy).toHaveBeenNthCalledWith(1, '/workflows/runs?page=1&page_size=20&api_key_id=key-1')
+    expect(getSpy).toHaveBeenNthCalledWith(2, '/workflows/workflow-1/runs?page=1&page_size=20&own_only=true&api_key_id=key-1')
+  })
   it('uses workflow list defaults and omits unset filters', async () => {
     getSpy = spyOn(api, 'get').mockResolvedValue(undefined as never)
 
@@ -128,6 +135,7 @@ describe('workflowsApi request construction', () => {
       pageSize: 5,
       status: 'failed',
       isDebug: false,
+      ownOnly: true,
       search: 'timeout',
       createdAfter: '2026-01-01',
       createdBefore: '2026-02-01',
@@ -139,7 +147,7 @@ describe('workflowsApi request construction', () => {
     expect(getSpy).toHaveBeenNthCalledWith(4, '/workflows/workflow-1/runs?page=1&page_size=20')
     expect(getSpy).toHaveBeenNthCalledWith(
       5,
-      '/workflows/workflow-1/runs?page=2&page_size=5&status=failed&is_debug=false&search=timeout&created_after=2026-01-01&created_before=2026-02-01'
+      '/workflows/workflow-1/runs?page=2&page_size=5&status=failed&is_debug=false&search=timeout&created_after=2026-01-01&created_before=2026-02-01&own_only=true'
     )
   })
 
@@ -210,6 +218,37 @@ describe('workflowsApi request construction', () => {
     expect(postSpy).toHaveBeenNthCalledWith(2, '/workflows/workflow-1/versions', snapshot)
     expect(postSpy).toHaveBeenNthCalledWith(3, '/workflows/workflow-1/versions/7/restore', {})
     expect(postSpy).toHaveBeenNthCalledWith(4, '/workflows/workflow-1/versions/7/restore', restore)
+  })
+
+  it('constructs access-policy routes', async () => {
+    const getAccess = spyOn(api, 'get').mockResolvedValue(undefined as never)
+    const putAccess = spyOn(api, 'put').mockResolvedValue(undefined as never)
+    const postAccess = spyOn(api, 'post').mockResolvedValue(undefined as never)
+    const policy = { operations: { run: { decision: 'deny' as const } } }
+
+    await workflowsApi.getWorkflowAccessPolicy('workflow-1')
+    await workflowsApi.updateWorkflowAccessPolicy('workflow-1', policy)
+    await workflowsApi.evaluateWorkflowAccessPolicy('workflow-1')
+    await workflowsApi.evaluateWorkflowAccessPolicy('workflow-1', { userId: 'user-1' })
+    await workflowsApi.evaluateWorkflowAccessPolicy('workflow-1', {
+      userId: 'user-1',
+      apiKeyId: 'key-1',
+    })
+
+    expect(getAccess).toHaveBeenCalledWith('/workflows/workflow-1/access-policy')
+    expect(putAccess).toHaveBeenCalledWith('/workflows/workflow-1/access-policy', policy)
+    expect(postAccess).toHaveBeenNthCalledWith(
+      1,
+      '/workflows/workflow-1/access-policy/evaluate',
+    )
+    expect(postAccess).toHaveBeenNthCalledWith(
+      2,
+      '/workflows/workflow-1/access-policy/evaluate?user_id=user-1',
+    )
+    expect(postAccess).toHaveBeenNthCalledWith(
+      3,
+      '/workflows/workflow-1/access-policy/evaluate?user_id=user-1&api_key_id=key-1',
+    )
   })
 
   it('returns rejected API errors unchanged', async () => {

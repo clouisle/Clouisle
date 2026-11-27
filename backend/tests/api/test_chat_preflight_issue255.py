@@ -200,7 +200,11 @@ async def test_conversation_lookup_enforces_agent_and_user_scope(monkeypatch):
 
     assert error.value.msg_key == "conversation_not_found"
     conversation_filter.assert_called_once_with(
-        id=conversation_id, agent_id=current_agent.id, user=current_user
+        id=conversation_id,
+        agent_id=current_agent.id,
+        user=current_user,
+        api_key_id__isnull=True,
+        api_key_origin_unknown=False,
     )
 
 
@@ -222,7 +226,10 @@ async def test_conversation_create_updates_agent_and_team_counts(monkeypatch):
 
     assert result is created
     create.assert_awaited_once_with(
-        agent=current_agent, user=current_user, variables={"topic": "coverage"}
+        agent=current_agent,
+        user=current_user,
+        variables={"topic": "coverage"},
+        api_key_id=None,
     )
     agent_query.update.assert_awaited_once()
     team_query.update.assert_awaited_once()

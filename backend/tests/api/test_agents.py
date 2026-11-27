@@ -624,7 +624,7 @@ async def test_conversation_list_filters_and_invalid_sort(monkeypatch):
         sort_by="invalid",
         page=1,
         page_size=20,
-        current_user=user(),
+        auth_result=(user(), None),
     )
 
     assert result["data"]["items"][0]["agent_name"] == item.name

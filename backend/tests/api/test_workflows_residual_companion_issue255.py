@@ -107,7 +107,7 @@ async def test_list_runs_bad_search_forces_empty_filter_and_sanitizes_errors(
 
 
 @pytest.mark.asyncio
-async def test_stream_run_allows_webhook_triggered_run_without_user(monkeypatch):
+async def test_stream_run_rejects_webhook_triggered_run_without_user(monkeypatch):
     run_id = uuid4()
     run = SimpleNamespace(workflow_id=uuid4(), triggered_by_id=None)
     access = AsyncMock()
@@ -116,13 +116,11 @@ async def test_stream_run_allows_webhook_triggered_run_without_user(monkeypatch)
     )
     monkeypatch.setattr(workflows, "check_workflow_access", access)
 
-    response = await workflows.stream_workflow_run(
-        run_id, from_sequence=7, current_user=None
-    )
+    with pytest.raises(BusinessError) as denied:
+        await workflows.stream_workflow_run(run_id, from_sequence=7, auth_result=None)
 
     access.assert_not_awaited()
-    assert response.media_type == "text/event-stream"
-    assert response.headers["cache-control"] == "no-cache"
+    assert denied.value.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -133,7 +131,7 @@ async def test_stream_run_rejects_user_triggered_run_without_user(monkeypatch):
     )
 
     with pytest.raises(BusinessError) as exc_info:
-        await workflows.stream_workflow_run(uuid4(), current_user=None)
+        await workflows.stream_workflow_run(uuid4(), auth_result=None)
 
     assert exc_info.value.code == ResponseCode.UNAUTHORIZED
     assert exc_info.value.status_code == 401

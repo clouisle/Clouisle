@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { ApiKeyHistoryFilter } from '@/components/api-key-history-filter'
 import { useLocale, useTranslations } from 'next-intl'
 import {
   Search,
@@ -89,6 +90,7 @@ export function ConversationsTable() {
 
   // Filters
   const [search, setSearch] = useUrlSearchState()
+  const [apiKeyId, setApiKeyId] = React.useState('')
   const [teamFilter, setTeamFilter] = React.useState<string[]>([])
   const [agentFilter, setAgentFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])
@@ -148,6 +150,7 @@ export function ConversationsTable() {
         team_id: teamFilter.length > 0 ? teamFilter : undefined,
         agent_id: agentFilter.length > 0 ? agentFilter : undefined,
         user_id: userFilter.length > 0 ? userFilter : undefined,
+        api_key_id: apiKeyId || undefined,
       })
       setConversations(data.items)
       setTotal(data.total)
@@ -156,7 +159,7 @@ export function ConversationsTable() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, debouncedSearch, teamFilter, agentFilter, userFilter])
+  }, [page, pageSize, debouncedSearch, teamFilter, agentFilter, userFilter, apiKeyId])
 
   const previousDebouncedSearch = React.useRef(debouncedSearch)
   React.useEffect(() => {
@@ -237,6 +240,7 @@ export function ConversationsTable() {
   // Reset filters
   const resetFilters = () => {
     setSearch('')
+    setApiKeyId('')
     setTeamFilter([])
     setAgentFilter([])
     setUserFilter([])
@@ -244,7 +248,7 @@ export function ConversationsTable() {
     setPage(1)
   }
 
-  const hasFilters = search || teamFilter.length > 0 || agentFilter.length > 0 || userFilter.length > 0
+  const hasFilters = search || apiKeyId || teamFilter.length > 0 || agentFilter.length > 0 || userFilter.length > 0
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -253,7 +257,7 @@ export function ConversationsTable() {
       <div className="space-y-4">
         {/* Filters */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-1 items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 flex-wrap">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -264,6 +268,7 @@ export function ConversationsTable() {
               />
             </div>
 
+            <ApiKeyHistoryFilter value={apiKeyId} onChange={(value) => { setApiKeyId(value); setPage(1) }} />
             {teams.length > 0 && (
               <DataTableFacetedFilter
                 title={commonT('team')}

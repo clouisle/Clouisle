@@ -195,7 +195,7 @@ async def test_stream_workflow_run_access_edges(monkeypatch):
     async def invoke(row, user=None):
         query = QueryStub(first=row)
         monkeypatch.setattr(workflows.WorkflowRun, "filter", query.filter)
-        return await workflows.stream_workflow_run(run_id, current_user=user)
+        return await workflows.stream_workflow_run(run_id, auth_result=(user, None))
 
     with pytest.raises(BusinessError) as missing:
         await invoke(None)
@@ -211,16 +211,17 @@ async def test_stream_workflow_run_access_edges(monkeypatch):
 
     access = AsyncMock()
     monkeypatch.setattr(workflows, "check_workflow_access", access)
+    user = SimpleNamespace(id=uuid4())
     response = await invoke(
-        SimpleNamespace(workflow_id=uuid4(), triggered_by_id=uuid4()),
-        SimpleNamespace(),
+        SimpleNamespace(workflow_id=uuid4(), triggered_by_id=user.id), user
     )
     assert response.media_type == "text/event-stream"
     access.assert_awaited_once()
 
     access.reset_mock()
-    response = await invoke(SimpleNamespace(workflow_id=uuid4(), triggered_by_id=None))
-    assert response.headers["cache-control"] == "no-cache"
+    with pytest.raises(BusinessError) as callerless:
+        await invoke(SimpleNamespace(workflow_id=uuid4(), triggered_by_id=None))
+    assert callerless.value.status_code == 401
     access.assert_not_awaited()
 
 

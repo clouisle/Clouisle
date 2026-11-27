@@ -10,6 +10,8 @@ import os
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
+from app.models.workflow import RunStatus
+from app.schemas.response import BusinessError
 from app.services import upload_gateway
 
 from ..errors import MaxDepthExceededError, translate_public_workflow_error
@@ -21,7 +23,6 @@ if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
 
     from ..context import ExecutionContext
-
 logger = logging.getLogger(__name__)
 
 # Maximum nesting depth
@@ -89,6 +90,32 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         if not sub_workflow:
             return ExecutionResult(error="workflow_not_found")
 
+        # A nested run inherits the parent's credential, so the child's policy is
+        # evaluated for the caller who actually started the chain rather than for
+        # nobody. Failing here refuses the node; it does not abort the parent.
+        # Workflows without a policy cost nothing: no credential lookups at all.
+        if getattr(sub_workflow, "access_policy", None):
+            from app.models.api_key import APIKey
+            from app.models.user import User
+            from app.services.workflow_access import ensure_workflow_operation
+
+            parent_key = (
+                await APIKey.get_or_none(id=getattr(run, "api_key_id", None))
+                if getattr(run, "api_key_id", None)
+                else None
+            )
+            parent_user = (
+                await User.get_or_none(id=getattr(run, "triggered_by_id", None))
+                if getattr(run, "triggered_by_id", None)
+                else None
+            )
+            try:
+                await ensure_workflow_operation(
+                    sub_workflow, "run", user=parent_user, api_key=parent_key
+                )
+            except BusinessError:
+                return ExecutionResult(error="workflow_access_denied")
+
         # Convert frontend inputMappings format to resolve_inputs format
         # Frontend format: {name, type, required, source, variableRef, constantValue}
         # resolve_inputs format: {name, value} or {name, variableRef}
@@ -142,6 +169,13 @@ class SubWorkflowNodeExecutor(NodeExecutor):
                 # A nested run never gains a new surface: it inherits the root
                 # run's entrypoint so grants stay bound to how it was invoked.
                 origin=inherited_origin(run),
+                # The credential is inherited at creation time too, so the child
+                # is never readable as an app-session run between its own insert
+                # and the parent/root backfill below.
+                api_key_id=getattr(run, "api_key_id", None),
+                api_key_origin_unknown=bool(
+                    getattr(run, "api_key_origin_unknown", False)
+                ),
             )
 
             # Get sub-workflow results
@@ -154,6 +188,13 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             sub_run.root_run_id = run.root_run_id or run.id
             sub_run.depth = current_depth + 1
             await sub_run.save()
+
+            # A child that parked for external input or tool approval cannot be
+            # reported as a finished child: its outputs are still empty and the
+            # resume hook only wakes the child. Park the parent too, so neither
+            # side runs downstream nodes on an unfinished result.
+            if sub_run.status == RunStatus.WAITING:
+                return ExecutionResult(waiting=True)
 
             # Check sub-workflow result
             if sub_run.status == "failed":

@@ -145,6 +145,7 @@ export interface WorkflowRunStats {
 }
 
 export interface AllWorkflowRunsQueryParams {
+  apiKeyId?: string
   page?: number
   pageSize?: number
   teamId?: string[]
@@ -254,6 +255,45 @@ export interface VariableDefinition {
   fileConfig?: { maxSize?: number; accept?: string[]; maxFiles?: number } | null
 }
 
+// ============ Access policy ============
+
+export type WorkflowAccessOperation = 'view' | 'run' | 'edit' | 'publish' | 'delete'
+
+export interface WorkflowAccessGate {
+  kind: 'team_role' | 'user' | 'api_key'
+  roles?: string[]
+  user_ids?: string[]
+  api_key_ids?: string[]
+}
+
+export interface WorkflowAccessOperationPolicy {
+  decision: 'allow' | 'deny'
+  gates?: WorkflowAccessGate[]
+}
+
+export interface WorkflowAccessPolicyDocument {
+  operations: Partial<Record<WorkflowAccessOperation, WorkflowAccessOperationPolicy>>
+}
+
+export interface WorkflowAccessDecision {
+  source: 'policy' | 'inherit'
+  allowed: boolean | null
+  decision: 'allow' | 'deny' | null
+  reason: string
+  matched_gate?: number | null
+}
+
+export interface WorkflowAccessPolicyResponse {
+  policy: WorkflowAccessPolicyDocument
+  version: number
+  effective: Record<WorkflowAccessOperation, WorkflowAccessDecision>
+}
+
+export interface WorkflowAccessEvaluation {
+  operations: Record<WorkflowAccessOperation, WorkflowAccessDecision>
+  principal: { user_id: string; team_role: string | null; api_key_id: string | null }
+}
+
 // ============ Input Types ============
 
 export interface WorkflowCreateInput {
@@ -289,10 +329,12 @@ export interface WorkflowQueryParams {
 }
 
 export interface WorkflowRunQueryParams {
+  apiKeyId?: string
   page?: number
   pageSize?: number
   status?: RunStatus
   isDebug?: boolean
+  ownOnly?: boolean
   search?: string
   createdAfter?: string
   createdBefore?: string
@@ -452,6 +494,7 @@ export const workflowsApi = {
       userId,
       isDebug,
       search,
+      apiKeyId,
     } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
@@ -461,6 +504,7 @@ export const workflowsApi = {
     status?.forEach((value) => queryParams.append('status', value))
     triggerType?.forEach((value) => queryParams.append('trigger_type', value))
     userId?.forEach((value) => queryParams.append('user_id', value))
+    if (apiKeyId) queryParams.append('api_key_id', apiKeyId)
     if (isDebug !== undefined) queryParams.append('is_debug', String(isDebug))
     if (search) queryParams.append('search', search)
     return api.get<PageData<WorkflowRunListItemWithWorkflow>>(
@@ -490,7 +534,7 @@ export const workflowsApi = {
     workflowId: string,
     params: WorkflowRunQueryParams = {}
   ): Promise<PageData<WorkflowRunListItem>> => {
-    const { page = 1, pageSize = 20, status, isDebug, search, createdAfter, createdBefore } = params
+    const { page = 1, pageSize = 20, status, isDebug, ownOnly, search, createdAfter, createdBefore, apiKeyId } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -499,6 +543,8 @@ export const workflowsApi = {
     if (search) queryParams.append('search', search)
     if (createdAfter) queryParams.append('created_after', createdAfter)
     if (createdBefore) queryParams.append('created_before', createdBefore)
+    if (ownOnly) queryParams.append('own_only', 'true')
+    if (apiKeyId) queryParams.append('api_key_id', apiKeyId)
     return api.get<PageData<WorkflowRunListItem>>(
       `/workflows/${workflowId}/runs?${queryParams.toString()}`
     )
@@ -509,7 +555,7 @@ export const workflowsApi = {
    */
   getMyWorkflowRuns: async (
     workflowId: string,
-    params: Omit<WorkflowRunQueryParams, 'isDebug'> = {}
+    params: Omit<WorkflowRunQueryParams, 'isDebug' | 'ownOnly'> = {}
   ): Promise<PageData<WorkflowRunListItem>> => {
     const { page = 1, pageSize = 20, status, search, createdAfter, createdBefore } = params
     const queryParams = new URLSearchParams()
@@ -772,5 +818,41 @@ export const workflowsApi = {
     data: { description?: string } = {}
   ): Promise<Workflow> => {
     return api.post<Workflow>(`/workflows/${workflowId}/versions/${version}/restore`, data)
+  },
+
+  /**
+   * 读取工作流的访问策略与当前用户的有效权限
+   */
+  getWorkflowAccessPolicy: async (workflowId: string): Promise<WorkflowAccessPolicyResponse> => {
+    return api.get<WorkflowAccessPolicyResponse>(`/workflows/${workflowId}/access-policy`)
+  },
+
+  /**
+   * 覆盖工作流的访问策略；空 operations 表示完全继承旧规则
+   */
+  updateWorkflowAccessPolicy: async (
+    workflowId: string,
+    policy: WorkflowAccessPolicyDocument
+  ): Promise<WorkflowAccessPolicyResponse> => {
+    return api.put<WorkflowAccessPolicyResponse>(
+      `/workflows/${workflowId}/access-policy`,
+      policy
+    )
+  },
+
+  /**
+   * 预览某个用户（与可选 Key）在该工作流上的有效权限
+   */
+  evaluateWorkflowAccessPolicy: async (
+    workflowId: string,
+    params: { userId?: string; apiKeyId?: string } = {}
+  ): Promise<WorkflowAccessEvaluation> => {
+    const query = new URLSearchParams()
+    if (params.userId) query.append('user_id', params.userId)
+    if (params.apiKeyId) query.append('api_key_id', params.apiKeyId)
+    const suffix = query.toString()
+    return api.post<WorkflowAccessEvaluation>(
+      `/workflows/${workflowId}/access-policy/evaluate${suffix ? `?${suffix}` : ''}`
+    )
   },
 }

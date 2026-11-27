@@ -182,7 +182,7 @@ def test_agent_node_without_workflow_identity_fails_closed():
     asyncio.run(scenario())
 
 
-def test_pending_approval_is_failed_even_when_cancellation_breaks():
+def test_pending_approval_parks_the_node_without_cancelling():
     async def scenario():
         workflow = SimpleNamespace(team_id="team-1")
         run = MagicMock(
@@ -215,7 +215,7 @@ def test_pending_approval_is_failed_even_when_cancellation_breaks():
             ),
             patch(
                 "app.services.tool_approvals.cancel_execution",
-                new=AsyncMock(side_effect=RuntimeError("cancel failed")),
+                new=AsyncMock(),
             ) as cancel,
         ):
             workflow_filter.return_value.only.return_value.first = AsyncMock(
@@ -236,8 +236,11 @@ def test_pending_approval_is_failed_even_when_cancellation_breaks():
                 run,
             )
 
-        assert result.error == "tool_approval_cancelled"
-        cancel.assert_awaited_once()
+        # The gate stays pending for its approver; the node reports that it is
+        # waiting so the orchestrator persists WAITING and the task exits.
+        assert result.waiting is True
+        assert result.error is None
+        cancel.assert_not_awaited()
 
     asyncio.run(scenario())
 

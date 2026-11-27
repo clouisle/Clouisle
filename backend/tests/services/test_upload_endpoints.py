@@ -3,6 +3,7 @@ import hmac
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -78,6 +79,27 @@ def test_get_file_authorizes_protected_categories(upload_test_client):
     authorize.assert_awaited_once()
     assert authorize.await_args.args == ("sandbox-artifacts/2026/09/result.txt",)
     assert authorize.await_args.kwargs["authenticated"][0].id == "user-1"
+
+
+def test_get_log_attachment_requires_login_and_uses_log_scope(upload_test_client):
+    conversation_id = uuid4()
+    url = f"/api/v1/upload/files/agent-attachments/2026/09/log.txt?log_conversation_id={conversation_id}"
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        response=AsyncMock(return_value=JSONResponse({"file": "log"})),
+    )
+    with (
+        patch.object(upload, "_upload_storage", AsyncMock(return_value=storage)),
+        patch.object(upload, "authorize_agent_log_asset", AsyncMock()) as authorize,
+    ):
+        assert upload_test_client.get(url).status_code == 200
+        assert authorize.await_args.kwargs["conversation_id"] == conversation_id
+        assert authorize.await_args.kwargs["user"].id == "user-1"
+        upload_test_client.app.dependency_overrides[
+            deps.get_current_user_or_api_key_optional
+        ] = lambda: (SimpleNamespace(id="user-1"), SimpleNamespace(id=uuid4()))
+        assert upload_test_client.get(url).status_code == 401
+        authorize.assert_awaited_once()
 
 
 def test_get_file_always_protects_im_attachments(upload_test_client):

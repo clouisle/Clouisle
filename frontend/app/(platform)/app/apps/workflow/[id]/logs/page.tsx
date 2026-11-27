@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { ApiKeyHistoryFilter } from '@/components/api-key-history-filter'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import { useTeam } from '@/contexts/team-context'
@@ -20,6 +21,7 @@ import {
   AlertTriangle,
   Search,
   X,
+  ShieldCheck,
   Loader2 as LoaderIcon
 } from 'lucide-react'
 import Image from 'next/image'
@@ -172,6 +174,7 @@ export default function WorkflowLogsPage() {
   const [dateFilter, setDateFilter] = React.useState('all')
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [selectedRunId, setSelectedRunId] = React.useState<string | null>(null)
+  const [apiKeyId, setApiKeyId] = React.useState('')
 
   // Fetch workflow data
   const fetchWorkflow = React.useCallback(async () => {
@@ -209,6 +212,8 @@ export default function WorkflowLogsPage() {
       const result = await workflowsApi.getWorkflowRuns(workflowId, {
         page: targetPage,
         pageSize: PAGE_SIZE,
+        ownOnly: true,
+        apiKeyId: apiKeyId || undefined,
         status: statusFilter !== 'all' ? statusFilter as 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' : undefined,
         search: search || undefined,
         createdAfter: getCreatedAfter(dateFilter),
@@ -245,7 +250,7 @@ export default function WorkflowLogsPage() {
         setIsLoadingMore(false)
       }
     }
-  }, [workflowId, statusFilter, dateFilter, debouncedSearchQuery])
+  }, [workflowId, statusFilter, dateFilter, debouncedSearchQuery, apiKeyId])
 
   const handleRowClick = (runId: string) => {
     setSelectedRunId(runId)
@@ -360,6 +365,13 @@ export default function WorkflowLogsPage() {
                 <span>{t('monitor')}</span>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              className="gap-2"
+              onClick={() => router.push(`/app/apps/workflow/${workflowId}/permissions`)}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span>{t('permissions')}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -369,6 +381,7 @@ export default function WorkflowLogsPage() {
         {/* Filters Bar */}
         <div className="px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
+            <ApiKeyHistoryFilter value={apiKeyId} onChange={setApiKeyId} />
             {/* Status Filter */}
             <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
               <SelectTrigger className="w-40" size="default">

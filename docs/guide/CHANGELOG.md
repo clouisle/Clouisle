@@ -9,6 +9,42 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Agent chat history is isolated per calling surface. One conversation belongs to
+exactly one surface: the platform Agent Chat (JWT) or one API key. A key can no longer
+read, continue or edit another key's history — even when both keys belong to the same
+user — and the platform chat never shows API-key history. The Agent orchestration log
+view still lists every conversation for its owner. Existing records carry no credential,
+so they remain the owner's own platform-chat history.
+- Workflow run history is isolated the same way: `/workflows/{id}/runs/mine` lists only the
+runs the caller started from the app, while an API-key request lists exactly the runs that
+credential created. Orchestration logs stay the full debugging view.
+- Workflows gain an optional per-workflow access policy over view/run/edit/publish/delete,
+with audience gates by team role, user or API key. An empty policy keeps the existing
+rules, so the feature only ever narrows access; a policy that no longer validates denies.
+- Workflow runs now pause for tool approval. A tool node whose stored policy requires
+  confirmation parks the run as `waiting` instead of failing the node, and the decision
+  resumes it. The run's initiator decides; a team owner/admin of that team is accepted as
+  fallback, since a scheduled or webhook run may have no reachable initiator. Plain members
+  see nothing. Stopping a waiting run cancels its pending gate.
+- `/app/approvals` lists pending tool approvals with their originating run, so a background
+  workflow run can be decided without an open chat.
+
+### Changed
+
+- Workflow tool calls no longer bypass tool approval: the tool's stored policy applies to
+  them exactly as to Agent calls, and a legacy `user`/`team_role` audience now fails closed
+  (`6510`) for workflows instead of being silently ignored.
+- Saving a workflow now rejects a pause node, or a tool node whose tool can require approval,
+  inside an iteration/loop body (`workflow_pause_inside_container`,
+  `workflow_approval_inside_container`). A container round cannot resume mid-way, so such a
+  node could only fail at run time.
+- An API-key approval is authorized only when the owning Agent run proves the same key — from
+  its `api_key_id` column or, for pre-column rows, its worker payload. A run that names no key
+  is no longer decidable by an explicit execution id, matching the key-scoped list, which
+  already excluded it.
+
 ## [0.3.0] - 2026-11-01
 
 ### Fixed

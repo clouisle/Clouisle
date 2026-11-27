@@ -337,6 +337,19 @@ class Conversation(models.Model):
         max_length=200, null=True, description="Auto-generated or user-defined title"
     )
 
+    # Chat history origin. The platform Agent Chat (JWT) leaves api_key_id null;
+    # an API-key chat (Agent API or embed) stamps the credential that owns the
+    # history. ``api_key_origin_unknown`` quarantines sessions whose origin was
+    # never recorded so no chat surface inherits them.
+    api_key_id: UUID | None = fields.UUIDField(
+        null=True,
+        description="API key that owns this history (null = platform chat)",
+    )
+    api_key_origin_unknown = fields.BooleanField(
+        default=False,
+        description="True when the history origin could not be determined",
+    )
+
     # Variables (filled at conversation start)
     variables: dict = fields.JSONField(default=dict, description="Variable values")  # type: ignore[assignment]
 

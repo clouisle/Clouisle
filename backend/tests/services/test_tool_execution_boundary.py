@@ -257,6 +257,9 @@ async def test_chat_mcp_child_policy_pauses_before_call_and_resumes_once(monkeyp
     [
         ("chat", None, True, True, True),
         ("agent_run", None, True, True, True),
+        # A workflow run carries a workflow entrypoint/run kind. Its approval
+        # behaviour is pinned separately; here only the operation override is
+        # exercised, so nothing has to wait.
         ("chat", "workflow", True, True, False),
         ("workflow", None, False, True, False),
         ("tool_test", None, True, True, False),
@@ -330,8 +333,15 @@ async def test_agent_confirmation_cannot_be_relaxed_by_mcp_child_allow(
         if not expected_wait and not (
             entrypoint == "chat" and interactive and not run_kind
         ):
-            result = await execute_stored_tool(tool, "tool:delete", {}, context, invoke)
-            assert result == {"result": "read"}
+            # The stored policy is consulted for Agent calls and workflow runs
+            # alike (``run_kind`` is the authoritative workflow carrier), so a
+            # default ``require_approval`` operation waits there; the direct
+            # test surfaces still never consult it.
+            second = await execute_stored_tool(tool, "tool:delete", {}, context, invoke)
+            if run_kind == "workflow":
+                assert isinstance(second, PendingToolApproval)
+            else:
+                assert second == {"result": "read"}
     finally:
         await Tortoise.close_connections()
 

@@ -383,8 +383,29 @@ async def lifespan(app: FastAPI):
     from app.core.sso_link_migration import migrate_sso_link_sessions
 
     await migrate_sso_link_sessions()
+
+    # Column additions must land before ``generate_schemas``: the new model
+    # attribute otherwise makes the schema generator emit DDL referencing a
+    # column that does not exist yet on an upgraded database.
+    from app.core.workflow_access_policy_migration import (
+        migrate_workflow_access_policy_columns,
+    )
+
+    await migrate_workflow_access_policy_columns()
+
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    try:
+        await init_workflow_pause_requests_table()
+    except Exception as e:
+        logger.warning(f"Workflow pause requests table migration failed: {e}")
+
+    # Backfill after the legacy workflow context and AgentRun payload columns
+    # are available. Do not serve partially classified history on failure.
+    from app.core.execution_history_migration import migrate_execution_history_schema
+
+    await migrate_execution_history_schema()
 
     try:
         await init_im_rich_media_columns()
@@ -473,10 +494,6 @@ async def lifespan(app: FastAPI):
         await init_observability_run_error_index()
     except Exception as e:
         logger.warning(f"Observability run index migration failed: {e}")
-    try:
-        await init_workflow_pause_requests_table()
-    except Exception as e:
-        logger.warning(f"Workflow pause requests table migration failed: {e}")
 
     # pg_search depends on the authoritative knowledge tables above. Detect and
     # initialize it on the first startup; validate it on every later startup.

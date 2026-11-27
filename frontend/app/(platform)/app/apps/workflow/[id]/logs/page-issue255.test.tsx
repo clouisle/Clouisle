@@ -26,6 +26,7 @@ mock.module('react', () => ({
     return refs[index]
   },
 }))
+mock.module('@/components/api-key-history-filter', () => ({ ApiKeyHistoryFilter: component('ApiKeyHistoryFilter') }))
 mock.module('@/hooks/use-infinite-scroll', () => ({
   useInfiniteScroll: (options: { hasMore: boolean; loading: boolean; onLoadMore: () => Promise<void> | undefined }) => {
     infiniteOptions = options
@@ -51,6 +52,7 @@ mock.module('next/image', () => ({ default: component('Image') }))
 mock.module('lucide-react', () => Object.fromEntries([
   'Calendar', 'Activity', 'ArrowLeft', 'ExternalLink', 'FileText',
   'LayoutGrid', 'GitBranch', 'CheckCircle', 'XCircle', 'Clock', 'Ban', 'AlertTriangle', 'Search', 'X', 'Loader2',
+  'ShieldCheck',
 ].map(name => [name, component(name)])))
 for (const [path, names] of [
   ['@/components/ui/skeleton', ['Skeleton']],

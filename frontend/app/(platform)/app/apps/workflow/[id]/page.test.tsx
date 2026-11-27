@@ -145,6 +145,7 @@ mock.module('lucide-react', () => ({
   GraduationCap: element,
   StickyNote: element, ClipboardCheck: element, Globe: element, GlobeLock: element, LayoutGrid: element,
   ExternalLink: element, FileText: element, Activity: element, GitBranch: element, Code: element,
+  ShieldCheck: element,
   XIcon: element, ChevronDownIcon: element, CheckIcon: element, X: element, ChevronDown: element, ChevronUp: element,
 }))
 mock.module('@/lib/api/auth', () => ({ authApi: { getCurrentUser } }))
@@ -384,6 +385,25 @@ test('protects the start node from removal and saves its input variables', async
     variables: [{ name: 'query', label: null, type: 'string', required: true, default: 'hello', description: 'Prompt' }],
   }))
   expect(toastSuccess).toHaveBeenCalledWith('saved')
+})
+
+test('surfaces a structural validation refusal when saving', async () => {
+  const { ApiError } = await import('@/lib/api/client')
+  const refused = new ApiError(1001, '暂停节点不允许放在迭代/循环节点内部')
+  const editorApi = api({
+    updateWorkflow: mock(async () => {
+      throw refused
+    }),
+  })
+  const tree = await settle(editorApi)
+
+  const save = findAction(tree, 'save')
+  await (save.props.onClick as () => Promise<void>)()
+
+  // The API interceptor intentionally stays quiet for field-level validation
+  // errors, but a container rule has no field, so the page must show it.
+  expect(toastError).toHaveBeenCalledWith('暂停节点不允许放在迭代/循环节点内部')
+  expect(toastSuccess).not.toHaveBeenCalledWith('saved')
 })
 
 test('saves pending edits before publishing and supports unpublishing', async () => {

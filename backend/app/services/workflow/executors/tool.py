@@ -67,23 +67,6 @@ def _error_result(error: str, output_var: str, start_time: float) -> ExecutionRe
     return ExecutionResult(outputs=outputs, error=error)
 
 
-async def _cancel_unexecuted(execution_id: UUID) -> None:
-    """Cancel a pending approval request that no run will ever resume."""
-    from app.schemas.tool_approval import ToolExecutionCancelReason
-    from app.services import tool_approvals
-
-    try:
-        await tool_approvals.cancel_execution(
-            execution_id, reason=ToolExecutionCancelReason.CANCELLED
-        )
-    except Exception:
-        logger.warning(
-            "Failed to cancel unexecuted tool execution %s",
-            execution_id,
-            exc_info=True,
-        )
-
-
 def _convert_tool_input(value: WorkflowValue, parameter_type: str) -> WorkflowValue:
     """Convert text mappings without truncating or changing native typed values."""
     expected = {
@@ -296,6 +279,9 @@ class ToolNodeExecutor(NodeExecutor):
                 ),
                 connection_id=connection_id,
                 interactive=False,
+                # The tool's stored policy decides, exactly as for an Agent run;
+                # a workflow has no caller to confirm interactively, so a caller
+                # gate is decided later from the approval inbox.
                 require_approval=False,
             )
 
@@ -339,12 +325,13 @@ class ToolNodeExecutor(NodeExecutor):
                     operation=operation or tool.name,
                 )
             if isinstance(result, PendingToolApproval):
-                # Workflows never wait for tool approval. This defensive branch
-                # covers a boundary/configuration regression: drop the
-                # unexecuted request and fail the node instead of turning the
-                # workflow into an approval surface.
-                await _cancel_unexecuted(result.execution_id)
-                return _error_result("tool_approval_cancelled", output_var, start_time)
+                # Park the run: the node had to wait for a human decision, so the
+                # orchestrator persists it as WAITING and this task exits. The
+                # decision resumes the run through
+                # ``schedule_workflow_run_approval_resume``; the stable call
+                # token above makes the resumed node find the same execution
+                # instead of creating a second one.
+                return ExecutionResult(waiting=True)
 
             duration_ms = int((time.time() - start_time) * 1000)
 

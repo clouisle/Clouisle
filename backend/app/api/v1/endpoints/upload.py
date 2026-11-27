@@ -10,7 +10,7 @@ import hmac
 import mimetypes
 from pathlib import Path
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query, Header, Request
 from pydantic import BaseModel, Field
@@ -30,6 +30,7 @@ from app.services.file_parser import (
 from app.services.asset import asset_service
 from app.services.asset_access import (
     PROTECTED_FILE_CATEGORIES,
+    authorize_agent_log_asset,
     authorize_protected_asset,
 )
 from app.services.audit_log import AuditLogService
@@ -551,6 +552,7 @@ async def get_file(
     authenticated: tuple[User, APIKey | None] | None = Depends(
         deps.get_current_user_or_api_key_optional
     ),
+    log_conversation_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Any:
     """Return public uploads or an authorized scoped generated asset."""
     category = _validate_path_segment(category, "category")
@@ -565,7 +567,18 @@ async def get_file(
             asset and await AssetScopeRef.filter(asset_id=asset.id).exists()
         )
     if is_protected:
-        await authorize_protected_asset(storage_key, authenticated=authenticated)
+        if log_conversation_id is None:
+            await authorize_protected_asset(storage_key, authenticated=authenticated)
+        elif authenticated is None or authenticated[1] is not None:
+            raise BusinessError(
+                code=ResponseCode.UNAUTHORIZED,
+                msg_key="not_authenticated",
+                status_code=401,
+            )
+        else:
+            await authorize_agent_log_asset(
+                storage_key, conversation_id=log_conversation_id, user=authenticated[0]
+            )
     storage = await _upload_storage()
 
     if not await storage.exists(storage_key):

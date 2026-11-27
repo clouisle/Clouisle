@@ -222,10 +222,20 @@ async def test_every_noninteractive_entrypoint_fails_closed_on_legacy_policy(
 
 
 @pytest.mark.parametrize(
-    "entrypoint", [ExecutionEntrypoint.WORKFLOW, ExecutionEntrypoint.SUBWORKFLOW]
+    "entrypoint",
+    [
+        ExecutionEntrypoint.WORKFLOW,
+        ExecutionEntrypoint.SUBWORKFLOW,
+    ],
 )
 @pytest.mark.asyncio
-async def test_workflow_entrypoints_ignore_legacy_audience_and_never_gate(entrypoint):
+async def test_workflow_entrypoints_fail_closed_on_legacy_audience(entrypoint):
+    """A workflow run is no longer exempt from the caller-only contract.
+
+    It parks on a caller gate like any other run, so a stored external audience
+    can never be silently ignored: the node fails closed instead of executing
+    a tool whose approvers would be unanswerable.
+    """
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -253,10 +263,13 @@ async def test_workflow_entrypoints_ignore_legacy_audience_and_never_gate(entryp
             interactive=False,
             entrypoint_id=str(uuid4()),
         )
-        result = await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
+        with pytest.raises(BusinessError) as denied:
+            await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
 
-        assert result == {"ok": True}
-        assert calls == [{"x": 1}]
+        assert denied.value.msg_key == (
+            "tool_approval_policy_external_audience_unsupported"
+        )
+        assert calls == []
         assert await ToolApprovalRequest.all().count() == 0
     finally:
         await Tortoise.close_connections()

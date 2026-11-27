@@ -804,6 +804,13 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       case 'tool': {
         const config = node.data.toolConfig
 
+        // 迭代/循环体内部无法中途续跑，因此容器内无法通过工具审批暂停。
+        // 具体是否会被拒绝取决于该工具的审批策略（保存时由后端判定），
+        // 所以这里只提示，不阻断保存。
+        if (node.parentId) {
+          issues.push(createIssue(node, 'warning', 'toolInContainer', 'parentId'))
+        }
+
         // 检查工具
         const hasTool = !!(config?.toolId || (config?.toolType === 'builtin' && config?.toolName))
         if (!hasTool) {

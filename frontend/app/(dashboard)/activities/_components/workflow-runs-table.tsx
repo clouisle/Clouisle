@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { ApiKeyHistoryFilter } from '@/components/api-key-history-filter'
 import { useLocale, useTranslations } from 'next-intl'
 import {
   Search,
@@ -159,6 +160,7 @@ export function WorkflowRunsTable() {
 
   // Filters
   const [search, setSearch] = useUrlSearchState()
+  const [apiKeyId, setApiKeyId] = React.useState('')
   const [teamFilter, setTeamFilter] = React.useState<string[]>([])
   const [workflowFilter, setWorkflowFilter] = React.useState<string[]>([])
   const [statusFilter, setStatusFilter] = React.useState<string[]>([])
@@ -222,6 +224,7 @@ export function WorkflowRunsTable() {
         status: statusFilter.length > 0 ? (statusFilter as RunStatus[]) : undefined,
         triggerType: triggerTypeFilter.length > 0 ? (triggerTypeFilter as TriggerType[]) : undefined,
         userId: userFilter.length > 0 ? userFilter : undefined,
+        apiKeyId: apiKeyId || undefined,
       }
       const data = await workflowsApi.getAllWorkflowRuns(params)
       setRuns(data.items)
@@ -231,7 +234,7 @@ export function WorkflowRunsTable() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, debouncedSearch, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter])
+  }, [page, pageSize, debouncedSearch, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter, apiKeyId])
 
   const previousDebouncedSearch = React.useRef(debouncedSearch)
   React.useEffect(() => {
@@ -294,6 +297,7 @@ export function WorkflowRunsTable() {
   // Reset filters
   const resetFilters = () => {
     setSearch('')
+    setApiKeyId('')
     setTeamFilter([])
     setWorkflowFilter([])
     setStatusFilter([])
@@ -305,6 +309,7 @@ export function WorkflowRunsTable() {
 
   const hasFilters =
     search ||
+    apiKeyId ||
     teamFilter.length > 0 ||
     workflowFilter.length > 0 ||
     statusFilter.length > 0 ||
@@ -405,6 +410,7 @@ export function WorkflowRunsTable() {
               />
             )}
 
+            <ApiKeyHistoryFilter value={apiKeyId} onChange={(value) => { setApiKeyId(value); setPage(1) }} />
             {hasFilters && (
               <Button variant="ghost" onClick={resetFilters} className="h-8 px-2 lg:px-3">
                 {commonT('reset')}

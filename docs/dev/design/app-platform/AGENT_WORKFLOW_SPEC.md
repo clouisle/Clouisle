@@ -175,6 +175,11 @@ class Conversation(Model):
     
     # 变量值 (对话时填充的变量)
     variables = fields.JSONField(default=dict)
+
+    # 对话历史来源：平台 Agent Chat (JWT) 为 null，API Key 对话记录该 Key 的 ID
+    api_key_id = fields.UUIDField(null=True)
+    # 历史来源无法判定时置 True（仅早前迁移分类过的库会保留，当前迁移不再写入）
+    api_key_origin_unknown = fields.BooleanField(default=False)
     
     # 统计
     message_count = fields.IntField(default=0)
@@ -289,8 +294,42 @@ GET  /api/v1/agents/{id}/chat/runs/{run_id}/stream # 运行事件 SSE（可断�
 GET  /api/v1/agents/{id}/chat/runs/{run_id}/events # 运行事件历史
 POST /api/v1/agents/{id}/chat/runs/{run_id}/inputs # 运行中输入（steer / follow-up）
 POST /api/v1/agents/{id}/chat/runs/{run_id}/stop   # 协作停止
-GET /api/v1/agents/{id}/conversations # Agent 的对话列表
+GET /api/v1/agents/{id}/conversations # 当前调用面对该 Agent 的对话列表（双认证）
+GET /api/v1/agents/conversations/{id} # 单个对话详情（双认证）
 ```
+
+**对话历史来源隔离**（实现：`backend/app/api/chat_history_origin.py`）：
+
+一个对话只属于一个调用面，`Conversation.api_key_id` 是唯一判定依据：
+
+| 调用面 | 可见历史 |
+|--------|----------|
+| 平台 Agent Chat（JWT） | `api_key_id IS NULL AND api_key_origin_unknown = FALSE` |
+| 某个 API Key（Agent API / Embed） | `api_key_id = <该 Key> AND api_key_origin_unknown = FALSE` |
+| 隔离区（`api_key_origin_unknown = TRUE`，仅早前分类过的库会存在） | 两个调用面都不可见 |
+
+隔离范围包括：对话列表/详情、续接对话（`conversation_id`）、消息版本、编辑/重新生成、
+消息与对话删除，以及运行状态/事件/SSE/输入/停止（运行跟随其对话的来源；
+未绑定 Key 的运行属于平台对话，**不会**回退给任何 API Key）。
+同一用户的另一个 API Key 也读不到该 Key 的对话。
+
+**Embed 组件不在浏览器本地保存历史**：对话列表/详情读取双认证的
+`/agents/{id}/conversations` 与 `/agents/conversations/{id}`，重命名与删除走同过滤器
+的 Embed 路由（`PATCH`/`DELETE /api/v1/embed/agents/{id}/conversations/{id}`），
+工作流运行历史读取 `/workflows/{id}/runs/mine` 一族。`localStorage` 对同源任何脚本可读，
+按 Key 或其哈希拼存储键只能遮蔽泄漏、不构成边界；早期版本写入的
+`clouisle:embed:*` 缓存条目在适配器创建时清除。
+
+**编排日志**是用户对自己历史的完整视图，仍可看到该 Agent 下当前用户的全部对话
+（含 API Key 与隔离区），因此详情/删除使用独立的日志路由：
+
+```
+GET    /api/v1/agents/{id}/logs/conversations
+GET    /api/v1/agents/{id}/logs/conversations/{conversation_id}
+DELETE /api/v1/agents/{id}/logs/conversations/{conversation_id}
+```
+
+管理员/仪表盘（`/api/v1/conversations/*`）语义不变。
 
 **对话请求**：
 ```python

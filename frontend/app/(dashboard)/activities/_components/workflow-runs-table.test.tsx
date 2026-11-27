@@ -142,7 +142,7 @@ describe('WorkflowRunsTable', () => {
       teamId: ['team-1'], workflowId: ['workflow-1'], status: ['failed'], triggerType: ['cron'], userId: ['user-1'],
     }))
 
-    await act(async () => renderer.root.findByType('select').props.onValueChange('50'))
+    await act(async () => renderer.root.findAllByType('select').find((node) => node.props.value === '20')!.props.onValueChange('50'))
     expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 50 }))
 
     await act(async () => renderer.root.findAllByType('button').find((button) => text(button.props.children).includes('common.reset'))!.props.onClick())

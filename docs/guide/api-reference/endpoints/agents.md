@@ -884,7 +884,7 @@ Conversation endpoints registered on the agents router. Because the router is mo
 GET /api/v1/agents/{agent_id}/conversations
 ```
 
-Returns the current user's own conversations for one agent. Requires `conversation:read` and access to the agent (via the canonical `check_agent_access` guard).
+Returns the caller's conversations for one Agent. A login token requires `conversation:read` and returns only non-API-key conversations. An API key returns only conversations created with that exact key. Both callers must have access to the Agent.
 
 ### Query Parameters
 
@@ -905,7 +905,7 @@ Conversations are ordered by the sort field, descending. The response is a `Page
 GET /api/v1/agents/conversations/my
 ```
 
-Returns all of the current user's conversations across agents. Requires `conversation:read`.
+Returns the current user's personal chat history across Agents. An API-key conversation is never returned to a login session.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -921,9 +921,13 @@ The response is a `PageData[ConversationListOut]` envelope; `agent_name` and `ag
 GET /api/v1/agents/conversations/{conversation_id}
 ```
 
-Returns the conversation together with its visible messages, including per-message `version_count`. Requires `conversation:read`; only the owner can read it (`6210` — conversation not found — for anyone else).
+Returns the conversation's visible messages, including per-message `version_count`. Uses the same credential boundary as the per-Agent chat list: the signed-in owner can open non-API-key history, and an API key can open only its own history.
 
 The response data is a `ConversationWithMessages`: the `ConversationOut` fields (`id`, `agent_id`, `agent_name`, `agent_icon`, `title`, `variables`, `message_count`, `token_usage`, `created_at`, `updated_at`) plus `messages` (a `MessageOut[]` — see [Chat API](./chat.md) for the message shape).
+
+### Agent Orchestration Logs
+
+Use `GET /api/v1/agents/{agent_id}/logs/conversations` for the signed-in user's own conversations from all sources. Append `/{conversation_id}` to read the conversation, or use `DELETE` on that detail route to delete it. These routes do not accept API keys and retain the Agent access and conversation permissions required by each operation.
 
 ### Update Conversation
 

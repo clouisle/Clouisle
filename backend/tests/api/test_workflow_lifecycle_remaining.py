@@ -208,7 +208,9 @@ async def test_unpublish_transitions_and_audits():
     ):
         response = await workflows.unpublish_workflow(item.id, MagicMock(), user)
 
-    access.assert_awaited_once_with(item.id, user, require_write=True)
+    access.assert_awaited_once_with(
+        item.id, user, require_write=True, operation="publish"
+    )
     assert item.status == WorkflowStatus.DRAFT
     item.save.assert_awaited_once()
     audit.assert_awaited_once()
@@ -259,7 +261,9 @@ async def test_delete_workflow_deletes_then_audits():
     ):
         response = await workflows.delete_workflow(item.id, MagicMock(), user)
 
-    access.assert_awaited_once_with(item.id, user, require_write=True)
+    access.assert_awaited_once_with(
+        item.id, user, require_write=True, operation="delete"
+    )
     item.delete.assert_awaited_once()
     audit.assert_awaited_once()
     assert response["data"] == {"id": str(item.id)}

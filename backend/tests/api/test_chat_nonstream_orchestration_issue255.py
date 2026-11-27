@@ -117,6 +117,7 @@ async def test_workflow_asset_refs_are_authorized_and_bound_to_conversation(
             "user": user,
             "api_key": api_key,
             "expected_team_id": team_id,
+            "enforce_history_origin": True,
         }
         for call in resolve_ref.await_args_list
     )
@@ -132,6 +133,7 @@ async def test_workflow_asset_refs_are_authorized_and_bound_to_conversation(
             "user": user,
             "api_key": api_key,
             "expected_team_id": team_id,
+            "enforce_history_origin": True,
         }
         for call in authorize_scope.await_args_list
     )
@@ -418,6 +420,7 @@ async def test_resolve_variable_asset_uuid_authorizes_for_agent_team(monkeypatch
         user=user,
         api_key=None,
         expected_team_id=team_id,
+        enforce_history_origin=True,
     )
     get_or_create_ref.assert_awaited_once_with(
         scope_type=AssetScopeType.CONVERSATION,

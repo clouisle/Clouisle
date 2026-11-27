@@ -39,6 +39,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { AgentSidebar } from '../_components/agent-sidebar'
 import { ConversationDrawer } from './_components/conversation-drawer'
+import { ApiKeyHistoryFilter } from '@/components/api-key-history-filter'
 
 const PAGE_SIZE = 20
 
@@ -104,6 +105,7 @@ export default function LogsPage() {
 
   // Delete dialog state
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
+  const [apiKeyId, setApiKeyId] = React.useState('')
 
   // Fetch agent data
   const fetchAgent = React.useCallback(async () => {
@@ -141,12 +143,13 @@ export default function LogsPage() {
 
     try {
       const search = debouncedSearchQuery.trim()
-      const result = await agentsApi.getAgentConversations(agentId, {
+      const result = await agentsApi.getAgentLogConversations(agentId, {
         page: targetPage,
         pageSize: PAGE_SIZE,
         search: search || undefined,
         createdAfter: getCreatedAfter(dateFilter),
         sortBy,
+        apiKeyId: apiKeyId || undefined,
       })
       if (requestId !== requestIdRef.current) return
 
@@ -180,14 +183,14 @@ export default function LogsPage() {
         setIsLoadingMore(false)
       }
     }
-  }, [agentId, debouncedSearchQuery, dateFilter, sortBy])
+  }, [agentId, debouncedSearchQuery, dateFilter, sortBy, apiKeyId])
 
   // Fetch conversation detail
   const handleRowClick = async (conversationId: string) => {
     setDrawerOpen(true)
     setIsLoadingDetail(true)
     try {
-      const data = await agentsApi.getConversation(conversationId)
+      const data = await agentsApi.getAgentLogConversation(agentId, conversationId)
       setSelectedConversation(data)
     } catch {
       // Error handled by API client
@@ -201,7 +204,7 @@ export default function LogsPage() {
     if (!deleteId) return
 
     try {
-      await agentsApi.deleteConversation(deleteId)
+      await agentsApi.deleteAgentLogConversation(agentId, deleteId)
       // Close drawer if deleted conversation was open
       if (selectedConversation?.id === deleteId) {
         setSelectedConversation(null)
@@ -283,6 +286,7 @@ export default function LogsPage() {
         {/* Filters Bar */}
         <div className="px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
+            <ApiKeyHistoryFilter value={apiKeyId} onChange={setApiKeyId} />
             {/* Date Filter */}
             <Select value={dateFilter} onValueChange={(v) => v && setDateFilter(v)}>
               <SelectTrigger size="default" className="w-40">

@@ -11,7 +11,6 @@ from app.models.tool import Tool
 from app.models.tool_approval import (
     ExecutionEntrypoint,
     ExecutionRunKind,
-    ToolExecutionCancelReason,
     ToolExecutionStatus,
 )
 from app.models.tool_connection import ToolConnectionScope
@@ -54,17 +53,6 @@ _AGENT_CALL_ENTRYPOINT_VALUES: frozenset[str] = frozenset(
     }
 )
 
-#: Workflow tool calls never participate in tool approval. ``run_kind`` is the
-#: authoritative carrier (workflow Agent nodes and sub-workflows propagate it
-#: with their real entrypoint), with the two workflow entrypoints as fallback
-#: for legacy executions that predate the run kind.
-_WORKFLOW_ENTRYPOINT_VALUES: frozenset[str] = frozenset(
-    {
-        ExecutionEntrypoint.WORKFLOW.value,
-        ExecutionEntrypoint.SUBWORKFLOW.value,
-    }
-)
-
 #: Metadata discovery operations. A direct browser honours only an explicit
 #: one-level ``list:`` override, never the tool's operation default.
 DISCOVERY_OPERATION_PREFIX = "list:"
@@ -87,18 +75,6 @@ def is_agent_tool_call(
     if _run_kind_value(run_kind) == ExecutionRunKind.WORKFLOW.value:
         return False
     return _entrypoint_value(entrypoint) in _AGENT_CALL_ENTRYPOINT_VALUES
-
-
-def is_workflow_tool_call(context: "ToolCallContext") -> bool:
-    """Whether this call belongs to a workflow, including nested Agent nodes.
-
-    Workflows never create tool approval gates regardless of authentication or
-    nesting. ``run_kind`` wins because a workflow propagates it together with
-    its real API-key/embed/channel entrypoint.
-    """
-    if _run_kind_value(context.run_kind) == ExecutionRunKind.WORKFLOW.value:
-        return True
-    return _entrypoint_value(context.entrypoint) in _WORKFLOW_ENTRYPOINT_VALUES
 
 
 def resolve_tool_layer_policy(
@@ -323,15 +299,10 @@ async def execute_stored_tool(
     await authorize_tool_context(tool, context)
     if not tool.is_enabled:
         raise BusinessError(code=403, msg_key="tool_access_denied", status_code=403)
-    # Workflows never participate in approval. The bypass comes before every
-    # policy/gate check so a workflow (including a nested Agent node and an
-    # API-key-origin workflow) is never rejected by a legacy audience or parked.
-    workflow_call = is_workflow_tool_call(context)
-    if not workflow_call:
-        # Every other entrypoint fails closed while any legacy user/team_role
-        # audience remains configured; it is never treated as a caller gate,
-        # ignored, or silently allowed.
-        _reject_legacy_external_gates(tool, policy=policy)
+    # Every entrypoint, workflows included, fails closed while any legacy
+    # user/team_role audience remains configured; it is never treated as a
+    # caller gate, ignored, or silently allowed.
+    _reject_legacy_external_gates(tool, policy=policy)
     execution = None
     if context.execution_id is not None:
         execution = await tool_approvals.get_execution(context.execution_id)
@@ -384,27 +355,9 @@ async def execute_stored_tool(
             if execution.connection_id
             else None,
         )
-    if workflow_call:
-        # A workflow execution parked by the retired layer policy must never be
-        # approved or silently executed after the cutover. Cancel it and fail
-        # the node deterministically instead of parking again.
-        if (
-            execution is not None
-            and execution.status == ToolExecutionStatus.AWAITING_APPROVAL
-        ):
-            await tool_approvals.cancel_execution(
-                execution.id, reason=ToolExecutionCancelReason.CANCELLED
-            )
-            raise BusinessError(
-                code=ResponseCode.TOOL_APPROVAL_BINDING_CHANGED,
-                msg_key="tool_approval_binding_changed",
-                status_code=409,
-                data={"reason": "approval_removed"},
-            )
-    else:
-        # A pending/ready execution created before the cutover also cannot
-        # resume with a snapshot that still names external approvers.
-        _reject_legacy_external_gates(tool, policy=policy, execution=execution)
+    # A pending/ready execution created before the cutover also cannot resume
+    # with a snapshot that still names external approvers.
+    _reject_legacy_external_gates(tool, policy=policy, execution=execution)
     resolved, binding = await resolve_tool_connection(tool, context, operation)
 
     is_agent_call = is_agent_tool_call(
@@ -413,39 +366,42 @@ async def execute_stored_tool(
     )
 
     effective_policy = ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
-    if not workflow_call:
-        if policy is not None:
-            # An explicit per-operation override from the MCP surface is
-            # honored in full; it is the tool layer, not an advisory hint.
-            try:
-                effective_policy = tool_approvals.normalize_tool_approval_policy(policy)
-            except tool_approvals.PolicyConfigurationError as exc:
-                raise BusinessError(
-                    code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
-                    msg_key="tool_approval_policy_configuration_required",
-                    status_code=409,
-                ) from exc
-        elif is_agent_call and tool.approval_policy:
-            # Stored tool policies are explicit configuration, not a discovery
-            # gate. They apply to interactive and non-interactive Agent runs; a
-            # caller gate that cannot be satisfied fails closed during
-            # evaluation.
-            try:
-                effective_policy = tool_approvals.normalize_tool_approval_policy(
-                    tool.approval_policy
-                )
-            except tool_approvals.PolicyConfigurationError as exc:
-                raise BusinessError(
-                    code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
-                    msg_key="tool_approval_policy_configuration_required",
-                    status_code=409,
-                ) from exc
+    if policy is not None:
+        # An explicit per-operation override from the MCP surface is honored in
+        # full; it is the tool layer, not an advisory hint.
+        try:
+            effective_policy = tool_approvals.normalize_tool_approval_policy(policy)
+        except tool_approvals.PolicyConfigurationError as exc:
+            raise BusinessError(
+                code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
+                msg_key="tool_approval_policy_configuration_required",
+                status_code=409,
+            ) from exc
+    elif tool.approval_policy and (
+        is_agent_call or context.run_kind == ExecutionRunKind.WORKFLOW
+    ):
+        # Stored tool policies are explicit configuration, not a discovery
+        # gate. They apply to interactive and non-interactive runs alike: a
+        # workflow tool node parks on a gate just like an Agent tool call, and a
+        # caller gate that cannot be satisfied fails closed during evaluation.
+        try:
+            effective_policy = tool_approvals.normalize_tool_approval_policy(
+                tool.approval_policy
+            )
+        except tool_approvals.PolicyConfigurationError as exc:
+            raise BusinessError(
+                code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
+                msg_key="tool_approval_policy_configuration_required",
+                status_code=409,
+            ) from exc
 
     # Only the tool's own policy participates. Site/team/entrypoint layers were
     # retired and are never read again.
-    require_caller_confirmation = bool(
-        context.require_approval and is_agent_call and not workflow_call
-    )
+    # A caller gate is created only when the calling runtime asked for one. A
+    # workflow run never asks (it has no caller to confirm interactively); it
+    # parks on the tool's own policy gates instead, which the run's initiator or
+    # a team owner/admin decides from the approval inbox.
+    require_caller_confirmation = bool(context.require_approval and is_agent_call)
     if execution is None:
         execution = await tool_approvals.create_execution(
             tool=tool,

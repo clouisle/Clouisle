@@ -7,6 +7,40 @@
     "accessApi": "Access API",
     "logs": "Logs",
     "monitor": "Monitor",
+    "permissions": "Permissions",
+    "accessPolicy": {
+      "loading": "Loading access policy...",
+      "introTitle": "Team rules apply by default",
+      "introBody": "An operation you leave alone keeps the team role and global permission code rules. A configured operation only narrows within them, never widens. Callers outside the listed users and API keys (a webhook trigger, for example) are in no audience.",
+      "operations": {
+        "view": "View",
+        "run": "Run",
+        "edit": "Edit",
+        "publish": "Publish",
+        "delete": "Delete"
+      },
+      "decisions": {
+        "inherit": "Inherit team rules",
+        "allow": "Allow",
+        "deny": "Deny"
+      },
+      "roles": {
+        "owner": "Team owner",
+        "admin": "Team admin",
+        "member": "Team member",
+        "viewer": "Viewer"
+      },
+      "rolesLabel": "Allowed roles (none selected = no role restriction)",
+      "usersLabel": "Specific users",
+      "keysLabel": "Specific API keys",
+      "gatesHint": "Once you pick roles, users or keys, only a matching caller may use this operation.",
+      "effectiveInherit": "Now: inherited",
+      "effectiveAllowed": "Now: allowed",
+      "effectiveDenied": "Now: denied",
+      "save": "Save permissions",
+      "reset": "Reset to inherited",
+      "saveHint": "Saving is audited with the before and after policy."
+    },
     "dragToAdd": "Drag nodes to canvas",
     "loadFailed": "Failed to load workflow",
     "saved": "Workflow saved",
@@ -427,6 +461,7 @@
       "containerNodeNoInput": "Container node has no input connection",
       "nodeNoInput": "Node has no input connection",
       "pauseInsideContainer": "Pause nodes cannot be placed inside iteration or loop containers",
+      "toolInContainer": "A tool call inside a container cannot pause for approval; if this tool requires confirmation, saving will be refused. Move the tool node outside the loop.",
       "pauseVariablesRequired": "Add at least one requested variable for a variable pause",
       "noOutputNode": "Workflow has no output node"
     },

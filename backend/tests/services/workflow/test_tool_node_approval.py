@@ -538,7 +538,7 @@ async def test_mcp_tool_without_internal_operation_fails_closed():
 
 
 @pytest.mark.asyncio
-async def test_pending_approval_never_parks_a_workflow_node():
+async def test_pending_approval_parks_the_workflow_node():
     async with _database():
         user, team = await _actor()
         workflow = await _workflow(team)
@@ -548,11 +548,6 @@ async def test_pending_approval_never_parks_a_workflow_node():
         execution, _ = await _deferred_execution(
             tool=tool, user=user, team=team, workflow=workflow, run=run
         )
-        # Confirm the fixture is still unstarted, then let the boundary report it.
-        assert execution.status in {
-            ToolExecutionStatus.READY,
-            ToolExecutionStatus.AWAITING_APPROVAL,
-        }
         node = _node(tool)
         node["data"]["parentId"] = "iteration_1"
 
@@ -560,11 +555,16 @@ async def test_pending_approval_never_parks_a_workflow_node():
         with patch("app.services.tool.ToolExecutor.execute", new=boundary):
             result = await ToolNodeExecutor().execute(node, _context(), run)
 
-        assert result.waiting is False
-        assert result.error == "tool_approval_cancelled"
+        # A pending gate parks the run instead of failing it, exactly like an
+        # Agent tool call: the orchestrator persists the node as WAITING and the
+        # decision resumes this same execution through its stable call token.
+        assert result.waiting is True
+        assert result.error is None
         stored = await ToolExecution.get(id=execution.id)
-        assert stored.status == ToolExecutionStatus.CANCELLED
-        assert stored.cancel_reason == ToolExecutionCancelReason.CANCELLED
+        assert stored.status in {
+            ToolExecutionStatus.READY,
+            ToolExecutionStatus.AWAITING_APPROVAL,
+        }
 
 
 @pytest.mark.asyncio

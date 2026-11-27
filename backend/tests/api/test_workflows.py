@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import workflows
+from app.services.workflow import definition_rules
 from app.models.workflow import (
     RunStatus,
     TriggerType,
@@ -255,7 +256,9 @@ async def test_publish_snapshots_once_and_transitions_status():
     ):
         response = await workflows.publish_workflow(workflow.id, MagicMock(), user)
 
-    access.assert_awaited_once_with(workflow.id, user, require_write=True)
+    access.assert_awaited_once_with(
+        workflow.id, user, require_write=True, operation="publish"
+    )
     create_version.assert_awaited_once()
     assert create_version.await_args.kwargs["definition"] == workflow.definition
     assert workflow.status == WorkflowStatus.PUBLISHED
@@ -475,6 +478,86 @@ async def test_update_workflow_rejects_invalid_pause_approvers():
     assert exc_info.value.status_code == 400
     assert exc_info.value.msg_key == "workflow_pause_invalid_approvers"
     assert exc_info.value.kwargs["users"] == "not-a-member"
+
+
+@pytest.mark.anyio
+async def test_update_workflow_rejects_pause_node_inside_a_loop():
+    user = SimpleNamespace(id=uuid4())
+    workflow = _workflow()
+    access = AsyncMock(return_value=workflow)
+    definition = {
+        "nodes": [
+            {"id": "loop-1", "type": "loop", "data": {}},
+            {
+                "id": "pause-1",
+                "type": "pause",
+                "data": {"parentId": "loop-1", "pauseConfig": {"mode": "approval"}},
+            },
+        ]
+    }
+
+    with (
+        patch.object(workflows, "check_workflow_access", access),
+        patch.object(workflows, "check_team_permission", new=AsyncMock()),
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await workflows.update_workflow(
+                workflow_id=workflow.id,
+                workflow_in=WorkflowUpdate(definition=definition),
+                request=MagicMock(),
+                current_user=user,
+            )
+
+    assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.msg_key == "workflow_pause_inside_container"
+    # The offending node is named so the editor can point at it.
+    assert exc_info.value.kwargs["node"] == "pause-1"
+
+
+@pytest.mark.anyio
+async def test_update_workflow_rejects_approval_tool_inside_a_loop():
+    user = SimpleNamespace(id=uuid4())
+    workflow = _workflow()
+    access = AsyncMock(return_value=workflow)
+    tool = SimpleNamespace(approval_policy={"default_decision": "require_approval"})
+    definition = {
+        "nodes": [
+            {"id": "iteration-1", "type": "iteration", "data": {}},
+            {
+                "id": "tool-1",
+                "type": "tool",
+                "data": {
+                    "parentId": "iteration-1",
+                    "toolConfig": {"toolId": str(uuid4())},
+                },
+            },
+        ]
+    }
+
+    class _Query:
+        async def first(self):
+            return tool
+
+    with (
+        patch.object(workflows, "check_workflow_access", access),
+        patch.object(workflows, "check_team_permission", new=AsyncMock()),
+        patch.object(
+            definition_rules,
+            "Tool",
+            SimpleNamespace(filter=lambda **_kwargs: _Query()),
+        ),
+    ):
+        with pytest.raises(BusinessError) as exc_info:
+            await workflows.update_workflow(
+                workflow_id=workflow.id,
+                workflow_in=WorkflowUpdate(definition=definition),
+                request=MagicMock(),
+                current_user=user,
+            )
+
+    assert exc_info.value.msg_key == "workflow_approval_inside_container"
+    assert exc_info.value.kwargs["node"] == "tool-1"
     workflow.save.assert_not_awaited()
 
 

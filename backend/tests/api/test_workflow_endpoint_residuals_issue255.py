@@ -89,6 +89,7 @@ async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch)
     user = SimpleNamespace(id=uuid4(), is_superuser=False)
     workflow_id = uuid4()
     user_id = uuid4()
+    key_id = uuid4()
 
     monkeypatch.setattr(workflows.Workflow, "all", lambda: workflow_query)
     monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: run_query)
@@ -102,6 +103,7 @@ async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch)
         status=[RunStatus.SUCCESS],
         trigger_type=[TriggerType.MANUAL],
         user_id=[user_id],
+        api_key_id=key_id,
         is_debug=False,
         search="needle",
         page=1,
@@ -116,6 +118,7 @@ async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch)
         {"status__in": [RunStatus.SUCCESS]},
         {"trigger_type__in": [TriggerType.MANUAL]},
         {"triggered_by_id__in": [user_id]},
+        {"api_key_id": key_id},
         {"is_debug": False},
     ]
 
@@ -399,15 +402,18 @@ async def test_list_my_workflow_runs_applies_filters_and_handles_invalid_uuid_se
         created_before=datetime(2026, 2, 1, tzinfo=timezone.utc),
         page=2,
         page_size=5,
-        current_user=user,
+        auth_result=user,
     )
 
-    access.assert_awaited_once_with(workflow_id, user)
+    access.assert_awaited_once_with(workflow_id, user, api_key=None)
     kwargs_list = [call[1] for call in run_query.filters]
     assert {
         "workflow_id": workflow_id,
-        "triggered_by_id": user.id,
         "is_debug": False,
+        "triggered_by_id": user.id,
+        # JWT history excludes API-key/embed traffic and unattributable rows.
+        "api_key_id__isnull": True,
+        "api_key_origin_unknown": False,
     } in [entry[1] for entry in recorded]
     assert {"status": RunStatus.SUCCESS} in kwargs_list
     assert {"id__isnull": True} in kwargs_list
@@ -442,7 +448,7 @@ async def test_list_my_workflow_runs_matches_valid_uuid_search(monkeypatch):
         created_before=None,
         page=1,
         page_size=20,
-        current_user=user,
+        auth_result=user,
     )
 
     kwargs_list = [call[1] for call in run_query.filters]
@@ -524,7 +530,7 @@ async def test_get_my_workflow_run_returns_run_or_404(monkeypatch):
     response = await workflows.get_my_workflow_run(
         workflow_id=workflow_id,
         run_id=run_id,
-        current_user=SimpleNamespace(id=uuid4()),
+        auth_result=SimpleNamespace(id=uuid4()),
     )
     assert response["data"]["id"] == str(run_id)
 
@@ -533,7 +539,7 @@ async def test_get_my_workflow_run_returns_run_or_404(monkeypatch):
         await workflows.get_my_workflow_run(
             workflow_id=workflow_id,
             run_id=run_id,
-            current_user=SimpleNamespace(id=uuid4()),
+            auth_result=SimpleNamespace(id=uuid4()),
         )
     assert exc_info.value.msg_key == "workflow_run_not_found"
 
@@ -564,7 +570,7 @@ async def test_list_my_run_node_executions_returns_nodes_or_404(monkeypatch):
     response = await workflows.list_my_run_node_executions(
         workflow_id=workflow_id,
         run_id=run_id,
-        current_user=SimpleNamespace(id=uuid4()),
+        auth_result=SimpleNamespace(id=uuid4()),
     )
     assert response["data"][0]["id"] == "n1"
 
@@ -573,7 +579,7 @@ async def test_list_my_run_node_executions_returns_nodes_or_404(monkeypatch):
         await workflows.list_my_run_node_executions(
             workflow_id=workflow_id,
             run_id=run_id,
-            current_user=SimpleNamespace(id=uuid4()),
+            auth_result=SimpleNamespace(id=uuid4()),
         )
     assert exc_info.value.msg_key == "workflow_run_not_found"
 
@@ -596,7 +602,7 @@ async def test_list_my_workflow_runs_without_search_skips_search_filter(monkeypa
         created_before=None,
         page=1,
         page_size=20,
-        current_user=user,
+        auth_result=user,
     )
 
     kwargs_list = [call[1] for call in run_query.filters]

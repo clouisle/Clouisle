@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createEmbedChatAdapter } from '@/lib/chat/embed-chat-adapter'
+
 const startRun = mock(async () => ({ run_id: 'run-1', conversation_id: 'conv-1', user_message_id: 'user-1', status: 'queued', stream_url: '/stream' }))
 const streamRun = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
 const getRunStatus = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'running' }))
@@ -8,17 +9,47 @@ const postRunInput = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conve
 const postRunAnswer = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'queued' }))
 const stopRun = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'stopping' }))
 
+const agentInfo = {
+  id: 'agent-1', name: 'Embed Agent', description: '', icon: null, variables: [],
+  enable_attachments: false, attachment_config: null,
+  enable_citations: false, hide_artifact_list: true,
+}
+const getAgentInfo = mock(async () => agentInfo)
+const uploadFile = mock(async () => ({ url: '/file.png' }))
+const chatStream = mock(() => () => {})
+
+const serverConversation = {
+  id: '11111111-1111-4111-8111-111111111111',
+  title: 'Server chat',
+  messages: [
+    { id: 'm1', conversation_id: 'c1', role: 'user', content: 'hello from the server', created_at: '2026-01-01T00:00:00Z' },
+    { id: 'm2', conversation_id: 'c1', role: 'assistant', content: 'server answer', created_at: '2026-01-01T00:00:01Z' },
+  ],
+  active_run_id: 'run-9',
+}
+
+const getConversations = mock(async () => ({
+  items: [{
+    id: serverConversation.id,
+    agent_id: 'agent-1',
+    title: serverConversation.title,
+    message_count: 2,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:01Z',
+  }],
+  total: 1,
+  page: 1,
+  page_size: 20,
+}))
+const getConversation = mock(async () => serverConversation)
+const renameConversation = mock(async () => ({ id: serverConversation.id, title: 'Renamed' }))
+const deleteConversation = mock(async () => undefined)
 
 mock.module('@/lib/api/embed', () => ({
   embedApi: {
-    getAgentInfo: mock(async () => ({
-      id: 'agent-1', name: 'Embed Agent', description: '', icon: null, variables: [],
-      enable_attachments: false, attachment_config: null,
-      enable_citations: false,
-      hide_artifact_list: true,
-    })),
-    uploadFile: mock(async () => ({ url: '/file.png' })),
-    chatStream: mock(() => () => {}),
+    getAgentInfo,
+    uploadFile,
+    chatStream,
     startRun,
     streamRun,
     getRunStatus,
@@ -26,18 +57,35 @@ mock.module('@/lib/api/embed', () => ({
     postRunInput,
     postRunAnswer,
     stopRun,
+    getConversations,
+    getConversation,
+    renameConversation,
+    deleteConversation,
   },
 }))
 
+/** Storage twin that also supports the key enumeration the purge needs. */
+class MemoryStorage {
+  private data = new Map<string, string>()
 
-const store = new Map<string, string>()
-;(globalThis as unknown as { localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } }).localStorage = {
-  getItem: (key) => store.get(key) ?? null,
-  setItem: (key, value) => { store.set(key, value) },
-  removeItem: (key) => { store.delete(key) },
+  get length() { return this.data.size }
+  key(index: number) { return Array.from(this.data.keys())[index] ?? null }
+  getItem(key: string) { return this.data.get(key) ?? null }
+  setItem(key: string, value: string) { this.data.set(key, value) }
+  removeItem(key: string) { this.data.delete(key) }
+  clear() { this.data.clear() }
 }
 
-beforeEach(() => store.clear())
+const storage = new MemoryStorage()
+;(globalThis as unknown as { localStorage: MemoryStorage }).localStorage = storage
+
+beforeEach(() => {
+  storage.clear()
+  getConversations.mockClear()
+  getConversation.mockClear()
+  renameConversation.mockClear()
+  deleteConversation.mockClear()
+})
 
 describe('createEmbedChatAdapter', () => {
   const adapter = createEmbedChatAdapter('agent-1', 'key-123')
@@ -50,37 +98,84 @@ describe('createEmbedChatAdapter', () => {
     expect(agent.enable_citations).toBe(false)
   })
 
-  test('saveConversation persists to localStorage and getConversations reads it back', async () => {
-    adapter.saveConversation([{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] } as never], undefined)
-    const result = await adapter.getConversations('agent-1', { page: 1, pageSize: 10 })
+  test('getConversations reads the key-scoped server list with pagination', async () => {
+    const result = await adapter.getConversations('agent-1', { page: 2, pageSize: 5 })
+
+    expect(getConversations).toHaveBeenCalledWith('agent-1', 'key-123', { page: 2, pageSize: 5 })
     expect(result.total).toBe(1)
-    expect(result.items[0].title).toBe('hi')
-    expect(result.items[0].message_count).toBe(1)
+    expect(result.items[0].title).toBe('Server chat')
   })
 
-  test('getConversation retrieves saved messages', async () => {
-    const messages = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] }] as never[]
-    adapter.saveConversation(messages, 'conv-1')
-    const conv = await adapter.getConversation('conv-1')
-    expect(conv.messages).toHaveLength(1)
+  test('getConversation converts server messages and reports the active run', async () => {
+    const conversation = await adapter.getConversation(serverConversation.id)
+
+    expect(getConversation).toHaveBeenCalledWith(serverConversation.id, 'key-123')
+    expect(conversation.messages).toHaveLength(2)
+    expect(conversation.messages[0].parts).toEqual([{ type: 'text', text: 'hello from the server', state: 'done' }])
+    expect(conversation.activeRunId).toBe('run-9')
   })
 
-  test('getConversation throws when not found', async () => {
-    await expect(adapter.getConversation('missing')).rejects.toThrow('Conversation not found')
+  test('getConversation omits the active run when the server reports none', async () => {
+    getConversation.mockImplementationOnce(async () => ({ ...serverConversation, active_run_id: null }))
+
+    const conversation = await adapter.getConversation(serverConversation.id)
+    expect(conversation.activeRunId).toBeNull()
   })
 
-  test('deleteConversation removes the entry', async () => {
-    adapter.saveConversation([{ id: "m1", role: "user", parts: [{ type: "text", text: "a" }] }] as never[], 'conv-1')
-    await adapter.deleteConversation('conv-1')
-    const result = await adapter.getConversations('agent-1', { page: 1, pageSize: 10 })
-    expect(result.total).toBe(0)
+  test('deleteConversation removes the server conversation with the API key', async () => {
+    await adapter.deleteConversation(serverConversation.id)
+    expect(deleteConversation).toHaveBeenCalledWith('agent-1', serverConversation.id, 'key-123')
   })
 
-  test('updateConversation renames the title', async () => {
-    adapter.saveConversation([{ id: "m1", role: "user", parts: [{ type: "text", text: "old" }] }] as never[], 'conv-1')
-    await adapter.updateConversation('conv-1', { title: 'new title' } as never)
-    const result = await adapter.getConversations('agent-1', { page: 1, pageSize: 10 })
-    expect(result.items[0].title).toBe('new title')
+  test('updateConversation renames on the server with the API key', async () => {
+    await adapter.updateConversation(serverConversation.id, { title: 'Renamed' })
+    expect(renameConversation).toHaveBeenCalledWith('agent-1', serverConversation.id, 'Renamed', 'key-123')
+  })
+
+  test('a second credential cannot list or open the first key history', async () => {
+    const keyA = createEmbedChatAdapter('agent-1', 'key-a')
+    const keyB = createEmbedChatAdapter('agent-1', 'key-b')
+
+    // The first key still reads its own history from the server.
+    expect((await keyA.getConversations('agent-1', { page: 1, pageSize: 20 })).total).toBe(1)
+    expect((await keyA.getConversation(serverConversation.id)).messages).toHaveLength(2)
+
+    // Stand-in for the server's answer to the second key: nothing belongs to it.
+    getConversations.mockImplementationOnce(async () => ({ items: [], total: 0, page: 1, page_size: 20 }))
+    getConversation.mockImplementationOnce(async () => {
+      throw new Error('The requested resource could not be found')
+    })
+
+    expect((await keyB.getConversations('agent-1', { page: 1, pageSize: 20 })).items).toEqual([])
+    expect(getConversations).toHaveBeenLastCalledWith('agent-1', 'key-b', { page: 1, pageSize: 20 })
+    await expect(keyB.getConversation(serverConversation.id)).rejects.toThrow()
+    expect(getConversation).toHaveBeenLastCalledWith(serverConversation.id, 'key-b')
+  })
+
+  test('purges the legacy browser cache instead of serving its content', async () => {
+    const stale = JSON.stringify([
+      { id: 'legacy-conv', title: 'key A private chat', createdAt: 1, messages: [{ id: 'old', role: 'user', parts: [{ type: 'text', text: 'leaked' }] }] },
+    ])
+    storage.setItem('clouisle:embed:history:agent:agent-1', stale)
+    storage.setItem('clouisle:embed:history:agent:other-agent', stale)
+    storage.setItem('clouisle:embed:runs:workflow:other-flow', stale)
+
+    const fresh = createEmbedChatAdapter('agent-1', 'key-123')
+
+    expect(storage.getItem('clouisle:embed:history:agent:agent-1')).toBeNull()
+    expect(storage.getItem('clouisle:embed:history:agent:other-agent')).toBeNull()
+    expect(storage.getItem('clouisle:embed:runs:workflow:other-flow')).toBeNull()
+    expect(JSON.stringify(await fresh.getConversations('agent-1', { page: 1, pageSize: 20 }))).not.toContain('leaked')
+  })
+
+  test('never writes conversation content to browser storage', async () => {
+    await adapter.getConversation(serverConversation.id)
+    await adapter.getConversations('agent-1', { page: 1, pageSize: 20 })
+    expect(storage.length).toBe(0)
+  })
+
+  test('saveConversation is not exposed: the server owns persistence', () => {
+    expect(adapter.saveConversation).toBeUndefined()
   })
 
   test('editMessageStream and regenerateStream are unsupported', () => {
@@ -91,17 +186,6 @@ describe('createEmbedChatAdapter', () => {
   test('getMessageVersions and switchMessageVersion are no-ops', async () => {
     expect(await adapter.getMessageVersions('c1', 'm1')).toEqual([])
     await expect(adapter.switchMessageVersion('c1', 'm1', 0)).resolves.toBeUndefined()
-  })
-
-  test('getConversations paginates', async () => {
-    for (let i = 0; i < 5; i++) {
-      adapter.saveConversation([{ id: `m${i}`, role: 'user', parts: [{ type: 'text', text: `msg${i}` }] }] as never, `conv-${i}`)
-    }
-    const page1 = await adapter.getConversations('agent-1', { page: 1, pageSize: 2 })
-    const page2 = await adapter.getConversations('agent-1', { page: 2, pageSize: 2 })
-    expect(page1.items).toHaveLength(2)
-    expect(page2.items).toHaveLength(2)
-    expect(page1.items[0].id).not.toBe(page2.items[0].id)
   })
 
   test('exposes durable run controls with the embed API key', async () => {
@@ -120,18 +204,11 @@ describe('createEmbedChatAdapter', () => {
   })
 
   test('normalizes agent variables into variable definitions', async () => {
-    mock.module('@/lib/api/embed', () => ({
-      embedApi: {
-        getAgentInfo: mock(async () => ({
-          id: 'agent-1', name: 'Embed Agent', description: '', icon: null,
-          variables: [
-            { name: 'query', label: 'Query', type: 'string', required: true, default_value: 'hello', description: 'Prompt', hidden: false },
-          ],
- enable_attachments: false, attachment_config: null,
-        })),
-        uploadFile: mock(async () => ({ url: '/file.png' })),
-        chatStream: mock(() => () => {}),
-      },
+    getAgentInfo.mockImplementationOnce(async () => ({
+      ...agentInfo,
+      variables: [
+        { name: 'query', label: 'Query', type: 'string', required: true, default_value: 'hello', description: 'Prompt', hidden: false },
+      ],
     }))
     const agent = await adapter.getAgent('agent-1')
     expect(agent.variables).toHaveLength(1)
@@ -142,15 +219,5 @@ describe('createEmbedChatAdapter', () => {
     const onProgress = mock(() => {})
     adapter.uploadFile(new File(['x'], 'x.png'), 'document', onProgress)
     expect(onProgress).toBeDefined()
-  })
-
-  test('saveConversation derives title from non-user messages', () => {
-    adapter.saveConversation([{ id: 'm1', role: 'assistant', parts: [{ type: 'text', text: 'answer' }] }] as never, 'conv-1')
-    adapter.saveConversation([{ id: 'm2', role: 'user', parts: [{ type: 'tool', toolCallId: 't1' }] }] as never, 'conv-2')
-  })
-
-  test('saveConversation updates an existing conversation title and messages', () => {
-    adapter.saveConversation([{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'first' }] }] as never, 'conv-1')
-    adapter.saveConversation([{ id: 'm2', role: 'user', parts: [{ type: 'text', text: 'second' }] }] as never, 'conv-1')
   })
 })

@@ -90,6 +90,7 @@ class AuditLogService:
             "webhook_token",
             "embed_config",
             "run_page_config",
+            "access_policy",
         ),
         "knowledge_base": (
             "name",

@@ -146,7 +146,7 @@ describe('ConversationsTable', () => {
     await act(async () => renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'activities.searchPlaceholder')!.props.onChange({ target: { value: 'daily' } }))
     expect(setSearch).toHaveBeenCalledWith('daily')
 
-    await act(async () => renderer.root.findByType('select').props.onValueChange('50'))
+    await act(async () => renderer.root.findAllByType('select').find((node) => node.props.value === '20')!.props.onValueChange('50'))
     expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 50 }))
 
     search = 'daily'
@@ -184,7 +184,7 @@ describe('ConversationsTable', () => {
     expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3, pageSize: 20 }))
     expect(text(renderer.toJSON())).toContain('activities.pageInfo:{"page":3,"total":3}')
 
-    await act(async () => renderer.root.findByType('select').props.onValueChange('50'))
+    await act(async () => renderer.root.findAllByType('select').find((node) => node.props.value === '20')!.props.onValueChange('50'))
     expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
     expect(text(renderer.toJSON())).toContain('activities.pageInfo:{"page":1,"total":1}')
   })

@@ -6,6 +6,7 @@ This group covers application-level execution and orchestration design.
 
 - [Agent and workflow spec](AGENT_WORKFLOW_SPEC.md)
 - [Workflow engine architecture](WORKFLOW_ENGINE_ARCHITECTURE.md)
+- [Workflow access policy draft](WORKFLOW_ACCESS_POLICY_SPEC.md)
 - [Workflow node spec](WORKFLOW_NODE_SPEC.md)
 - [Tool system spec](TOOL_SYSTEM_SPEC.md)
 - [MCP protocol coverage](MCP_PROTOCOL_COVERAGE.md)

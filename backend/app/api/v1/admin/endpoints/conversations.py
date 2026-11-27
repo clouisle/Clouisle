@@ -104,6 +104,7 @@ async def list_all_conversations(
     team_id: list[UUID] | None = Query(None, description="Filter by team"),
     agent_id: list[UUID] | None = Query(None, description="Filter by agent"),
     user_id: list[UUID] | None = Query(None, description="Filter by user"),
+    api_key_id: UUID | None = None,
     search: str | None = Query(None, description="Search in title"),
     untitled_only: bool = Query(False, description="Show only untitled conversations"),
     page: int = Query(1, ge=1),
@@ -178,6 +179,9 @@ async def list_all_conversations(
     # user_id filter only applies for admins (members already filtered to own)
     if user_id and has_dashboard_access:
         query = query.filter(user_id__in=user_id)
+
+    if api_key_id is not None:
+        query = query.filter(api_key_id=api_key_id)
 
     if untitled_only:
         # Filter conversations with null or empty title

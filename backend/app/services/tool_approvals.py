@@ -1134,10 +1134,14 @@ async def create_execution(
     # An API-key Agent run is non-interactive, but the authenticated key can
     # still decide the caller gate it triggered. This never widens the gates.
     execution_api_key_id = _execution_api_key_id(entrypoint, entrypoint_id)
-    # A non-interactive caller gate may wait for approval only when the call is
-    # bound to an authenticated key identity. An ``api_key`` entrypoint whose
-    # id resolves to nothing has no audience and must fail closed as before.
-    caller_self_approvable = execution_api_key_id is not None
+    # A non-interactive caller gate may wait for approval only when the call has
+    # an audience that can answer it out of band. An ``api_key`` entrypoint whose
+    # id resolves to nothing has none and must fail closed as before. A workflow
+    # run qualifies: its initiator, or a team owner/admin as fallback, decides
+    # the gate from the approval inbox.
+    caller_self_approvable = (
+        execution_api_key_id is not None or run_kind == ExecutionRunKind.WORKFLOW
+    )
     try:
         evaluation = evaluate_policy(
             layers,
@@ -1520,16 +1524,15 @@ async def execution_owned_by_api_key(execution: ToolExecution, api_key: Any) -> 
         return False
     if str(getattr(run, "user_id", "")) != str(getattr(api_key, "user_id", "")):
         return False
-    # The owning run must agree with the execution binding. Pre-column runs
-    # carry the same identity in their worker payload; a run with no evidence
-    # at all is a legacy row and keeps the execution binding alone.
+    # The owning run must independently agree with the execution binding.
+    # Pre-column runs can prove the same identity through their worker payload.
     run_key_id = getattr(run, "api_key_id", None)
     if run_key_id is None:
         payload = run.worker_payload if isinstance(run.worker_payload, dict) else {}
         run_key_id = payload.get("api_key_id")
         if not run_key_id and payload.get("tool_entrypoint") == "api_key":
             run_key_id = payload.get("tool_entrypoint_id")
-    if run_key_id is not None and str(run_key_id) != str(key_id):
+    if run_key_id is None or str(run_key_id) != str(key_id):
         return False
     agent_ids = await _api_key_agent_ids(api_key)
     return not agent_ids or run.agent_id in agent_ids
@@ -1629,7 +1632,16 @@ def _request_audience_matches(
     if request.gate_kind == ApprovalGateKind.CALLER:
         # The actor confirms their own access-authorized operation; execution
         # authorization is rechecked separately before any side effect.
-        return str(execution.actor_user_id) == user_id
+        if str(execution.actor_user_id) == user_id:
+            return True
+        # A workflow run is unattended, so its initiator may be offline (a
+        # schedule or a webhook) or no longer a member. Team owners and admins
+        # are the documented fallback approvers; the initiator keeps priority.
+        return (
+            execution.run_kind == ExecutionRunKind.WORKFLOW
+            and is_team_member
+            and team_role in {"owner", "admin"}
+        )
     # Historical external audiences are never authorized after the cutover.
     return False
 
@@ -1736,6 +1748,17 @@ async def list_pending_approvals_for_user(
         for row in memberships
     }
     audience_q = Q(gate_kind=ApprovalGateKind.CALLER, execution__actor_user_id=user.id)
+    # Workflow runs may be initiated by a scheduled/webhook/system actor that
+    # cannot answer, so team owners and admins are fallback approvers for them.
+    admin_team_ids = [
+        team_id for team_id, role in role_map.items() if role in {"owner", "admin"}
+    ]
+    if admin_team_ids:
+        audience_q |= Q(
+            gate_kind=ApprovalGateKind.CALLER,
+            execution__run_kind=ExecutionRunKind.WORKFLOW,
+            execution__team_id__in=admin_team_ids,
+        )
     if api_key is not None:
         request_scope = await _api_key_request_scope(api_key)
         if request_scope is None:
