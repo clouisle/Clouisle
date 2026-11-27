@@ -28,6 +28,20 @@ describe('apiKeysApi', () => {
     )
   })
 
+  test('can suppress the error toast for callers with an inline notice', async () => {
+    const response = { items: [], total: 0, page: 1, page_size: 100, total_pages: 0 }
+    const get = spyOn(api, 'get').mockResolvedValue(response)
+
+    await expect(
+      apiKeysApi.getAPIKeys({ pageSize: 100, search: 'prod', silent: true })
+    ).resolves.toBe(response)
+
+    // ``silent`` is a client-side switch, never a query parameter.
+    expect(get).toHaveBeenCalledWith('/api-keys?page=1&page_size=100&search=prod', {
+      silent: true,
+    })
+  })
+
   test('gets API key stats and details', async () => {
     const response = { id: 'key-1' }
     const get = spyOn(api, 'get').mockResolvedValue(response)

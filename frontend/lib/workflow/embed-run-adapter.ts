@@ -1,107 +1,22 @@
 import { embedApi } from '@/lib/api/embed'
-import { mapEmbedWorkflow, type WorkflowRunAdapter, type RunSnapshot, type RunSnapshotNode } from '@/lib/workflow/run-adapter'
-import type { WorkflowRunListItem, WorkflowRun, NodeExecution, RunStatus, NodeStatus, TriggerType } from '@/lib/api/workflows'
+import { mapEmbedWorkflow, type WorkflowRunAdapter } from '@/lib/workflow/run-adapter'
+import { purgeLegacyEmbedHistory } from '@/lib/embed/legacy-history-cache'
 import type { WorkflowRunApi } from '@/hooks/use-workflow-run'
 
-const MAX_RUNS = 20
-const TRIGGER = 'manual' as TriggerType
-
-interface StoredRun {
-  runId: string
-  status: string
-  outputs: Record<string, unknown> | null
-  nodes: RunSnapshotNode[]
-  error?: string | null
-  inputs?: Record<string, unknown> | null
-  createdAt: string
-  title: string
-}
-
-function storageKey(id: string) {
-  return `clouisle:embed:runs:workflow:${id}`
-}
-
-function readRuns(id: string): StoredRun[] {
-  try {
-    const raw = localStorage.getItem(storageKey(id))
-    return raw ? (JSON.parse(raw) as StoredRun[]) : []
-  } catch {
-    return []
-  }
-}
-
-function writeRuns(id: string, runs: StoredRun[]) {
-  try {
-    localStorage.setItem(storageKey(id), JSON.stringify(runs))
-  } catch {
-    /* storage unavailable or full */
-  }
-}
-
-function toListItem(s: StoredRun, workflowId: string): WorkflowRunListItem {
-  return {
-    id: s.runId,
-    workflow_id: workflowId,
-    trigger_type: TRIGGER,
-    is_debug: false,
-    status: s.status as RunStatus,
-    created_at: s.createdAt,
-    started_at: null,
-    finished_at: null,
-    total_duration_ms: null,
-    executed_nodes: s.nodes.length,
-    total_nodes: s.nodes.length,
-    error_message: s.error ?? null,
-  }
-}
-
-function toRun(s: StoredRun, workflowId: string): WorkflowRun {
-  return {
-    id: s.runId,
-    workflow_id: workflowId,
-    trigger_type: TRIGGER,
-    triggered_by_id: null,
-    is_debug: false,
-    status: s.status as RunStatus,
-    inputs: s.inputs ?? {},
-    outputs: s.outputs,
-    parent_run_id: null,
-    root_run_id: null,
-    depth: 0,
-    created_at: s.createdAt,
-    started_at: null,
-    finished_at: null,
-    total_nodes: s.nodes.length,
-    executed_nodes: s.nodes.length,
-    failed_nodes: 0,
-    skipped_nodes: 0,
-    total_duration_ms: null,
-    total_token_usage: {},
-    error_message: s.error ?? null,
-    error_node_id: null,
-  }
-}
-
-function toNodes(s: StoredRun): NodeExecution[] {
-  return s.nodes.map((n, i) => ({
-    id: `${s.runId}-${i}`,
-    run_id: s.runId,
-    node_id: '',
-    node_type: n.nodeType,
-    node_name: n.nodeType,
-    execution_order: n.order,
-    status: n.status as NodeStatus,
-    outputs: n.outputs ?? null,
-    retry_count: 0,
-  }))
-}
+/** Page size used by the single-shot history read the page falls back to. */
+const HISTORY_PAGE_SIZE = 20
 
 /**
- * Workflow run adapter backed by the API-key `embedApi` and browser-localStorage
- * history. Lets the embed page reuse `WorkflowRunPage` without a logged-in user:
- * runs go through the embed endpoints, and run history is persisted locally.
+ * Workflow run adapter for the embed page.
+ *
+ * Run history is the server's: it is read from the API-key scoped run routes,
+ * which return exactly the runs that key created. Nothing is persisted in the
+ * browser - `localStorage` is readable by every script on the origin - and the
+ * cache left by earlier releases is purged when the adapter is created.
  */
 export function createEmbedWorkflowRunAdapter(apiKey: string): WorkflowRunAdapter {
+  purgeLegacyEmbedHistory()
+
   return {
     getWorkflow: async (id) => mapEmbedWorkflow(await embedApi.getWorkflowInfo(id, apiKey)),
     createRunApi: (): WorkflowRunApi => ({
@@ -117,35 +32,20 @@ export function createEmbedWorkflowRunAdapter(apiKey: string): WorkflowRunAdapte
         // Embed streams are closed via the SSE connection; there is no server-side cancel endpoint.
       },
     }),
-    loadHistory: async (id) => readRuns(id).map((s) => toListItem(s, id)),
-    loadHistoryPage: async (id, params) => {
-      // Local history is not server-paginated; slice for parity with the
-      // authenticated adapter so the run page can scroll through it.
-      const runs = readRuns(id)
-      const start = (params.page - 1) * params.pageSize
-      return {
-        items: runs.slice(start, start + params.pageSize).map((s) => toListItem(s, id)),
-        total: runs.length,
-      }
-    },
+    loadHistory: (id) =>
+      embedApi.getWorkflowRuns(id, apiKey, { pageSize: HISTORY_PAGE_SIZE }).then((page) => page.items),
+    loadHistoryPage: (id, params) => embedApi
+      .getWorkflowRuns(id, apiKey, { page: params.page, pageSize: params.pageSize })
+      .then((page) => ({ items: page.items, total: page.total })),
     loadRunDetail: async (id, runId) => {
-      const s = readRuns(id).find((r) => r.runId === runId)
-      if (!s) throw new Error('run not found')
-      return { run: toRun(s, id), nodes: toNodes(s) }
+      const [run, nodes] = await Promise.all([
+        embedApi.getWorkflowRun(id, runId, apiKey),
+        embedApi.getWorkflowRunNodes(id, runId, apiKey),
+      ])
+      return { run, nodes }
     },
-    saveRun: (id, snapshot: RunSnapshot) => {
-      const title = (snapshot.inputs?.query as string | undefined) || snapshot.runId
-      const entry: StoredRun = {
-        runId: snapshot.runId,
-        status: snapshot.status,
-        outputs: snapshot.outputs,
-        nodes: snapshot.nodes,
-        error: snapshot.error,
-        inputs: snapshot.inputs,
-        createdAt: snapshot.createdAt,
-        title,
-      }
-      writeRuns(id, [entry, ...readRuns(id)].slice(0, MAX_RUNS))
+    saveRun: () => {
+      // History is stored server-side with the run itself; nothing to persist.
     },
   }
 }

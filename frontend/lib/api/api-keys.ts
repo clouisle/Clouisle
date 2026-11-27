@@ -71,6 +71,8 @@ export interface APIKeyQueryParams {
   status?: Array<'active' | 'inactive' | 'expired'>
   userId?: string[]
   search?: string
+  /** Skip the error toast when the caller renders its own failure notice. */
+  silent?: boolean
 }
 
 export const apiKeysApi = {
@@ -78,14 +80,19 @@ export const apiKeysApi = {
    * 获取 API Key 列表（分页）
    */
   getAPIKeys: async (params: APIKeyQueryParams = {}): Promise<PageData<APIKey>> => {
-    const { page = 1, pageSize = 20, status, userId, search } = params
+    const { page = 1, pageSize = 20, status, userId, search, silent } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     status?.forEach((value) => queryParams.append('status', value))
     userId?.forEach((value) => queryParams.append('user_id', value))
     if (search) queryParams.append('search', search)
-    return api.get<PageData<APIKey>>(`/api-keys?${queryParams.toString()}`)
+    const url = `/api-keys?${queryParams.toString()}`
+    // Callers that render their own inline failure notice opt out of the toast;
+    // omitted entirely otherwise so existing request shapes stay unchanged.
+    return silent === undefined
+      ? api.get<PageData<APIKey>>(url)
+      : api.get<PageData<APIKey>>(url, { silent })
   },
 
   /**

@@ -185,7 +185,7 @@ API. Tool discovery and direct testing do not prompt.
 | Signed-in Agent chat (web, Feishu, WeChat) | Pauses for the initiating user |
 | Agent API key (`clou_...`) | Pauses for the same key; only that key may decide |
 | Embed, legacy channel, scheduled run | Never waits; a required approval fails closed with `6510` |
-| Workflow (UI run, workflow API key, nested call) | No approval gate is created or waited on |
+| Workflow (UI run, workflow API key, nested call) | Pauses the run for its initiator; a team owner/admin may decide as fallback |
 
 Enable **Require Confirmation** on the Agent's MCP server binding to confirm
 every child call. To require approval for selected children, configure an exact
@@ -198,6 +198,14 @@ approval. Policies cannot name individual users or team roles as approvers.
 Chat pauses before invoking the external tool and shows the approval card above
 the composer to the user who initiated the call. That caller — and only that
 caller — can approve to resume the original call once or reject to cancel it.
+
+A workflow tool node parks the whole run instead: the run becomes **WAITING**,
+the task exits, and the decision resumes it. The initiator decides; because a
+scheduled or webhook-started run may have no reachable initiator, a team
+owner/admin of the run's team is accepted as fallback. Plain members never see
+the request. Stopping the run cancels any pending gate. This applies to every
+workflow origin (UI run, workflow API key, embed, schedule, nested Agent node
+and sub-workflow).
 Parameters, identity, connection version and tool definition are bound to the
 approval. Another team member, team administrator, superuser, or a different
 API key owned by the same user cannot decide, and rejection, expiry, revocation

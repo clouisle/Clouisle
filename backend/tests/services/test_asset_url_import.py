@@ -129,6 +129,10 @@ async def test_load_internal_url_authorizes_asset_without_network(
     authorize_asset = AsyncMock(return_value=asset)
     monkeypatch.setattr(asset_url_import, "authorize_asset_scope", authorize_scope)
     monkeypatch.setattr(asset_url_import, "authorize_asset_for_scope", authorize_asset)
+    authorize_import = AsyncMock()
+    monkeypatch.setattr(
+        asset_url_import, "authorize_history_asset_import", authorize_import
+    )
     get_or_create_ref = AsyncMock(return_value=SimpleNamespace(ref="a1b2"))
     monkeypatch.setattr(
         asset_url_import.asset_service, "get_or_create_ref", get_or_create_ref
@@ -150,6 +154,9 @@ async def test_load_internal_url_authorizes_asset_without_network(
     assert source.ref == "a1b2"
     authorize_scope.assert_awaited_once()
     authorize_asset.assert_awaited_once()
+    authorize_import.assert_awaited_once_with(
+        asset, scope_type=AssetScopeType.CONVERSATION, scope_id=scope_id, user=None
+    )
     get_or_create_ref.assert_awaited_once()
     resolve_ref.assert_awaited_once()
     fetch.assert_not_awaited()

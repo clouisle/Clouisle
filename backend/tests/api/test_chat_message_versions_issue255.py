@@ -126,7 +126,10 @@ async def test_message_version_list_returns_owned_version_group():
     assert response["code"] == 0
     assert [version.id for version in response["data"]] == [root.id, child.id]
     conversation_model.filter.assert_called_once_with(
-        id=child.conversation_id, user=user
+        id=child.conversation_id,
+        user=user,
+        api_key_id__isnull=True,
+        api_key_origin_unknown=False,
     )
 
 

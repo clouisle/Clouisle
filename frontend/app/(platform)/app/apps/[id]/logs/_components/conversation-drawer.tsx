@@ -10,6 +10,8 @@ import { Message as ChatMessageItem, type ChatMessage } from '@/components/chat'
 import { ConversationDrawerHeader } from '@/components/chat/conversation-drawer-header'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import type { ConversationWithMessages } from '@/lib/api'
+import { getAuthenticatedApiAssetUrl } from '@/components/chat/authenticated-asset'
+import { API_BASE_URL } from '@/lib/constants'
 
 interface ConversationDrawerProps {
   conversation: ConversationWithMessages | null
@@ -34,7 +36,18 @@ export function ConversationDrawer({
 
   const chatMessages = React.useMemo<ChatMessage[]>(() => {
     if (!conversation) return []
-    return convertBackendMessages(conversation.messages as BackendMessage[])
+    return convertBackendMessages(conversation.messages as BackendMessage[]).map((message) => ({
+      ...message,
+      parts: message.parts.map((part) => {
+        if ((part.type !== 'image' && part.type !== 'file') || !part.url) return part
+        const url = getAuthenticatedApiAssetUrl(part.url)
+        if (!url?.startsWith(`${API_BASE_URL}/upload/files/`)) return part
+        const [path, query] = url.split('?', 2)
+        const params = new URLSearchParams(query)
+        params.set('log_conversation_id', conversation.id)
+        return { ...part, url: `${path}?${params}` }
+      }),
+    }))
   }, [conversation])
 
   return (

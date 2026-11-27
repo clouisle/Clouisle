@@ -185,7 +185,7 @@ async def test_agent_conversation_list_skips_empty_optional_filters(monkeypatch)
         sort_by="invalid",
         page=1,
         page_size=20,
-        current_user=current_user,
+        auth_result=(current_user, None),
     )
 
     assert query.filters == []

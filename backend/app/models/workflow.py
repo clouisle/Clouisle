@@ -131,6 +131,12 @@ class Workflow(models.Model):
         description="Embed configuration (enabled, allowed_domains, theme, bubble)",
     )  # type: ignore[assignment]
 
+    # Per-workflow access policy; an empty object keeps the legacy rules.
+    access_policy: dict = fields.JSONField(
+        default=dict, description="Per-operation access policy (empty = inherit)"
+    )  # type: ignore[assignment]
+    access_policy_version = fields.IntField(default=1)
+
     # Public run-page presentation configuration
     run_page_config: dict = fields.JSONField(
         default=lambda: {"presentation_mode": "simple"},
@@ -200,6 +206,25 @@ class WorkflowRun(models.Model):
         description="User who triggered (null for webhook/cron)",
     )
     triggered_by_id: UUID | None  # type: ignore[assignment]
+
+    # Credential provenance. API-key and embed traffic is attributed to the
+    # exact credential that created the run so run history stays on the
+    # integration that produced it: neither the key owner's personal history
+    # nor a second key of the same owner may claim these runs.
+    api_key_id = fields.UUIDField(
+        null=True,
+        description=(
+            "API key credential that created the run (null for app sessions, "
+            "schedule and nested runs of a non-API-key parent)"
+        ),
+    )
+    api_key_origin_unknown = fields.BooleanField(
+        default=False,
+        description=(
+            "Run came from an API-key surface whose credential could not be "
+            "recorded (legacy row); excluded from every user-facing history"
+        ),
+    )
 
     # Execution mode
     is_debug = fields.BooleanField(

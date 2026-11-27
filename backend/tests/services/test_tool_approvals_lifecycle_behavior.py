@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -909,3 +911,43 @@ async def test_create_execution_validation_and_binding_guards():
                 now=now,
             )
         assert far_expiry.value.code == ResponseCode.TOOL_APPROVAL_INPUT_INVALID
+
+
+@pytest.mark.asyncio
+async def test_resume_scheduling_failures_never_block_the_other_runtime(
+    monkeypatch,
+):
+    """A broken Agent resume must not stop the workflow resume, and vice versa."""
+    execution_id = uuid4()
+    monkeypatch.setattr(
+        "app.services.agent_run_store.schedule_agent_run_approval_resume",
+        AsyncMock(side_effect=RuntimeError("queue down")),
+    )
+    workflow_resume = AsyncMock(side_effect=ImportError("module missing"))
+    monkeypatch.setattr(
+        "app.services.workflow.tool_approval_resume.schedule_workflow_run_approval_resume",
+        workflow_resume,
+    )
+    monkeypatch.setattr(
+        service,
+        "ToolExecution",
+        SimpleNamespace(
+            filter=lambda **_kwargs: SimpleNamespace(
+                first=AsyncMock(return_value=SimpleNamespace(id=execution_id))
+            )
+        ),
+    )
+
+    # Neither runtime may raise out of the decision path.
+    await service._schedule_run_resume(execution_id)
+    workflow_resume.assert_awaited_once()
+
+    # A missing run is not an error for the scheduler either.
+    monkeypatch.setattr(
+        service,
+        "ToolExecution",
+        SimpleNamespace(
+            filter=lambda **_kwargs: SimpleNamespace(first=AsyncMock(return_value=None))
+        ),
+    )
+    await service._schedule_run_resume(execution_id)

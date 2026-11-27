@@ -21,6 +21,7 @@ import {
   FileText,
   LayoutGrid,
   GitBranch,
+  ShieldCheck,
 } from 'lucide-react'
 import Image from 'next/image'
 import { workflowsApi, type Workflow, type WorkflowRunListItem } from '@/lib/api/workflows'
@@ -314,6 +315,13 @@ export default function WorkflowMonitorPage() {
             <DropdownMenuItem className="gap-2 bg-primary/10 text-primary">
               <Activity className="h-4 w-4" />
               <span>{t('monitor')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="gap-2"
+              onClick={() => router.push(`/app/apps/workflow/${workflowId}/permissions`)}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span>{t('permissions')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

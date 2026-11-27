@@ -102,6 +102,7 @@ mock.module('lucide-react', () => ({
   ArrowLeft: createIcon('ArrowLeft'),
   ArrowRight: createIcon('ArrowRight'),
   Ban: createIcon('Ban'),
+  ShieldCheck: createIcon('ShieldCheck'),
   Bot: createIcon('Bot'),
   Braces: createIcon('Braces'),
   Brackets: createIcon('Brackets'),

@@ -48,7 +48,7 @@ async def test_stream_requires_user_for_user_triggered_run(monkeypatch):
     )
 
     with pytest.raises(BusinessError) as exc_info:
-        await workflows.stream_workflow_run(uuid4(), current_user=None)
+        await workflows.stream_workflow_run(uuid4(), auth_result=None)
 
     assert exc_info.value.code == ResponseCode.UNAUTHORIZED
     assert exc_info.value.msg_key == "unauthorized"
@@ -56,16 +56,13 @@ async def test_stream_requires_user_for_user_triggered_run(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("triggered_by_id", [uuid4(), None])
-async def test_stream_checks_private_access_and_allows_public_webhook_runs(
-    monkeypatch, triggered_by_id
-):
+async def test_stream_checks_workflow_access_for_its_owner(monkeypatch):
     run_id = uuid4()
     workflow_id = uuid4()
     user = SimpleNamespace(id=uuid4())
     run = SimpleNamespace(
         workflow_id=workflow_id,
-        triggered_by_id=triggered_by_id,
+        triggered_by_id=user.id,
     )
     monkeypatch.setattr(
         workflows.WorkflowRun, "filter", lambda **_kwargs: RunQuery(run)
@@ -84,16 +81,13 @@ async def test_stream_checks_private_access_and_allows_public_webhook_runs(
     monkeypatch.setattr(stream_module, "stream_to_sse", fake_stream_to_sse)
 
     response = await workflows.stream_workflow_run(
-        run_id, from_sequence=7, current_user=user
+        run_id, from_sequence=7, auth_result=(user, None)
     )
     chunks = [chunk async for chunk in response.body_iterator]
 
     assert chunks == ["data: complete\n\n"]
     stream_to_sse.assert_called_once_with(str(run_id), 7)
-    if triggered_by_id is None:
-        access.assert_not_awaited()
-    else:
-        access.assert_awaited_once_with(workflow_id, user)
+    access.assert_awaited_once_with(workflow_id, user)
 
 
 @pytest.mark.asyncio

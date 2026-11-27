@@ -55,13 +55,35 @@ export interface WorkflowRunAdapter {
 
 /** Map the minimal embed workflow info onto the full Workflow shape the run page expects. */
 export function mapEmbedWorkflow(info: EmbedWorkflowInfo): Workflow {
+  // The embed page cannot read the workflow definition, so the API projects the
+  // start node's public input parameters. Rebuilding a single start node from
+  // them is what lets the run page render its input form; without it a workflow
+  // with required inputs could never be started from an embed.
+  const inputParameters = info.input_parameters ?? []
   return {
     id: info.id,
     team_id: '',
     name: info.name,
     description: info.description,
     icon: info.icon,
-    definition: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    definition: {
+      nodes: inputParameters.length
+        ? [
+            {
+              id: 'user_input-embed',
+              type: 'user_input',
+              position: { x: 0, y: 0 },
+              data: {
+                type: 'user_input',
+                label: 'Start',
+                config: { parameters: inputParameters },
+              },
+            },
+          ]
+        : [],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    },
     variables: info.variables as unknown as VariableDefinition[],
     status: 'published',
     visibility: 'public',

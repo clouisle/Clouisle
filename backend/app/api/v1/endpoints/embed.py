@@ -22,6 +22,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 
 from app.api import deps
+from app.api.chat_history_origin import history_origin_filter
 from app.api.deps import _authenticate_api_key
 from app.models.agent import Agent, AgentStatus, Conversation
 from app.models.api_key import APIKey
@@ -29,6 +30,7 @@ from app.models.user import User
 from app.models.workflow import Workflow, WorkflowStatus
 from app.schemas.agent import (
     ChatRequest,
+    ConversationUpdate,
     EmbedAgentInfo,
     RunEventOut,
     RunInputCreate,
@@ -173,6 +175,34 @@ async def _get_embed_agent(agent_id: UUID, api_key: APIKey, request: Request) ->
     _check_embed_domain(request, agent)
 
     return agent
+
+
+async def _get_embed_conversation(
+    agent: Agent, conversation_id: UUID, user: User, api_key: APIKey
+) -> Conversation:
+    """The one conversation of ``agent`` that this exact credential created.
+
+    Same filter as the key-scoped chat surfaces: the row must belong to the key
+    owner *and* carry the key itself. Another key of the same owner, or the
+    owner's browser session, therefore never resolves another credential's
+    conversation, and a miss is reported as a plain 404 so the existence of
+    someone else's conversation is not disclosed.
+    """
+    conversation = await Conversation.filter(
+        id=conversation_id,
+        agent_id=agent.id,
+        user=user,
+        **history_origin_filter(api_key),
+    ).first()
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    return conversation
 
 
 # ============ Agent Embed Endpoints ============
@@ -407,25 +437,58 @@ async def get_embed_conversation_messages(
     """Get conversation messages for embed page."""
     user, api_key = auth_result
     agent = await _get_embed_agent(agent_id, api_key, request)
-
-    conversation = await Conversation.filter(
-        id=conversation_id,
-        agent_id=agent.id,
-        user=user,
-    ).first()
-
-    if not conversation:
-        raise BusinessError(
-            code=ResponseCode.CONVERSATION_NOT_FOUND,
-            msg_key="conversation_not_found",
-            status_code=404,
-        )
+    conversation = await _get_embed_conversation(agent, conversation_id, user, api_key)
 
     messages = await get_visible_conversation_messages(conversation.id)
 
     return success(
         data=await build_message_round_payloads(messages),
     )
+
+
+@router.patch("/agents/{agent_id}/conversations/{conversation_id}")
+async def rename_embed_conversation(
+    agent_id: UUID,
+    conversation_id: UUID,
+    body: ConversationUpdate,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Rename a conversation this embed credential created."""
+    user, api_key = auth_result
+    agent = await _get_embed_agent(agent_id, api_key, request)
+    conversation = await _get_embed_conversation(agent, conversation_id, user, api_key)
+
+    if body.title is not None:
+        conversation.title = body.title
+        await conversation.save()
+
+    return success(
+        data={"id": str(conversation.id), "title": conversation.title},
+        msg_key="conversation_updated",
+    )
+
+
+@router.delete(
+    "/agents/{agent_id}/conversations/{conversation_id}",
+    response_model=Response[dict],
+)
+async def delete_embed_conversation(
+    agent_id: UUID,
+    conversation_id: UUID,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Delete a conversation this embed credential created."""
+    user, api_key = auth_result
+    agent = await _get_embed_agent(agent_id, api_key, request)
+    conversation = await _get_embed_conversation(agent, conversation_id, user, api_key)
+
+    from app.api.v1.endpoints.agents import _delete_owned_conversation
+
+    await _delete_owned_conversation(conversation)
+
+    return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
 
 
 @router.post("/agents/{agent_id}/upload/file")
@@ -452,9 +515,14 @@ async def embed_upload_file(
 
 
 async def _get_embed_workflow(
-    workflow_id: UUID, api_key: APIKey, request: Request
+    workflow_id: UUID,
+    api_key: APIKey,
+    request: Request,
+    *,
+    user: User | None = None,
+    operation: str = "view",
 ) -> Workflow:
-    """Get workflow with embed access checks."""
+    """Get workflow with embed access checks, then its own access policy."""
     await deps.check_api_key_workflow_access(api_key, workflow_id)
 
     workflow = (
@@ -479,7 +547,77 @@ async def _get_embed_workflow(
     _check_embed_enabled(workflow)
     _check_embed_domain(request, workflow)
 
+    from app.services.workflow_access import ensure_workflow_operation
+
+    await ensure_workflow_operation(
+        workflow,
+        operation,
+        user=user or getattr(api_key, "user", None),
+        api_key=api_key,
+    )
+
     return workflow
+
+
+MAX_EMBED_INPUT_PARAMETERS = 50
+
+
+def _embedded_workflow_input_parameters(workflow: Workflow) -> list[dict]:
+    """Start-node input parameters the embed run form has to collect.
+
+    The embed page never receives the workflow definition (node configs can
+    hold internal endpoints and credentials), but it cannot start a run without
+    the required inputs. This projects only the public parameter metadata of the
+    start node, in definition order, bounded so a malformed definition cannot
+    produce an unbounded response.
+    """
+    definition = workflow.definition if isinstance(workflow.definition, dict) else {}
+    nodes = definition.get("nodes")
+    if not isinstance(nodes, list):
+        return []
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        data = node.get("data")
+        if not isinstance(data, dict):
+            continue
+        if data.get("type") not in {"user_input", "trigger"}:
+            continue
+        config = data.get("config")
+        parameters = (
+            config.get("parameters")
+            if isinstance(config, dict) and isinstance(config.get("parameters"), list)
+            else data.get("parameters")
+        )
+        if not isinstance(parameters, list):
+            return []
+        return [
+            _embed_input_parameter(item)
+            for item in parameters[:MAX_EMBED_INPUT_PARAMETERS]
+            if isinstance(item, dict) and item.get("name")
+        ]
+
+    return []
+
+
+def _embed_input_parameter(parameter: dict) -> dict:
+    """Project one start-node parameter onto its public fields."""
+    projected = {
+        "name": str(parameter.get("name")),
+        "type": str(parameter.get("type") or "text"),
+        "required": bool(parameter.get("required", True)),
+    }
+    for key in ("label", "description"):
+        value = parameter.get(key)
+        if isinstance(value, str) and value:
+            projected[key] = value
+    if "default" in parameter:
+        projected["default"] = parameter.get("default")
+    options = parameter.get("options")
+    if isinstance(options, list):
+        projected["options"] = [str(option) for option in options]
+    return projected
 
 
 # ============ Workflow Embed Endpoints ============
@@ -493,7 +631,9 @@ async def get_embed_workflow_info(
 ):
     """Get workflow info for embed page."""
     user, api_key = auth_result
-    workflow = await _get_embed_workflow(workflow_id, api_key, request)
+    workflow = await _get_embed_workflow(
+        workflow_id, api_key, request, user=user, operation="view"
+    )
 
     return success(
         data={
@@ -502,6 +642,10 @@ async def get_embed_workflow_info(
             "description": workflow.description,
             "icon": workflow.icon,
             "variables": workflow.variables or [],
+            # The embed page has no definition editor, so it needs the start
+            # node's input parameters to render the run form. Only the public
+            # parameter metadata is projected; node configs stay server-side.
+            "input_parameters": _embedded_workflow_input_parameters(workflow),
             "embed_config": workflow.embed_config or {},
         },
     )
@@ -521,7 +665,9 @@ async def embed_run_workflow(
     from app.tasks.workflow import run_workflow_task
 
     user, api_key = auth_result
-    workflow = await _get_embed_workflow(workflow_id, api_key, request)
+    workflow = await _get_embed_workflow(
+        workflow_id, api_key, request, user=user, operation="run"
+    )
 
     body = await request.json()
     inputs = body.get("inputs", {})
@@ -538,6 +684,9 @@ async def embed_run_workflow(
         workflow_id=workflow_id,
         trigger_type=workflow.trigger_type,
         triggered_by_id=user.id,
+        # The exact credential travels with the run so the run's own history and
+        # its SSE stream stay bound to this key, never merely to its owner.
+        api_key_id=api_key.id,
         is_debug=False,
         status=RunStatus.PENDING,
         inputs=inputs,
@@ -587,19 +736,30 @@ async def embed_stream_workflow_run(
     from_sequence: int = 0,
     auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
 ) -> StreamingResponse:
-    """Stream workflow execution events via SSE for embed context."""
+    """Stream workflow execution events via SSE for embed context.
+
+    Bound to the exact embed credential that created the run: another key of
+    the same owner cannot follow it. The embed publication and origin gate is
+    enforced on the creation route.
+    """
+    from app.api.workflow_run_access import (
+        api_key_may_read_run,
+        run_not_found_error,
+    )
     from app.models.workflow import WorkflowRun
     from app.services.workflow.stream import stream_to_sse
 
     user, api_key = auth_result
 
     run = await WorkflowRun.filter(id=run_id).first()
-    if not run or run.triggered_by_id != user.id:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_run_not_found",
-            status_code=404,
-        )
+    if (
+        not run
+        or run.triggered_by_id != user.id
+        or run.workflow_id is None
+        or not api_key_may_read_run(run, api_key)
+    ):
+        raise run_not_found_error()
+    await deps.check_api_key_workflow_access(api_key, run.workflow_id)
 
     async def event_generator():
         async for event in stream_to_sse(str(run_id), from_sequence):

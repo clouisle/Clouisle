@@ -40,6 +40,7 @@ mock.module('lucide-react', () => ({
   Activity: Icon, TrendingUp: Icon, Clock: Icon, CheckCircle2: Icon, XCircle: Icon,
   AlertTriangle: Icon, Zap: Icon, ArrowLeft: Icon, RefreshCw: Icon, BarChart3: Icon,
   Loader2: Icon, ExternalLink: Icon, FileText: Icon, LayoutGrid: Icon, GitBranch: Icon,
+  ShieldCheck: Icon,
 }))
 mock.module('@/lib/api/workflows', () => ({
   workflowsApi: { getWorkflow, getWorkflowStats, getWorkflowTrends, getWorkflowRuns },

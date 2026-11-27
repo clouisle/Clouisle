@@ -1,5 +1,6 @@
 {
   "common": {
+    "historyKeyFilter": { "label": "Filter by API key", "search": "Search API keys", "all": "All sources", "loadFailed": "Unable to load API keys", "inactive": "revoked", "expired": "expired" },
     "appName": "Clouisle",
     "loading": "Loading...",
     "loadingMore": "Loading more...",

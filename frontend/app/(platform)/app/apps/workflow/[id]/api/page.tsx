@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { useTeam } from '@/contexts/team-context'
 import { usePermissions } from '@/hooks/use-permissions'
-import { ArrowLeft, Loader2, ExternalLink, FileText, Activity, LayoutGrid, GitBranch } from 'lucide-react'
+import { ArrowLeft, Loader2, ExternalLink, FileText, Activity, LayoutGrid, GitBranch, ShieldCheck } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import {
@@ -141,6 +141,13 @@ export default function WorkflowApiPage() {
                 <span>{t('monitor')}</span>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              className="gap-2"
+              onClick={() => router.push(`/app/apps/workflow/${workflowId}/permissions`)}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span>{t('permissions')}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

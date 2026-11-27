@@ -89,6 +89,12 @@ Used for privileged operations and always mounted with `/admin/`, for example:
 
 Do not mix the two namespaces when adding new endpoints.
 
+## Execution history and orchestration logs
+
+Personal history and orchestration logs are separate authorization surfaces. Personal history requires the authenticated user and the same credential origin as the record: a login session matches non-API-key history; an API key matches its exact stored UUID and must still be allowed to use the resource. These checks also apply when opening a record by ID, continuing a conversation, or replaying execution events. Never use key ownership alone or accept an origin supplied by the request body.
+
+Orchestration logs are login-only and apply their existing user/resource permissions without a credential filter. Use these log routes for orchestration pages, not the personal history routes. Mixed or unclassified legacy records are available through authorized logs only. See [the migration notes](./migrations-and-init-data.md#agent-and-workflow-history-isolation) for cutover requirements.
+
 ## Validation error handling
 
 Validation failures should return field-level errors in the standard response shape so the frontend can map them to form fields.

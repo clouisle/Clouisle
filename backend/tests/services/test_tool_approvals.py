@@ -15,6 +15,7 @@ import pytest
 from tortoise import Tortoise
 
 from app.models.tool import CustomToolType, Tool, ToolType
+from app.models.tool_approval import ExecutionRunKind
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_approval import (
@@ -95,6 +96,88 @@ def _team_binding(*, version: int = 1, **overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_gate_is_decided_by_initiator_or_team_admin():
+    """A workflow run parks on its tool policy and its initiator decides.
+
+    Team owners/admins are the fallback approvers, because a scheduled or
+    webhook-initiated run may have no reachable initiator. A plain member can
+    neither see nor decide it.
+    """
+    async with _database():
+        initiator = await _user("initiator")
+        admin = await _user("admin")
+        member = await _user("member")
+        team = await _team("workflow-team", initiator)
+        await TeamMember.create(
+            id=uuid4(), team_id=team.id, user_id=admin.id, role="admin"
+        )
+        await TeamMember.create(
+            id=uuid4(), team_id=team.id, user_id=member.id, role="member"
+        )
+        tool = await _tool(team, _caller_policy())
+
+        execution = await service.create_execution(
+            tool=tool,
+            operation="todo.delete",
+            parameters={"id": 7},
+            actor=initiator,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.WORKFLOW,
+            run_kind=ExecutionRunKind.WORKFLOW,
+            run_id=uuid4(),
+            tool_call_id="workflow-node:caller",
+        )
+        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
+
+        # The initiator sees it, so does a team admin; a plain member does not.
+        assert (await service.list_pending_approvals_for_user(initiator))[1] == 1
+        assert (await service.list_pending_approvals_for_user(admin))[1] == 1
+        assert (await service.list_pending_approvals_for_user(member))[1] == 0
+
+        pending, _ = await service.list_pending_approvals_for_user(admin)
+        with pytest.raises(BusinessError):
+            await service.decide_approval(
+                pending[0].id,
+                member,
+                decision=ApprovalVote.APPROVE,
+                idempotency_key="workflow-member-1",
+            )
+
+        decision = await service.decide_approval(
+            pending[0].id,
+            admin,
+            decision=ApprovalVote.APPROVE,
+            idempotency_key="workflow-admin-1",
+        )
+        assert decision.decision == ApprovalVote.APPROVE
+        refreshed = await service.get_execution(execution.id)
+        assert refreshed.status == ToolExecutionStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_agent_run_caller_gate_still_requires_its_own_actor():
+    """The team-admin fallback is workflow-only and never widens Agent runs."""
+    async with _database():
+        actor = await _user("agentactor")
+        admin = await _user("agentadmin")
+        team = await _team("agent-team", actor)
+        await TeamMember.create(
+            id=uuid4(), team_id=team.id, user_id=admin.id, role="admin"
+        )
+        tool = await _tool(team, _caller_policy())
+
+        await service.create_execution(
+            tool=tool,
+            operation="todo.delete",
+            parameters={"id": 7},
+            actor=actor,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+        )
+        assert (await service.list_pending_approvals_for_user(admin))[1] == 0
 
 
 @pytest.mark.asyncio

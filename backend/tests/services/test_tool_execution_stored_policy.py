@@ -25,7 +25,6 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_approval import (
     ApprovalRequestStatus,
     PolicySource,
-    ToolExecutionCancelReason,
 )
 from app.services.tool_execution import (
     PendingToolApproval,
@@ -166,7 +165,7 @@ async def test_tool_policy_pauses_agent_call_for_caller():
 
 
 @pytest.mark.asyncio
-async def test_workflow_api_key_entrypoint_never_gates():
+async def test_workflow_api_key_entrypoint_gates_its_caller():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -200,18 +199,20 @@ async def test_workflow_api_key_entrypoint_never_gates():
             invoke,
         )
 
-        assert result == {"ok": True}
-        assert calls == [{"x": 1}]
-        assert await ToolApprovalRequest.all().count() == 0
+        assert isinstance(result, PendingToolApproval)
+        assert calls == []
+        assert await ToolApprovalRequest.all().count() == 1
         execution = await ToolExecution.get(run_id=run_id)
-        assert execution.status == ToolExecutionStatus.SUCCEEDED
-        assert execution.policy_snapshot["evaluation"]["decision"] == "allow"
+        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
+        assert execution.policy_snapshot["evaluation"]["decision"] == (
+            "require_approval"
+        )
     finally:
         await Tortoise.close_connections()
 
 
 @pytest.mark.asyncio
-async def test_nested_agent_inside_workflow_never_gates():
+async def test_nested_agent_inside_workflow_gates_the_run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -244,16 +245,20 @@ async def test_nested_agent_inside_workflow_never_gates():
             invoke,
         )
 
-        assert result == {"ok": True}
-        assert len(calls) == 1
-        assert await ToolApprovalRequest.all().count() == 0
+        assert isinstance(result, PendingToolApproval)
+        assert calls == []
+        assert await ToolApprovalRequest.all().count() == 1
     finally:
         await Tortoise.close_connections()
 
 
 @pytest.mark.asyncio
-async def test_workflow_ignores_legacy_external_tool_audience():
-    """A deprecated audience must not park or reject a workflow call."""
+async def test_workflow_rejects_legacy_external_tool_audience():
+    """A deprecated audience fails closed for a workflow run too.
+
+    The workflow is no longer exempt: a stored external audience has no
+    answerable approver, so the call is rejected rather than executed.
+    """
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -269,31 +274,40 @@ async def test_workflow_ignores_legacy_external_tool_audience():
             calls.append(parameters)
             return {"ok": True}
 
-        result = await execute_stored_tool(
-            tool,
-            "read",
-            {},
-            _context(
-                user,
-                team,
-                ExecutionEntrypoint.API_KEY,
-                run_kind=ExecutionRunKind.WORKFLOW,
-                run_id=uuid4(),
-                tool_call_id="workflow-node:legacy",
-                interactive=False,
-            ),
-            invoke,
-        )
+        with pytest.raises(BusinessError) as denied:
+            await execute_stored_tool(
+                tool,
+                "read",
+                {},
+                _context(
+                    user,
+                    team,
+                    ExecutionEntrypoint.API_KEY,
+                    run_kind=ExecutionRunKind.WORKFLOW,
+                    run_id=uuid4(),
+                    tool_call_id="workflow-node:legacy",
+                    interactive=False,
+                ),
+                invoke,
+            )
 
-        assert result == {"ok": True}
-        assert len(calls) == 1
+        assert denied.value.msg_key == (
+            "tool_approval_policy_external_audience_unsupported"
+        )
+        assert len(calls) == 0
         assert await ToolApprovalRequest.all().count() == 0
     finally:
         await Tortoise.close_connections()
 
 
 @pytest.mark.asyncio
-async def test_parked_workflow_execution_is_cancelled_not_resumed():
+async def test_parked_workflow_execution_parks_again_on_reentry():
+    """A still-pending gate is never executed and never silently dropped.
+
+    Re-entering the boundary for an execution that is still awaiting a decision
+    returns the same pending state, so the node parks again instead of running
+    the side effect or discarding the request.
+    """
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -344,30 +358,28 @@ async def test_parked_workflow_execution_is_cancelled_not_resumed():
             calls.append(parameters)
             return {"ok": True}
 
-        with pytest.raises(BusinessError) as blocked:
-            await execute_stored_tool(
-                tool,
-                "read",
-                {},
-                _context(
-                    user,
-                    team,
-                    ExecutionEntrypoint.API_KEY,
-                    run_kind=ExecutionRunKind.WORKFLOW,
-                    run_id=run_id,
-                    tool_call_id=tool_call_id,
-                    interactive=False,
-                ),
-                invoke,
-            )
+        result = await execute_stored_tool(
+            tool,
+            "read",
+            {},
+            _context(
+                user,
+                team,
+                ExecutionEntrypoint.API_KEY,
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                interactive=False,
+            ),
+            invoke,
+        )
 
-        assert blocked.value.code == ResponseCode.TOOL_APPROVAL_BINDING_CHANGED
+        assert isinstance(result, PendingToolApproval)
         assert calls == []
         await execution.refresh_from_db()
         await request.refresh_from_db()
-        assert execution.status == ToolExecutionStatus.CANCELLED
-        assert execution.cancel_reason == ToolExecutionCancelReason.CANCELLED
-        assert request.status == ApprovalRequestStatus.CANCELLED
+        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
+        assert request.status == ApprovalRequestStatus.PENDING
     finally:
         await Tortoise.close_connections()
 

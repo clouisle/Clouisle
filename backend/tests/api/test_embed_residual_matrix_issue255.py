@@ -178,7 +178,7 @@ async def test_get_embed_workflow_authorization_and_state_matrix(monkeypatch):
 @pytest.mark.anyio
 async def test_embed_conversation_messages_missing_and_success(monkeypatch):
     agent = SimpleNamespace(id=uuid4())
-    user, api_key = SimpleNamespace(id=uuid4()), object()
+    user, api_key = SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4())
     conversation = SimpleNamespace(id=uuid4())
     monkeypatch.setattr(embed, "_get_embed_agent", AsyncMock(return_value=agent))
     monkeypatch.setattr(
@@ -263,11 +263,22 @@ async def test_embed_workflow_run_stream_yields_events(monkeypatch):
 
     run_id = uuid4()
     user = SimpleNamespace(id=uuid4())
+    api_key = SimpleNamespace(id=uuid4(), user_id=user.id, is_active=True)
     monkeypatch.setattr(
         WorkflowRun,
         "filter",
-        MagicMock(return_value=Query(SimpleNamespace(triggered_by_id=user.id))),
+        MagicMock(
+            return_value=Query(
+                SimpleNamespace(
+                    triggered_by_id=user.id,
+                    workflow_id=uuid4(),
+                    api_key_id=api_key.id,
+                    api_key_origin_unknown=False,
+                )
+            )
+        ),
     )
+    monkeypatch.setattr(embed.deps, "check_api_key_workflow_access", AsyncMock())
 
     async def stream_to_sse(actual_run_id, sequence):
         assert actual_run_id == str(run_id)
@@ -276,7 +287,7 @@ async def test_embed_workflow_run_stream_yields_events(monkeypatch):
 
     monkeypatch.setattr(stream_module, "stream_to_sse", stream_to_sse)
     response = await embed.embed_stream_workflow_run(
-        run_id, from_sequence=7, auth_result=(user, object())
+        run_id, from_sequence=7, auth_result=(user, api_key)
     )
 
     assert response.media_type == "text/event-stream"

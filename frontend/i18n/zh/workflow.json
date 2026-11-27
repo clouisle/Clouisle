@@ -7,6 +7,40 @@
     "accessApi": "访问 API",
     "logs": "日志",
     "monitor": "监控",
+    "permissions": "权限",
+    "accessPolicy": {
+      "loading": "正在加载权限策略...",
+      "introTitle": "默认继承团队规则",
+      "introBody": "不配置的操作沿用团队角色与全局权限码；配置后只会在它们的范围内进一步收紧，不会放宽。目标用户、API Key 之外的调用方（如 Webhook 触发）不属于任何受众。",
+      "operations": {
+        "view": "查看",
+        "run": "运行",
+        "edit": "编辑",
+        "publish": "发布",
+        "delete": "删除"
+      },
+      "decisions": {
+        "inherit": "继承团队规则",
+        "allow": "允许",
+        "deny": "拒绝"
+      },
+      "roles": {
+        "owner": "团队所有者",
+        "admin": "团队管理员",
+        "member": "团队成员",
+        "viewer": "只读成员"
+      },
+      "rolesLabel": "允许的角色（不选则不限制角色）",
+      "usersLabel": "指定用户",
+      "keysLabel": "指定 API Key",
+      "gatesHint": "选择角色、用户或 Key 后，只有命中者可以使用该操作。",
+      "effectiveInherit": "当前：继承",
+      "effectiveAllowed": "当前：可访问",
+      "effectiveDenied": "当前：被拒",
+      "save": "保存权限",
+      "reset": "重置为继承",
+      "saveHint": "保存后会记入审计日志，可在工作流日志里查到前后差异。"
+    },
     "dragToAdd": "拖拽节点到画布",
     "loadFailed": "加载工作流失败",
     "saved": "工作流已保存",
@@ -427,6 +461,7 @@
       "containerNodeNoInput": "容器内节点没有输入连接",
       "nodeNoInput": "节点没有输入连接",
       "pauseInsideContainer": "暂停节点不能放在迭代或循环容器内",
+      "toolInContainer": "容器内的工具调用无法暂停等待审批；若该工具要求确认，保存会被拒绝。请把工具节点移到循环外",
       "pauseVariablesRequired": "变量暂停至少需要添加一个请求变量",
       "noOutputNode": "工作流没有输出节点"
     },

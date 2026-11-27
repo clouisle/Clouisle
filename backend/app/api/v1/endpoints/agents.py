@@ -14,6 +14,7 @@ from tortoise.functions import Count
 from tortoise.transactions import in_transaction
 
 from app.api import deps
+from app.api.chat_history_origin import history_origin_filter
 from app.api.team_access import check_team_access, check_team_permission
 from app.models.user import User, TeamMember
 from app.models.model import TeamModel, Model
@@ -1094,24 +1095,53 @@ async def get_agent_video_generation_status(
 
 # ============ Conversations ============
 
+#: RBAC permission required to read chat history through the JWT chat surface.
+_CONVERSATION_READ = "conversation:read"
 
-@router.get(
-    "/{agent_id}/conversations", response_model=Response[PageData[ConversationListOut]]
-)
-async def list_agent_conversations(
+
+def _split_auth(auth_result: Any) -> tuple[User, Any]:
+    """Accept dependency tuples and direct-user calls used by unit tests."""
+    if isinstance(auth_result, tuple) and len(auth_result) == 2:
+        return auth_result
+    return auth_result, None
+
+
+async def _history_reader(
+    auth_result: tuple[User, Any] = Depends(deps.get_current_user_or_api_key),
+) -> tuple[User, Any]:
+    """Authenticate a chat-history read as a JWT user or as an API key.
+
+    History reads are dual auth: the platform chat page speaks JWT while
+    server-side Agent clients speak API keys. Only the JWT side carries RBAC; a
+    key is authorized against its own resources by the endpoint.
+    """
+    current_user, api_key = auth_result
+    if api_key is None and not current_user.is_active:
+        await deps.get_current_active_user(current_user)
+    if api_key is None and not deps.user_has_global_permission(
+        current_user, _CONVERSATION_READ
+    ):
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="operation_not_permitted",
+            status_code=403,
+            permission=_CONVERSATION_READ,
+        )
+    return current_user, api_key
+
+
+def _agent_conversation_query(
+    *,
     agent_id: UUID,
-    search: str | None = Query(None),
-    created_after: datetime | None = Query(None),
-    created_before: datetime | None = Query(None),
-    sort_by: str = Query("updated_at"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    user: User,
+    search: str | None,
+    created_after: datetime | None,
+    created_before: datetime | None,
+    sort_by: str,
+    **scope: Any,
 ) -> Any:
-    """List conversations for an agent (only user's own conversations)."""
-    agent = await check_agent_access(agent_id, current_user)
-
-    query = Conversation.filter(agent_id=agent_id, user=current_user)
+    """Conversations of ``agent_id`` owned by ``user`` inside ``scope``."""
+    query = Conversation.filter(agent_id=agent_id, user=user, **scope)
     if search_text := (search or "").strip():
         query = query.filter(
             Q(title__icontains=search_text) | Q(id__icontains=search_text)
@@ -1126,88 +1156,30 @@ async def list_agent_conversations(
         if sort_by in {"created_at", "updated_at", "message_count"}
         else "updated_at"
     )
+    return query.order_by(f"-{sort_field}")
+
+
+async def _conversation_page(
+    query: Any, *, agent: Agent, page: int, page_size: int
+) -> dict[str, Any]:
+    """Paginate a conversation query into the list response payload."""
     total = await query.count()
     skip = (page - 1) * page_size
-    conversations = await query.order_by(f"-{sort_field}").offset(skip).limit(page_size)
+    conversations = await query.offset(skip).limit(page_size)
 
-    # Add agent info to each conversation
-    conv_list = []
+    items = []
     for conv in conversations:
         conv_data = ConversationListOut.model_validate(conv).model_dump()
         conv_data["agent_name"] = agent.name
         conv_data["agent_icon"] = agent.icon
-        conv_list.append(conv_data)
-
-    return success(
-        data={
-            "items": conv_list,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
-    )
+        items.append(conv_data)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-@router.get("/conversations/my", response_model=Response[PageData[ConversationListOut]])
-async def list_my_conversations(
-    agent_id: UUID | None = None,
-    page: int = 1,
-    page_size: int = 20,
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
-) -> Any:
-    """List all conversations for current user."""
-    query = Conversation.filter(user=current_user)
-
-    if agent_id:
-        query = query.filter(agent_id=agent_id)
-
-    total = await query.count()
-    skip = (page - 1) * page_size
-    conversations = await query.prefetch_related("agent").offset(skip).limit(page_size)
-
-    conv_list = []
-    for conv in conversations:
-        conv_data = ConversationListOut.model_validate(conv).model_dump()
-        related_agent = conv.agent
-        conv_data["agent_name"] = related_agent.name if related_agent else None
-        conv_data["agent_icon"] = related_agent.icon if related_agent else None
-        conv_list.append(conv_data)
-
-    return success(
-        data={
-            "items": conv_list,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
-    )
-
-
-@router.get(
-    "/conversations/{conversation_id}",
-    response_model=Response[ConversationWithMessages],
-)
-async def get_conversation(
-    conversation_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
-) -> Any:
-    """Get conversation with messages."""
-    conversation = (
-        await Conversation.filter(
-            id=conversation_id,
-            user=current_user,
-        )
-        .prefetch_related("agent")
-        .first()
-    )
-
-    if not conversation:
-        raise BusinessError(
-            code=ResponseCode.CONVERSATION_NOT_FOUND,
-            msg_key="conversation_not_found",
-            status_code=404,
-        )
-
+async def _conversation_detail_payload(
+    conversation: Conversation, current_user: User, *, api_key: Any = None
+) -> dict[str, Any]:
+    """Conversation detail with visible messages, round steps and versions."""
     messages = await get_visible_conversation_messages(conversation.id)
 
     # Batch calculate version counts to avoid N+1 queries
@@ -1252,26 +1224,154 @@ async def get_conversation(
     conv_data["agent_icon"] = related_agent.icon if related_agent else None
     from app.models.agent_run import AgentRun, AgentRunStatus
 
-    active_run = (
-        await AgentRun.filter(
-            conversation_id=conversation.id,
-            agent_id=conversation.agent_id,
-            user_id=current_user.id,
-            status__in=[
-                AgentRunStatus.QUEUED,
-                AgentRunStatus.RUNNING,
-                AgentRunStatus.STOPPING,
-                AgentRunStatus.COMPLETING,
-                AgentRunStatus.WAITING,
-            ],
-        )
-        .order_by("-submitted_at")
-        .first()
+    run_query = AgentRun.filter(
+        conversation_id=conversation.id,
+        agent_id=conversation.agent_id,
+        user_id=current_user.id,
+        status__in=[
+            AgentRunStatus.QUEUED,
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.STOPPING,
+            AgentRunStatus.COMPLETING,
+            AgentRunStatus.WAITING,
+        ],
     )
+    if api_key is not None:
+        # An API key only ever sees the run it submitted, never a mixed row.
+        run_query = run_query.filter(api_key_id=getattr(api_key, "id", None))
+    active_run = await run_query.order_by("-submitted_at").first()
     conv_data["active_run_id"] = active_run.id if active_run else None
     conv_data["messages"] = messages_out
+    return conv_data
 
-    return success(data=conv_data)
+
+async def _delete_owned_conversation(conversation: Conversation) -> None:
+    """Drop one conversation and its contribution to the agent totals."""
+    # Update agent stats atomically to prevent race conditions
+    await Agent.filter(id=conversation.agent_id).update(
+        conversation_count=F("conversation_count") - 1,
+        message_count=F("message_count") - conversation.message_count,
+    )
+
+    # Delete conversation (cascades to messages)
+    await conversation.delete()
+
+
+@router.get(
+    "/{agent_id}/conversations", response_model=Response[PageData[ConversationListOut]]
+)
+async def list_agent_conversations(
+    agent_id: UUID,
+    search: str | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
+    sort_by: str = Query("updated_at"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth_result: Any = Depends(_history_reader),
+) -> Any:
+    """List the caller's own chat conversations with this agent.
+
+    A JWT session (platform Agent Chat) lists only conversations that no API key
+    created; an API key lists only the conversations it created itself.
+    """
+    current_user, api_key = _split_auth(auth_result)
+    agent = await check_agent_access(agent_id, current_user)
+    await deps.check_api_key_agent_access(api_key, agent_id)
+
+    query = _agent_conversation_query(
+        agent_id=agent_id,
+        user=current_user,
+        search=search,
+        created_after=created_after,
+        created_before=created_before,
+        sort_by=sort_by,
+        **history_origin_filter(api_key),
+    )
+    return success(
+        data=await _conversation_page(
+            query, agent=agent, page=page, page_size=page_size
+        )
+    )
+
+
+@router.get("/conversations/my", response_model=Response[PageData[ConversationListOut]])
+async def list_my_conversations(
+    agent_id: UUID | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(deps.PermissionChecker(_CONVERSATION_READ)),
+) -> Any:
+    """List all platform-chat conversations for current user."""
+    query = Conversation.filter(user=current_user, **history_origin_filter())
+
+    if agent_id:
+        query = query.filter(agent_id=agent_id)
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    conversations = await query.prefetch_related("agent").offset(skip).limit(page_size)
+
+    conv_list = []
+    for conv in conversations:
+        conv_data = ConversationListOut.model_validate(conv).model_dump()
+        related_agent = conv.agent
+        conv_data["agent_name"] = related_agent.name if related_agent else None
+        conv_data["agent_icon"] = related_agent.icon if related_agent else None
+        conv_list.append(conv_data)
+
+    return success(
+        data={
+            "items": conv_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=Response[ConversationWithMessages],
+)
+async def get_conversation(
+    conversation_id: UUID,
+    auth_result: Any = Depends(_history_reader),
+) -> Any:
+    """Get one conversation of the caller's own chat surface, with messages."""
+    current_user, api_key = _split_auth(auth_result)
+    conversation = (
+        await Conversation.filter(
+            id=conversation_id,
+            user=current_user,
+            **history_origin_filter(api_key),
+        )
+        .prefetch_related("agent")
+        .first()
+    )
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    if api_key is not None:
+        if conversation.agent_id is None:
+            raise BusinessError(
+                code=ResponseCode.CONVERSATION_NOT_FOUND,
+                msg_key="conversation_not_found",
+                status_code=404,
+            )
+        await check_agent_access(conversation.agent_id, current_user)
+        await deps.check_api_key_agent_access(api_key, conversation.agent_id)
+
+    return success(
+        data=await _conversation_detail_payload(
+            conversation, current_user, api_key=api_key
+        )
+    )
 
 
 @router.patch(
@@ -1281,13 +1381,14 @@ async def update_conversation(
     *,
     conversation_id: UUID,
     conv_in: ConversationUpdate,
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker(_CONVERSATION_READ)),
 ) -> Any:
     """Update conversation (e.g., rename)."""
     conversation = (
         await Conversation.filter(
             id=conversation_id,
             user=current_user,
+            **history_origin_filter(),
         )
         .prefetch_related("agent")
         .first()
@@ -1317,10 +1418,11 @@ async def delete_conversation(
     conversation_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
-    """Delete a conversation."""
+    """Delete a platform-chat conversation."""
     conversation = await Conversation.filter(
         id=conversation_id,
         user=current_user,
+        **history_origin_filter(),
     ).first()
 
     if not conversation:
@@ -1330,14 +1432,110 @@ async def delete_conversation(
             status_code=404,
         )
 
-    # Update agent stats atomically to prevent race conditions
-    await Agent.filter(id=conversation.agent_id).update(
-        conversation_count=F("conversation_count") - 1,
-        message_count=F("message_count") - conversation.message_count,
+    await _delete_owned_conversation(conversation)
+
+    return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
+
+
+# ============ Orchestration logs ============
+#
+# The Agent log view is the owner's own history of everything this agent ran for
+# them, so unlike the chat routes it spans every origin (JWT, API keys and
+# quarantined sessions). Detail and delete live here so the chat-scoped routes
+# can stay strictly separated.
+
+
+@router.get(
+    "/{agent_id}/logs/conversations",
+    response_model=Response[PageData[ConversationListOut]],
+)
+async def list_agent_log_conversations(
+    agent_id: UUID,
+    search: str | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
+    sort_by: str = Query("updated_at"),
+    api_key_id: UUID | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(deps.PermissionChecker(_CONVERSATION_READ)),
+) -> Any:
+    """List every conversation the caller has with this agent, any origin."""
+    agent = await check_agent_access(agent_id, current_user)
+
+    query = _agent_conversation_query(
+        agent_id=agent_id,
+        user=current_user,
+        search=search,
+        created_after=created_after,
+        created_before=created_before,
+        sort_by=sort_by,
+    )
+    if api_key_id is not None:
+        query = query.filter(api_key_id=api_key_id)
+    return success(
+        data=await _conversation_page(
+            query, agent=agent, page=page, page_size=page_size
+        )
     )
 
-    # Delete conversation (cascades to messages)
-    await conversation.delete()
+
+@router.get(
+    "/{agent_id}/logs/conversations/{conversation_id}",
+    response_model=Response[ConversationWithMessages],
+)
+async def get_agent_log_conversation(
+    agent_id: UUID,
+    conversation_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker(_CONVERSATION_READ)),
+) -> Any:
+    """Get one logged conversation of this agent, whatever its origin."""
+    await check_agent_access(agent_id, current_user)
+
+    conversation = (
+        await Conversation.filter(
+            id=conversation_id,
+            agent_id=agent_id,
+            user=current_user,
+        )
+        .prefetch_related("agent")
+        .first()
+    )
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    return success(data=await _conversation_detail_payload(conversation, current_user))
+
+
+@router.delete(
+    "/{agent_id}/logs/conversations/{conversation_id}",
+    response_model=Response[dict],
+)
+async def delete_agent_log_conversation(
+    agent_id: UUID,
+    conversation_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
+) -> Any:
+    """Delete one logged conversation of this agent, whatever its origin."""
+    await check_agent_access(agent_id, current_user)
+
+    conversation = await Conversation.filter(
+        id=conversation_id,
+        agent_id=agent_id,
+        user=current_user,
+    ).first()
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    await _delete_owned_conversation(conversation)
 
     return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
 
@@ -1352,10 +1550,11 @@ async def delete_message(
     request: Request,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
-    """Delete a message from a conversation."""
+    """Delete a message from a platform-chat conversation."""
     conversation = await Conversation.filter(
         id=conversation_id,
         user=current_user,
+        **history_origin_filter(),
     ).first()
 
     if not conversation:

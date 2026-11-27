@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
+mock.module('@/components/api-key-history-filter', () => ({ ApiKeyHistoryFilter: () => null }))
+
 const getAgent = mock(() => Promise.resolve({ id: 'agent-1', name: 'Support Agent' }))
-const getAgentConversations = mock(() => Promise.resolve({ items: [], total: 0, page: 1, page_size: 20 }))
-const getConversation = mock()
-const deleteConversation = mock()
+const getAgentLogConversations = mock(() => Promise.resolve({ items: [], total: 0, page: 1, page_size: 20 }))
+const getAgentLogConversation = mock()
+const deleteAgentLogConversation = mock()
 const push = mock()
 const onOpenChange = mock()
 
@@ -54,10 +56,17 @@ mock.module('@/hooks/use-infinite-scroll', () => ({
   },
 }))
 mock.module('@/lib/api', () => ({
-  agentsApi: { getAgent, getAgentConversations, getConversation, deleteConversation },
+  agentsApi: { getAgent, getAgentLogConversations, getAgentLogConversation, deleteAgentLogConversation },
 }))
 mock.module('@/lib/utils/message-converter', () => ({
-  convertBackendMessages: (messages: Array<{ id: string }>) => messages.map((message) => ({ id: message.id })),
+  convertBackendMessages: (messages: Array<{ id: string }>) => messages.map((message) => ({
+    id: message.id,
+    parts: [
+      { type: 'text', text: 'Hi' },
+      { type: 'image', url: '/api/v1/upload/files/agent-attachments/2026/09/image.png' },
+      { type: 'file', url: 'https://example.test/file.txt' },
+    ],
+  })),
 }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
@@ -154,9 +163,9 @@ async function renderLoadedPage() {
 
 beforeEach(() => {
   getAgent.mockClear()
-  getAgentConversations.mockClear()
-  getConversation.mockClear()
-  deleteConversation.mockClear()
+  getAgentLogConversations.mockClear()
+  getAgentLogConversation.mockClear()
+  deleteAgentLogConversation.mockClear()
   push.mockClear()
   onOpenChange.mockClear()
   params = { id: 'agent-1' }
@@ -174,7 +183,7 @@ describe('platform agent logs page', () => {
   })
 
   test('loads conversations, opens a detail, and loads the next page when the sentinel intersects', async () => {
-    getAgentConversations.mockResolvedValue({
+    getAgentLogConversations.mockResolvedValue({
       items: [{
         id: 'conversation-1',
         title: '',
@@ -186,10 +195,10 @@ describe('platform agent logs page', () => {
       page: 1,
       page_size: 20,
     })
-    getConversation.mockResolvedValue({ id: 'conversation-1', messages: [] })
+    getAgentLogConversation.mockResolvedValue({ id: 'conversation-1', messages: [] })
 
     const page = await renderLoadedPage()
-    expect(getAgentConversations).toHaveBeenCalledWith('agent-1', {
+    expect(getAgentLogConversations).toHaveBeenCalledWith('agent-1', {
       page: 1,
       pageSize: 20,
       search: undefined,
@@ -201,10 +210,10 @@ describe('platform agent logs page', () => {
     expect(find(page, (tree) => tree.type === 'div' && tree.props['aria-hidden'] === true)).toBeDefined()
 
     await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
-    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(getAgentLogConversation).toHaveBeenCalledWith('agent-1', 'conversation-1')
 
     await infiniteOptions?.onLoadMore()
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
   })
 
   test('applies search and select filters and clears the search', async () => {
@@ -214,7 +223,7 @@ describe('platform agent logs page', () => {
 
     page = renderLogsPage()
     await flush()
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'billing' }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'billing' }))
 
     const selects: Tree[] = []
     const collect = (node: ReactNode) => {
@@ -230,14 +239,14 @@ describe('platform agent logs page', () => {
     ;(selects[1].props.onValueChange as (value: string) => void)('message_count')
     renderLogsPage()
     await flush()
-    expect(getAgentConversations.mock.calls.at(-1)?.[1]).toMatchObject({ sortBy: 'message_count' })
-    expect(getAgentConversations.mock.calls.at(-1)?.[1]?.createdAfter).toBeString()
+    expect(getAgentLogConversations.mock.calls.at(-1)?.[1]).toMatchObject({ sortBy: 'message_count' })
+    expect(getAgentLogConversations.mock.calls.at(-1)?.[1]?.createdAfter).toBeString()
 
     page = renderLogsPage()
     ;(find(page, (tree) => tree.type === 'button' && !tree.props['aria-label']).props.onClick as () => void)()
     renderLogsPage()
     await flush()
-    expect(getAgentConversations.mock.calls.at(-1)?.[1]?.search).toBeUndefined()
+    expect(getAgentLogConversations.mock.calls.at(-1)?.[1]?.search).toBeUndefined()
   })
   test('uses the selected 30-day and 90-day filters in conversation requests', async () => {
     let page = await renderLoadedPage()
@@ -256,7 +265,7 @@ describe('platform agent logs page', () => {
       ;(selects[0].props.onValueChange as (value: string) => void)(filter)
       page = renderLogsPage()
       await flush()
-      const request = getAgentConversations.mock.calls.at(-1)?.[1]
+      const request = getAgentLogConversations.mock.calls.at(-1)?.[1]
       expect(request?.createdAfter).toBeString()
       expect(Date.parse(request?.createdAfter ?? '')).toBeLessThanOrEqual(Date.now())
       expect(request?.sortBy).toBe('created_at')
@@ -264,27 +273,27 @@ describe('platform agent logs page', () => {
   })
 
   test('confirms deletion and refreshes the first conversation page', async () => {
-    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    getAgentLogConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     await renderLoadedPage()
     state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
 
-    expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect(deleteAgentLogConversation).toHaveBeenCalledWith('agent-1', 'conversation-1')
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
     expect(state[14]).toBeNull()
   })
 
   test('shows a manual retry when the initial conversation load fails', async () => {
-    getAgentConversations.mockRejectedValue(new Error('unavailable'))
+    getAgentLogConversations.mockRejectedValue(new Error('unavailable'))
 
     const page = await renderLoadedPage()
     await flush()
 
     expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'loadFailed')).toBeDefined()
 
-    getAgentConversations.mockResolvedValue({
+    getAgentLogConversations.mockResolvedValue({
       items: [{ id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' }],
       total: 1,
       page: 1,
@@ -293,13 +302,13 @@ describe('platform agent logs page', () => {
     const retry = find(page, (tree) => tree.type === 'button' && tree.props.children === 'retry')
     await (retry.props.onClick as () => Promise<void>)()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
     expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-1'])
     expect(state[7]).toBeNull()
   })
 
   test('closes a conversation drawer after deleting its selected conversation', async () => {
-    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    getAgentLogConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     await renderLoadedPage()
     state[11] = true
     state[12] = { id: 'conversation-1', messages: [] }
@@ -312,38 +321,38 @@ describe('platform agent logs page', () => {
     expect(state[11]).toBe(false)
   })
   test('opens the drawer when conversation detail cannot be loaded', async () => {
-    getAgentConversations.mockResolvedValue({
+    getAgentLogConversations.mockResolvedValue({
       items: [{ id: 'conversation-1', title: 'Billing', message_count: 1, created_at: '', updated_at: '' }],
       total: 1,
       page: 1,
       page_size: 20,
     })
-    getConversation.mockRejectedValueOnce(new Error('unavailable'))
+    getAgentLogConversation.mockRejectedValueOnce(new Error('unavailable'))
     const page = await renderLoadedPage()
 
     await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
 
-    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(getAgentLogConversation).toHaveBeenCalledWith('agent-1', 'conversation-1')
     expect(state[11]).toBe(true)
     expect(state[13]).toBe(false)
   })
 
   test('closes the delete confirmation when deletion fails', async () => {
-    deleteConversation.mockRejectedValueOnce(new Error('unavailable'))
+    deleteAgentLogConversation.mockRejectedValueOnce(new Error('unavailable'))
     await renderLoadedPage()
     state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
 
-    expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
+    expect(deleteAgentLogConversation).toHaveBeenCalledWith('agent-1', 'conversation-1')
     expect(state[14]).toBeNull()
   })
 
 
 
   test('shows the search-specific empty state after a filtered request returns no matches', async () => {
-    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    getAgentLogConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     let page = await renderLoadedPage()
 
     const search = find(page, (tree) => tree.type === 'input')
@@ -352,7 +361,7 @@ describe('platform agent logs page', () => {
     await flush()
     page = renderLogsPage()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'missing topic' }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'missing topic' }))
     expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'noSearchResults')).toBeDefined()
   })
 
@@ -376,7 +385,7 @@ describe('platform agent logs page', () => {
       page: 2,
       page_size: 20,
     }
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
       Promise.resolve(options.page === 2 ? pageTwo : pageOne)
     )
 
@@ -386,7 +395,7 @@ describe('platform agent logs page', () => {
 
     await infiniteOptions?.onLoadMore()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
     expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual([
       'conversation-1',
       'conversation-2',
@@ -407,19 +416,19 @@ describe('platform agent logs page', () => {
       page: 2,
       page_size: 20,
     }
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
       Promise.resolve(options.page === 2 ? pageTwo : pageOne)
     )
 
     await renderLoadedPage()
     await flush()
 
-    const callsBefore = getAgentConversations.mock.calls.length
+    const callsBefore = getAgentLogConversations.mock.calls.length
     const first = infiniteOptions?.onLoadMore()
     const second = infiniteOptions?.onLoadMore()
     await Promise.all([first, second])
 
-    expect(getAgentConversations.mock.calls.length).toBe(callsBefore + 1)
+    expect(getAgentLogConversations.mock.calls.length).toBe(callsBefore + 1)
     expect(state[2]).toHaveLength(1)
   })
 
@@ -430,7 +439,7 @@ describe('platform agent logs page', () => {
       page: 1,
       page_size: 20,
     }
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
       Promise.resolve(options.page === 2
         ? { items: [], total: 41, page: 2, page_size: 20 }
         : pageOne)
@@ -442,7 +451,7 @@ describe('platform agent logs page', () => {
 
     await infiniteOptions?.onLoadMore()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
     expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-1'])
     expect(state[3]).toBe(1)
 
@@ -457,7 +466,7 @@ describe('platform agent logs page', () => {
       page: 1,
       page_size: 20,
     }
-    getAgentConversations.mockImplementation(() => Promise.resolve(pageOne))
+    getAgentLogConversations.mockImplementation(() => Promise.resolve(pageOne))
     const page = await renderLoadedPage()
     await flush()
 
@@ -465,7 +474,7 @@ describe('platform agent logs page', () => {
       items: Array<{ id: string; title: string; message_count: number; created_at: string; updated_at: string }>
       total: number
     }>()
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) => {
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) => {
       if (options.page === 2) return stalePage.promise
       return Promise.resolve({
         items: [{ id: 'conversation-new', title: 'New', message_count: 1, created_at: '', updated_at: '' }],
@@ -491,7 +500,7 @@ describe('platform agent logs page', () => {
     renderLogsPage()
     await flush()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
     expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-new'])
 
     stalePage.resolve({
@@ -516,7 +525,7 @@ describe('platform agent logs page', () => {
       page: 2,
       page_size: 20,
     }
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
       options.page === 2 ? Promise.reject(new Error('unavailable')) : Promise.resolve(pageOne)
     )
     await renderLoadedPage()
@@ -532,13 +541,13 @@ describe('platform agent logs page', () => {
     expect(infiniteOptions?.hasMore).toBe(false)
     await flush()
 
-    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+    getAgentLogConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
       Promise.resolve(options.page === 2 ? pageTwo : pageOne)
     )
     const retry = find(page, (tree) => tree.type === 'button' && tree.props.children === 'retry')
     await (retry.props.onClick as () => Promise<void>)()
 
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect(getAgentLogConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
     expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual([
       'conversation-1',
       'conversation-2',
@@ -554,7 +563,7 @@ describe('platform agent logs page', () => {
     ;(find(page, (tree) => tree.type === 'alert-dialog').props.onOpenChange as (open: boolean) => void)(false)
 
     expect(state[14]).toBeNull()
-    expect(deleteConversation).not.toHaveBeenCalled()
+    expect(deleteAgentLogConversation).not.toHaveBeenCalled()
   })
 
   test('routes away when the agent request fails', async () => {
@@ -587,7 +596,12 @@ describe('platform agent logs page', () => {
 
     const header = find(drawer, (tree) => tree.type === 'conversation-drawer-header')
     expect(header.props).toMatchObject({ title: 'Install help', totalTokens: 6, agentName: 'Support Agent' })
-    expect(find(drawer, (tree) => tree.type === 'chat-message' && tree.props.message.id === 'message-1')).toBeDefined()
+    const message = find(drawer, (tree) => tree.type === 'chat-message' && tree.props.message.id === 'message-1')
+    expect(message.props.message.parts).toEqual([
+      { type: 'text', text: 'Hi' },
+      { type: 'image', url: '/api/v1/upload/files/agent-attachments/2026/09/image.png?log_conversation_id=conversation-1' },
+      { type: 'file', url: 'https://example.test/file.txt' },
+    ])
   })
 
   test('renders the drawer loading spinner without a conversation', () => {

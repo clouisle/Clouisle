@@ -8,6 +8,7 @@ idempotent replay and the durable AgentRun resume exactly as the routes do.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -94,7 +95,7 @@ async def _run(
     api_key_id=None,
 ) -> AgentRun:
     conversation = await Conversation.create(
-        id=uuid4(), agent_id=agent.id, user_id=owner.id
+        id=uuid4(), agent_id=agent.id, user_id=owner.id, api_key_id=api_key_id
     )
     return await AgentRun.create(
         id=uuid4(),
@@ -403,7 +404,7 @@ async def test_legacy_execution_binding_uses_entrypoint_id_and_stays_decidable()
         key = await _api_key(owner, agents=[agent])
         other_key = await _api_key(owner, agents=[agent])
         tool = await _tool(team)
-        run = await _run(owner, agent)
+        run = await _run(owner, agent, api_key_id=key.id)
         execution = await _api_key_execution(
             owner=owner, team=team, tool=tool, run=run, key=key
         )
@@ -431,8 +432,8 @@ async def test_legacy_execution_binding_uses_entrypoint_id_and_stays_decidable()
 
 
 @pytest.mark.asyncio
-async def test_run_reads_are_bound_to_the_submitting_key():
-    """Reconnect/read endpoints must not accept another key of the owner."""
+async def test_run_reads_follow_the_conversation_history_origin():
+    """Reconnect/read endpoints never cross the chat-surface boundary."""
     from app.api.v1.endpoints import chat as chat_endpoints
 
     async with _database():
@@ -443,56 +444,72 @@ async def test_run_reads_are_bound_to_the_submitting_key():
         other_key = await _api_key(owner, agents=[agent])
         run = await _run(owner, agent, status=AgentRunStatus.RUNNING, api_key_id=key.id)
 
+        # The submitting key reaches its own run.
         loaded = await chat_endpoints._load_owned_run(
             agent.id, run.id, owner, api_key=key
         )
         assert loaded.id == run.id
-        assert (
-            await chat_endpoints._load_owned_run(agent.id, run.id, owner)
-        ).id == run.id
 
-        with pytest.raises(BusinessError) as foreign_error:
+        # An administrator's key is not an administrator session. Even a
+        # mismatched historical binding must not expose a different user's run.
+        outsider = await _user("run-read-outsider")
+        foreign_run = await _run(
+            outsider, agent, status=AgentRunStatus.RUNNING, api_key_id=key.id
+        )
+        owner.is_superuser = True
+        with pytest.raises(BusinessError) as foreign_owner:
             await chat_endpoints._load_owned_run(
-                agent.id, run.id, owner, api_key=other_key
+                agent.id, foreign_run.id, owner, api_key=key
             )
         _assert_business_error(
-            foreign_error, code=ResponseCode.NOT_FOUND, status_code=404
+            foreign_owner, code=ResponseCode.NOT_FOUND, status_code=404
+        )
+        owner.is_superuser = False
+
+        # Neither the platform chat nor another key of the same owner does.
+        for auth_key in (None, other_key):
+            with pytest.raises(BusinessError) as foreign_error:
+                await chat_endpoints._load_owned_run(
+                    agent.id, run.id, owner, api_key=auth_key
+                )
+            _assert_business_error(
+                foreign_error, code=ResponseCode.NOT_FOUND, status_code=404
+            )
+
+        # An unbound run belongs to the platform chat; a key never inherits it.
+        plain = await _run(owner, agent, status=AgentRunStatus.RUNNING)
+        assert (
+            await chat_endpoints._load_owned_run(agent.id, plain.id, owner)
+        ).id == plain.id
+        with pytest.raises(BusinessError) as unbound_error:
+            await chat_endpoints._load_owned_run(agent.id, plain.id, owner, api_key=key)
+        _assert_business_error(
+            unbound_error, code=ResponseCode.NOT_FOUND, status_code=404
         )
 
-        legacy = await _run(owner, agent, status=AgentRunStatus.RUNNING)
-        legacy.worker_payload = {
-            "tool_entrypoint": "api_key",
-            "tool_entrypoint_id": str(key.id),
-        }
-        await legacy.save(update_fields=["worker_payload"])
-        assert (
-            await chat_endpoints._load_owned_run(
-                agent.id, legacy.id, owner, api_key=key
-            )
-        ).id == legacy.id
-        with pytest.raises(BusinessError):
-            await chat_endpoints._load_owned_run(
-                agent.id, legacy.id, owner, api_key=other_key
-            )
-
+        # Credential evidence in the payload alone leaves a mixed row closed to
+        # every surface until the backfill records the conversation's origin.
         payload_bound = await _run(owner, agent, status=AgentRunStatus.RUNNING)
         payload_bound.worker_payload = {"api_key_id": str(key.id)}
         await payload_bound.save(update_fields=["worker_payload"])
-        assert (
-            await chat_endpoints._load_owned_run(
-                agent.id, payload_bound.id, owner, api_key=key
-            )
-        ).id == payload_bound.id
-        with pytest.raises(BusinessError):
-            await chat_endpoints._load_owned_run(
-                agent.id, payload_bound.id, owner, api_key=other_key
+        for auth_key in (None, key, other_key):
+            with pytest.raises(BusinessError) as mixed_error:
+                await chat_endpoints._load_owned_run(
+                    agent.id, payload_bound.id, owner, api_key=auth_key
+                )
+            _assert_business_error(
+                mixed_error, code=ResponseCode.NOT_FOUND, status_code=404
             )
 
-        # A run persisted before API-key binding keeps owner-scoped access.
-        plain = await _run(owner, agent, status=AgentRunStatus.RUNNING)
-        assert (
-            await chat_endpoints._load_owned_run(agent.id, plain.id, owner, api_key=key)
-        ).id == plain.id
+        # A quarantined conversation belongs to no chat surface.
+        await Conversation.filter(id=plain.conversation_id).update(
+            api_key_origin_unknown=True
+        )
+        with pytest.raises(BusinessError) as quarantined_error:
+            await chat_endpoints._load_owned_run(agent.id, plain.id, owner)
+        _assert_business_error(
+            quarantined_error, code=ResponseCode.NOT_FOUND, status_code=404
+        )
 
 
 @pytest.mark.asyncio
@@ -649,6 +666,25 @@ async def test_revoked_key_lists_are_empty_even_with_stale_instance():
             page=1, page_size=20, auth_result=(owner, key)
         )
         assert inbox["data"].total == 0
+        with pytest.raises(BusinessError):
+            await get_my_execution(execution_id=execution.id, auth_result=(owner, key))
+
+
+@pytest.mark.asyncio
+async def test_api_key_cannot_read_execution_for_a_login_run():
+    async with _database():
+        owner = await _user("login-run-owner")
+        team = await _team("login-run-team", owner)
+        agent = await _agent(team, "login-run-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=key.id)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+        await AgentRun.filter(id=run.id).update(api_key_id=None, worker_payload={})
+        await Conversation.filter(id=run.conversation_id).update(api_key_id=None)
+
         with pytest.raises(BusinessError):
             await get_my_execution(execution_id=execution.id, auth_result=(owner, key))
 
@@ -847,6 +883,50 @@ async def test_execution_and_run_key_binding_must_agree():
 
 
 @pytest.mark.asyncio
+async def test_run_without_key_evidence_is_not_key_owned():
+    """A run that proves no key identity never authorizes one.
+
+    Key-scoped lists already hide such legacy runs, so accepting an explicit id
+    would make the two access paths disagree. The binding fails closed instead;
+    a pre-column run that still carries the key in its worker payload is proved
+    by that payload and stays decidable.
+    """
+    async with _database():
+        owner = await _user("no-evidence-owner")
+        team = await _team("no-evidence-team", owner)
+        agent = await _agent(team, "no-evidence-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        # Neither the run column nor its worker payload names any key.
+        run = await _run(owner, agent, api_key_id=None)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        assert execution.api_key_id == key.id
+        assert not await service.execution_owned_by_api_key(execution, key)
+
+
+@pytest.mark.asyncio
+async def test_legacy_run_payload_still_proves_the_key():
+    """A pre-column run that names the key in its payload stays decidable."""
+    async with _database():
+        owner = await _user("payload-owner")
+        team = await _team("payload-team", owner)
+        agent = await _agent(team, "payload-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=None)
+        run.worker_payload = {"api_key_id": str(key.id)}
+        await run.save()
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        assert await service.execution_owned_by_api_key(execution, key)
+
+
+@pytest.mark.asyncio
 async def test_key_without_agent_links_keeps_legacy_all_agents_scope():
     """A key with no linked Agents keeps the existing all-Agents contract."""
     async with _database():
@@ -855,7 +935,7 @@ async def test_key_without_agent_links_keeps_legacy_all_agents_scope():
         agent = await _agent(team, "global-agent")
         key = await _api_key(owner)
         tool = await _tool(team)
-        run = await _run(owner, agent)
+        run = await _run(owner, agent, api_key_id=key.id)
         execution = await _api_key_execution(
             owner=owner, team=team, tool=tool, run=run, key=key
         )
@@ -958,7 +1038,7 @@ async def test_idempotent_replay_is_key_bound_and_conflicts_are_reported():
         key = await _api_key(owner, agents=[agent])
         other_key = await _api_key(owner, agents=[agent])
         tool = await _tool(team)
-        run = await _run(owner, agent)
+        run = await _run(owner, agent, api_key_id=key.id)
         execution = await _api_key_execution(
             owner=owner, team=team, tool=tool, run=run, key=key
         )
@@ -1186,7 +1266,7 @@ async def test_revoked_key_cannot_replay_its_own_decision():
         agent = await _agent(team, "revoke-replay-agent")
         key = await _api_key(owner, agents=[agent])
         tool = await _tool(team)
-        run = await _run(owner, agent)
+        run = await _run(owner, agent, api_key_id=key.id)
         execution = await _api_key_execution(
             owner=owner, team=team, tool=tool, run=run, key=key
         )
@@ -1326,3 +1406,83 @@ async def test_api_key_rejection_cancels_and_resumes_with_a_tool_error():
         assert resume["is_error"] is True
         assert "rejected" in resume["result"].lower()
         assert fresh_run.api_key_id == key.id
+
+
+@pytest.mark.asyncio
+async def test_execution_whose_actor_is_not_the_key_owner_is_not_owned():
+    """Binding needs the key owner as the actor, not only the stored key id."""
+    async with _database():
+        owner = await _user("actor-owner")
+        other = await _user("actor-other")
+        team = await _team("actor-team", owner)
+        agent = await _agent(team, "actor-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=key.id)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        await service.ToolExecution.filter(id=execution.id).update(
+            actor_user_id=other.id
+        )
+        moved = await service.get_execution(execution.id)
+
+        assert not await service.execution_owned_by_api_key(moved, key)
+
+
+@pytest.mark.asyncio
+async def test_execution_whose_run_is_gone_is_not_owned():
+    """A dangling run reference is not evidence that this key owns it."""
+    async with _database():
+        owner = await _user("gone-run-owner")
+        team = await _team("gone-run-team", owner)
+        agent = await _agent(team, "gone-run-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=key.id)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        await AgentRun.filter(id=run.id).delete()
+
+        assert not await service.execution_owned_by_api_key(execution, key)
+
+
+@pytest.mark.asyncio
+async def test_legacy_run_proves_its_key_through_the_worker_payload():
+    """A run persisted before the column existed still names its own key."""
+    async with _database():
+        owner = await _user("payload-owner")
+        team = await _team("payload-team", owner)
+        agent = await _agent(team, "payload-agent")
+        key = await _api_key(owner, agents=[agent])
+        tool = await _tool(team)
+        run = await _run(owner, agent, api_key_id=None)
+        execution = await _api_key_execution(
+            owner=owner, team=team, tool=tool, run=run, key=key
+        )
+
+        # The column is empty, as it is for rows written before the cutover.
+        assert (await AgentRun.get(id=run.id)).api_key_id is None
+        assert not await service.execution_owned_by_api_key(
+            await service.get_execution(execution.id), key
+        )
+
+        await AgentRun.filter(id=run.id).update(
+            worker_payload={
+                "tool_entrypoint": "api_key",
+                "tool_entrypoint_id": str(key.id),
+            }
+        )
+        assert await service.execution_owned_by_api_key(execution, key)
+
+
+@pytest.mark.asyncio
+async def test_scope_builders_hold_no_rows_without_a_credential_id():
+    """A key object without an id selects nothing instead of everything."""
+    anonymous = SimpleNamespace(id=None)
+
+    assert await service._api_key_execution_scope(anonymous) is None
+    assert await service._api_key_request_scope(anonymous) is None

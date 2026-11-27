@@ -117,6 +117,10 @@ async def test_maps_inputs_runs_child_and_wraps_outputs(dependencies):
         team_id=None,
         stream=False,
         origin=workflow_origin(parent.workflow_id),
+        # A nested run is created with its parent's credential, before the
+        # parent/root backfill makes it observable.
+        api_key_id=None,
+        api_key_origin_unknown=False,
     )
     WorkflowRun.filter.assert_called_once_with(id=sub_run_id)
     assert child.parent_run_id == parent.id

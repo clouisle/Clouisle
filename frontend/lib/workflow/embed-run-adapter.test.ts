@@ -1,27 +1,71 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createEmbedWorkflowRunAdapter } from '@/lib/workflow/embed-run-adapter'
 import type { RunSnapshot } from '@/lib/workflow/run-adapter'
+import { extractVariables } from '@/lib/utils/extract-variables'
+
+const getWorkflowInfo = mock(async () => ({
+  id: 'embed-1', name: 'Embed Flow', description: '', icon: null, variables: [], embed_config: {},
+}))
+const runWorkflow = mock(async () => ({ run_id: 'run-1' }))
+const streamWorkflowRun = mock(() => () => {})
+
+const serverRun = {
+  id: 'run-1',
+  workflow_id: 'embed-1',
+  trigger_type: 'manual',
+  is_debug: false,
+  status: 'success',
+  inputs: { query: 'hello' },
+  outputs: { answer: 'ok' },
+  created_at: '2026-01-01T00:00:00Z',
+  total_nodes: 1,
+  executed_nodes: 1,
+}
+const serverNodes = [
+  { id: 'node-1', run_id: 'run-1', node_id: 'start', node_type: 'start', node_name: 'Start', execution_order: 0, status: 'success', outputs: null, retry_count: 0 },
+]
+
+const getWorkflowRuns = mock(async () => ({
+  items: [serverRun],
+  total: 1,
+  page: 1,
+  page_size: 20,
+}))
+const getWorkflowRun = mock(async () => serverRun)
+const getWorkflowRunNodes = mock(async () => serverNodes)
 
 mock.module('@/lib/api/embed', () => ({
   embedApi: {
-    getWorkflowInfo: mock(async () => ({
-      id: 'embed-1', name: 'Embed Flow', description: '', icon: null, variables: [], embed_config: {},
-    })),
-    runWorkflow: mock(async () => ({ run_id: 'run-1' })),
-    streamWorkflowRun: mock(() => () => {}),
+    getWorkflowInfo,
+    runWorkflow,
+    streamWorkflowRun,
+    getWorkflowRuns,
+    getWorkflowRun,
+    getWorkflowRunNodes,
   },
 }))
 
-const store = new Map<string, string>()
-const localStorageMock = {
-  getItem: (key: string) => store.get(key) ?? null,
-  setItem: (key: string, value: string) => { store.set(key, value) },
-  removeItem: (key: string) => { store.delete(key) },
-  clear: () => { store.clear() },
-}
-;(globalThis as unknown as { localStorage: typeof localStorageMock }).localStorage = localStorageMock
+/** Storage twin that also supports the key enumeration the purge needs. */
+class MemoryStorage {
+  private data = new Map<string, string>()
 
-beforeEach(() => store.clear())
+  get length() { return this.data.size }
+  key(index: number) { return Array.from(this.data.keys())[index] ?? null }
+  getItem(key: string) { return this.data.get(key) ?? null }
+  setItem(key: string, value: string) { this.data.set(key, value) }
+  removeItem(key: string) { this.data.delete(key) }
+  clear() { this.data.clear() }
+}
+
+const storage = new MemoryStorage()
+;(globalThis as unknown as { localStorage: MemoryStorage }).localStorage = storage
+
+beforeEach(() => {
+  storage.clear()
+  getWorkflowRuns.mockClear()
+  getWorkflowRun.mockClear()
+  getWorkflowRunNodes.mockClear()
+})
 
 const snapshot: RunSnapshot = {
   runId: 'run-1',
@@ -44,6 +88,34 @@ describe('createEmbedWorkflowRunAdapter', () => {
     expect(workflow.status).toBe('published')
   })
 
+  test('projects start-node parameters into the run form inputs', async () => {
+    getWorkflowInfo.mockImplementationOnce(async () => ({
+      id: 'embed-1',
+      name: 'Embed Flow',
+      description: '',
+      icon: null,
+      variables: [],
+      embed_config: {},
+      input_parameters: [
+        { name: 'query', type: 'text', required: true },
+        { name: 'limit', type: 'number', required: false, default: 5 },
+      ],
+    }))
+
+    const workflow = await createEmbedWorkflowRunAdapter(apiKey).getWorkflow('embed-1')
+    const inputs = extractVariables(workflow, 'workflow')
+
+    expect(inputs.map((input) => input.name)).toEqual(['query', 'limit'])
+    expect(inputs[0].required).toBe(true)
+    expect(inputs[1].required).toBe(false)
+    expect(inputs[1].default).toBe(5)
+  })
+
+  test('leaves the definition empty when the workflow takes no inputs', async () => {
+    const workflow = await createEmbedWorkflowRunAdapter(apiKey).getWorkflow('embed-1')
+    expect(extractVariables(workflow, 'workflow')).toEqual([])
+  })
+
   test('createRunApi wires embed endpoints', async () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
     const api = adapter.createRunApi()
@@ -53,90 +125,75 @@ describe('createEmbedWorkflowRunAdapter', () => {
     await expect(api.cancelWorkflowRun('run-1')).resolves.toBeUndefined()
   })
 
-  test('saveRun persists to localStorage and loadHistory reads it back', async () => {
+  test('loadHistory reads the key-scoped server run list', async () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    adapter.saveRun('embed-1', snapshot)
     const history = await adapter.loadHistory('embed-1')
+
+    expect(getWorkflowRuns).toHaveBeenCalledWith('embed-1', apiKey, { pageSize: 20 })
     expect(history).toHaveLength(1)
     expect(history[0].id).toBe('run-1')
     expect(history[0].workflow_id).toBe('embed-1')
     expect(history[0].status).toBe('success')
-    expect(history[0].executed_nodes).toBe(1)
   })
 
-  test('saveRun caps history at 20 entries', async () => {
+  test('loadHistoryPage forwards server pagination', async () => {
+    getWorkflowRuns.mockImplementationOnce(async () => ({ items: [], total: 42, page: 3, page_size: 10 }))
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    for (let i = 0; i < 25; i++) {
-      adapter.saveRun('embed-1', { ...snapshot, runId: `run-${i}` })
-    }
-    const history = await adapter.loadHistory('embed-1')
-    expect(history).toHaveLength(20)
-    expect(history[0].id).toBe('run-24')
+
+    const page = await adapter.loadHistoryPage?.('embed-1', { page: 3, pageSize: 10 })
+
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith('embed-1', apiKey, { page: 3, pageSize: 10 })
+    expect(page).toEqual({ items: [], total: 42 })
   })
 
-  test('loadRunDetail reconstructs run and node executions', async () => {
+  test('loadRunDetail reconstructs run and node executions from the server', async () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    adapter.saveRun('embed-1', snapshot)
     const detail = await adapter.loadRunDetail('embed-1', 'run-1')
+
+    expect(getWorkflowRun).toHaveBeenCalledWith('embed-1', 'run-1', apiKey)
+    expect(getWorkflowRunNodes).toHaveBeenCalledWith('embed-1', 'run-1', apiKey)
     expect(detail.run.id).toBe('run-1')
-    expect(detail.run.workflow_id).toBe('embed-1')
     expect(detail.run.inputs).toEqual({ query: 'hello' })
     expect(detail.nodes).toHaveLength(1)
     expect(detail.nodes[0].node_type).toBe('start')
-    expect(detail.nodes[0].run_id).toBe('run-1')
   })
 
-  test('loadRunDetail throws when the run is not in local history', async () => {
-    const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    await expect(adapter.loadRunDetail('embed-1', 'missing')).rejects.toThrow('run not found')
+  test('a second credential cannot read the first key run history', async () => {
+    const keyA = createEmbedWorkflowRunAdapter('key-a')
+    const keyB = createEmbedWorkflowRunAdapter('key-b')
+
+    expect(await keyA.loadHistory('embed-1')).toHaveLength(1)
+
+    // Stand-in for the server's answer to the second key: nothing belongs to it.
+    getWorkflowRuns.mockImplementationOnce(async () => ({ items: [], total: 0, page: 1, page_size: 20 }))
+    getWorkflowRun.mockImplementationOnce(async () => {
+      throw new Error('workflow run not found')
+    })
+
+    expect(await keyB.loadHistory('embed-1')).toEqual([])
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith('embed-1', 'key-b', { pageSize: 20 })
+    await expect(keyB.loadRunDetail('embed-1', 'run-1')).rejects.toThrow()
   })
 
-  test('loadHistory returns empty when storage is empty', async () => {
+  test('saveRun keeps nothing in the browser', () => {
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    const history = await adapter.loadHistory('embed-1')
-    expect(history).toEqual([])
+    adapter.saveRun('embed-1', snapshot)
+    expect(storage.length).toBe(0)
   })
 
-  test('saveRun derives title from query input or runId', async () => {
-    const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    adapter.saveRun('embed-1', { ...snapshot, inputs: null })
-    const history = await adapter.loadHistory('embed-1')
-    expect(history).toHaveLength(1)
-    adapter.saveRun('embed-1', { ...snapshot, runId: 'run-2', inputs: { query: 'search term' } })
-    const updated = await adapter.loadHistory('embed-1')
-    expect(updated).toHaveLength(2)
-    expect(updated[0].id).toBe('run-2')
-  })
+  test('purges the legacy run cache instead of serving it', async () => {
+    const stale = JSON.stringify([
+      { runId: 'legacy-run', status: 'success', outputs: { leaked: true }, nodes: [], createdAt: '2026-01-01T00:00:00Z', title: 'key A run', inputs: { query: 'private' } },
+    ])
+    storage.setItem('clouisle:embed:runs:workflow:embed-1', stale)
+    storage.setItem('clouisle:embed:runs:workflow:other-flow', stale)
+    storage.setItem('clouisle:embed:history:agent:other-agent', stale)
 
-  test('falls back to empty history when storage throws', async () => {
-    const originalGetItem = store.get.bind(store)
-    store.set('clouisle:embed:runs:workflow:embed-1', '{invalid json')
     const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    const history = await adapter.loadHistory('embed-1')
-    expect(history).toEqual([])
-    expect(originalGetItem).toBeDefined()
-  })
 
-  test('loadRunDetail falls back to empty when the stored payload is corrupt', async () => {
-    store.set('clouisle:embed:runs:workflow:embed-1', 'not-json')
-    const adapter = createEmbedWorkflowRunAdapter(apiKey)
-    await expect(adapter.loadRunDetail('embed-1', 'run-1')).rejects.toThrow('run not found')
+    expect(storage.getItem('clouisle:embed:runs:workflow:embed-1')).toBeNull()
+    expect(storage.getItem('clouisle:embed:runs:workflow:other-flow')).toBeNull()
+    expect(storage.getItem('clouisle:embed:history:agent:other-agent')).toBeNull()
+    expect((await adapter.loadHistory('embed-1')).map((item) => item.id)).toEqual(['run-1'])
   })
 })
-
-  test('loadHistoryPage slices local history like the authenticated adapter', async () => {
-    const adapter = createEmbedWorkflowRunAdapter('key-123')
-    // 本地存储有 MAX_RUNS=20 上限
-    for (let index = 1; index <= 22; index += 1) {
-      adapter.saveRun('embed-1', { ...snapshot, runId: `run-${index}`, inputs: { query: `q-${index}` } })
-    }
-
-    const page1 = await adapter.loadHistoryPage('embed-1', { page: 1, pageSize: 20 })
-    expect(page1.total).toBe(20)
-    expect(page1.items).toHaveLength(20)
-    expect(page1.items[0].id).toBe('run-22')
-
-    const page2 = await adapter.loadHistoryPage('embed-1', { page: 2, pageSize: 20 })
-    expect(page2.items).toHaveLength(0)
-    expect(page2.total).toBe(20)
-  })

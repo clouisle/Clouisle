@@ -8,6 +8,7 @@ This section groups internal design documents by topic.
 - [Section index](app-platform/README.md)
 - [Agent and workflow spec](app-platform/AGENT_WORKFLOW_SPEC.md)
 - [Workflow engine architecture](app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md)
+- [Workflow access policy draft](app-platform/WORKFLOW_ACCESS_POLICY_SPEC.md)
 - [Workflow node spec](app-platform/WORKFLOW_NODE_SPEC.md)
 - [Tool system spec](app-platform/TOOL_SYSTEM_SPEC.md)
 - [MCP protocol coverage](app-platform/MCP_PROTOCOL_COVERAGE.md)

@@ -342,7 +342,10 @@ async def test_get_or_create_conversation_covers_lookup_create_and_stats(monkeyp
         is created
     )
     create.assert_awaited_once_with(
-        agent=current_agent, user=current_user, variables={"topic": "tests"}
+        agent=current_agent,
+        user=current_user,
+        variables={"topic": "tests"},
+        api_key_id=None,
     )
     agent_filter.assert_called_once_with(id=current_agent.id)
     team_filter.assert_called_once_with(id=current_agent.team.id)

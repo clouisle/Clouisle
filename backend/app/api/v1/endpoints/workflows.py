@@ -19,6 +19,14 @@ from app.api.team_access import check_team_access, check_team_permission
 from app.api.workflow_access import (
     check_workflow_access,
     workflow_read_visibility_filter,
+    workflow_team_role,
+)
+from app.api.workflow_run_access import (
+    api_key_may_read_run,
+    get_run_history_principal,
+    run_history_filter,
+    run_not_found_error,
+    split_run_principal,
 )
 from app.core.config import settings
 from app.core.i18n import t
@@ -65,6 +73,7 @@ from app.services.workflow.errors import (
     get_public_workflow_error_key,
     translate_public_workflow_error,
 )
+from app.services.workflow import definition_rules
 from app.services.workflow.pause_approvers import (
     remove_pause_pending_notification_for,
     remove_pause_pending_notifications,
@@ -113,6 +122,30 @@ def get_pause_request_config(
         return None
     config = data.get("pauseConfig") or data.get("config")
     return config if isinstance(config, dict) else None
+
+
+async def reject_container_approval_nodes(team_id: UUID, definition: object) -> None:
+    """Refuse a definition that would need to pause inside a container.
+
+    An iteration/loop body runs one round at a time and cannot resume mid-round,
+    so a pause node — or a tool node whose tool can require approval — cannot
+    live there. Rejecting it at save time keeps the editor honest; the runtime
+    guard still fails such a run closed if the tool policy changes later.
+    """
+    problems = await definition_rules.validate_container_nodes(team_id, definition)
+    if not problems:
+        return
+    node_id, reason = problems[0]
+    raise BusinessError(
+        code=ResponseCode.VALIDATION_ERROR,
+        msg_key=(
+            "workflow_pause_inside_container"
+            if reason == definition_rules.PAUSE_REASON
+            else "workflow_approval_inside_container"
+        ),
+        status_code=400,
+        node=node_id,
+    )
 
 
 def pause_submission_is_valid(
@@ -207,6 +240,7 @@ async def list_all_workflow_runs(
     status: list[RunStatus] | None = Query(None),
     trigger_type: list[TriggerType] | None = Query(None),
     user_id: list[UUID] | None = Query(None),
+    api_key_id: UUID | None = None,
     is_debug: bool | None = Query(None),
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -267,6 +301,8 @@ async def list_all_workflow_runs(
         query = query.filter(trigger_type__in=trigger_type)
     if user_id:
         query = query.filter(triggered_by_id__in=user_id)
+    if api_key_id is not None:
+        query = query.filter(api_key_id=api_key_id)
     if is_debug is not None:
         query = query.filter(is_debug=is_debug)
 
@@ -680,6 +716,7 @@ async def update_workflow(
     if workflow_in.icon is not None:
         workflow.icon = workflow_in.icon
     if workflow_in.definition is not None:
+        await reject_container_approval_nodes(workflow.team_id, workflow_in.definition)
         invalid_approvers = await validate_pause_approvers(
             workflow.team_id, workflow_in.definition
         )
@@ -738,6 +775,176 @@ async def update_workflow(
     )
 
 
+@router.get("/{workflow_id}/access-policy", response_model=Response[dict])
+async def get_workflow_access_policy(
+    workflow_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Read one workflow's access policy plus the caller's effective access.
+
+    Managing a policy is an owner/team-admin action, so this deliberately does
+    not require the ``edit`` operation to be allowed: otherwise a policy could
+    lock every administrator out of its own configuration.
+    """
+    from app.schemas.workflow_access import normalize_workflow_access_policy
+    from app.services.workflow_access import (
+        AccessPrincipal,
+        describe_effective_access,
+    )
+
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True, enforce_policy=False
+    )
+    policy = normalize_workflow_access_policy(workflow.access_policy)
+    return success(
+        data={
+            "policy": policy.model_dump(mode="json"),
+            "version": workflow.access_policy_version,
+            "effective": describe_effective_access(
+                workflow,
+                AccessPrincipal.from_parts(
+                    current_user,
+                    team_role=await workflow_team_role(workflow, current_user),
+                ),
+            ),
+        }
+    )
+
+
+@router.put("/{workflow_id}/access-policy", response_model=Response[dict])
+async def update_workflow_access_policy(
+    workflow_id: UUID,
+    payload: dict,
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Replace one workflow's access policy.
+
+    The body is the policy document itself; an empty ``{"operations": {}}``
+    restores full inheritance of the legacy rules.
+    """
+    from app.schemas.workflow_access import normalize_workflow_access_policy
+    from app.services.workflow_access import (
+        AccessPrincipal,
+        describe_effective_access,
+    )
+
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True, enforce_policy=False
+    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
+    try:
+        policy = normalize_workflow_access_policy(payload)
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_access_policy_invalid",
+            status_code=400,
+            data={"detail": str(exc)},
+        ) from exc
+
+    audit_before = AuditLogService.snapshot(workflow, "workflow")
+    workflow.access_policy = policy.model_dump(mode="json", exclude_defaults=True)
+    workflow.access_policy_version = int(workflow.access_policy_version or 1) + 1
+    await workflow.save()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="update_workflow_access_policy",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"team_id": str(workflow.team_id)},
+        changes=AuditLogService.build_changes(
+            audit_before, AuditLogService.snapshot(workflow, "workflow")
+        ),
+    )
+
+    return success(
+        data={
+            "policy": policy.model_dump(mode="json"),
+            "version": workflow.access_policy_version,
+            "effective": describe_effective_access(
+                workflow,
+                AccessPrincipal.from_parts(
+                    current_user,
+                    team_role=await workflow_team_role(workflow, current_user),
+                ),
+            ),
+        },
+        msg_key="workflow_access_policy_updated",
+    )
+
+
+@router.post("/{workflow_id}/access-policy/evaluate", response_model=Response[dict])
+async def evaluate_workflow_access_policy(
+    workflow_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+    user_id: UUID | None = Query(default=None),
+    api_key_id: UUID | None = Query(default=None),
+) -> Any:
+    """Preview the policy for one principal without changing anything."""
+    from app.models.api_key import APIKey
+    from app.models.user import User as UserModel
+    from app.services.workflow_access import (
+        AccessPrincipal,
+        describe_effective_access,
+    )
+
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True, enforce_policy=False
+    )
+
+    target_user = current_user
+    if user_id is not None:
+        found_user = await UserModel.get_or_none(id=user_id)
+        if found_user is None:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="user_not_found",
+                status_code=404,
+            )
+        target_user = found_user
+    target_key = (
+        await APIKey.get_or_none(id=api_key_id) if api_key_id is not None else None
+    )
+    if api_key_id is not None and target_key is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="api_key_not_found",
+            status_code=404,
+        )
+
+    team_role = None
+    if workflow.team_id:
+        from app.models.user import TeamMember
+
+        target_member = await TeamMember.filter(
+            team_id=workflow.team_id, user_id=target_user.id
+        ).first()
+        team_role = str(target_member.role) if target_member is not None else None
+
+    # The preview reports the policy answer; it never runs or mutates anything.
+    decision_principal = AccessPrincipal.from_parts(
+        target_user, team_role=team_role, api_key=target_key
+    )
+    effective = describe_effective_access(workflow, decision_principal)
+
+    return success(
+        data={
+            "operations": effective,
+            "principal": {
+                "user_id": str(target_user.id),
+                "team_role": team_role,
+                "api_key_id": str(target_key.id) if target_key else None,
+            },
+        }
+    )
+
+
 @router.delete("/{workflow_id}", response_model=Response[dict])
 async def delete_workflow(
     workflow_id: UUID,
@@ -746,7 +953,7 @@ async def delete_workflow(
 ) -> Any:
     """Delete a workflow and all its runs."""
     workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+        workflow_id, current_user, require_write=True, operation="delete"
     )
 
     workflow_name = workflow.name
@@ -778,7 +985,7 @@ async def publish_workflow(
 ) -> Any:
     """Publish a workflow and save a version snapshot."""
     workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+        workflow_id, current_user, require_write=True, operation="publish"
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
 
@@ -831,7 +1038,7 @@ async def unpublish_workflow(
 ) -> Any:
     """Unpublish a workflow."""
     workflow = await check_workflow_access(
-        workflow_id, current_user, require_write=True
+        workflow_id, current_user, require_write=True, operation="publish"
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
 
@@ -1068,6 +1275,17 @@ async def trigger_workflow_webhook(
                 status_code=403,
             )
 
+    # A webhook caller has no team role and no gate audience, so a policy that
+    # restricts ``run`` also closes this entry point. That is the point: an
+    # administrator who limits a workflow to named roles is also saying it must
+    # not be reachable by an unauthenticated trigger.
+    from app.services.workflow_access import ensure_workflow_operation
+
+    webhook_user = getattr(api_key, "user", None) if api_key else None
+    await ensure_workflow_operation(
+        matched_workflow, "run", user=webhook_user, api_key=api_key
+    )
+
     try:
         normalized_inputs = normalize_webhook_inputs(inputs)
 
@@ -1091,6 +1309,9 @@ async def trigger_workflow_webhook(
             workflow_id=matched_workflow.id,
             trigger_type=TriggerType.WEBHOOK,
             triggered_by_id=user.id,  # Record the API key owner as caller
+            # The exact credential travels with the run: run history for API
+            # keys is bound to it, never to the owner's app sessions.
+            api_key_id=api_key.id if api_key is not None else None,
             is_debug=False,
             status=RunStatus.PENDING,
             inputs=normalized_inputs,
@@ -1143,7 +1364,7 @@ async def run_workflow(
     """
     from app.tasks.workflow import run_workflow_task
 
-    workflow = await check_workflow_access(workflow_id, current_user)
+    workflow = await check_workflow_access(workflow_id, current_user, operation="run")
 
     # Check if workflow is published
     if workflow.status != WorkflowStatus.PUBLISHED:
@@ -1297,7 +1518,7 @@ async def debug_workflow(
 async def stream_workflow_run(
     run_id: UUID,
     from_sequence: int = 0,
-    current_user: User | None = Depends(deps.get_current_user_optional),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key_optional),
 ) -> StreamingResponse:
     """
     Stream workflow execution events via SSE (Server-Sent Events).
@@ -1315,6 +1536,10 @@ async def stream_workflow_run(
     - node_skip: Node skipped (branch not taken)
     - token: LLM token stream
     - output: Final output
+
+    A request made with an API key is bound to that exact credential: another
+    key of the same owner, the owner's app session and unauthenticated callers
+    cannot replay the run.
     """
     from app.services.workflow.stream import stream_to_sse
 
@@ -1333,17 +1558,26 @@ async def stream_workflow_run(
             status_code=404,
         )
 
-    # Check access: allow if webhook trigger (no user) or user has access to workflow
-    if run.triggered_by_id is not None:
-        # User-triggered run, check access
+    current_user, api_key = split_run_principal(auth_result)
+    if api_key is not None:
+        if not api_key_may_read_run(run, api_key):
+            raise run_not_found_error()
+        await deps.check_api_key_workflow_access(api_key, run.workflow_id)
+    else:
+        if (
+            getattr(run, "api_key_origin_unknown", False)
+            or getattr(run, "api_key_id", None) is not None
+        ):
+            raise run_not_found_error()
         if not current_user:
             raise BusinessError(
                 code=ResponseCode.UNAUTHORIZED,
                 msg_key="unauthorized",
                 status_code=401,
             )
+        if run.triggered_by_id != current_user.id:
+            raise run_not_found_error()
         await check_workflow_access(run.workflow_id, current_user)
-    # Webhook-triggered runs (triggered_by_id is None) are publicly accessible
 
     async def event_generator():
         async for event in stream_to_sse(str(run_id), from_sequence):
@@ -1844,16 +2078,25 @@ async def list_my_workflow_runs(
     created_before: datetime | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+    auth_result: Any = Depends(get_run_history_principal),
 ) -> Any:
-    """List the current user's published workflow runs."""
-    await check_workflow_access(workflow_id, current_user)
+    """List the caller's own runs of a published workflow.
 
-    query = WorkflowRun.filter(
-        workflow_id=workflow_id,
-        triggered_by_id=current_user.id,
-        is_debug=False,
-    )
+    A JWT session sees the runs it started from the app; an API key sees exactly
+    the runs that key created. Orchestration logs are the endpoint that shows
+    every source (see ``app.api.workflow_run_access``).
+    """
+    current_user, api_key = split_run_principal(auth_result)
+    await check_workflow_access(workflow_id, current_user)
+    await deps.check_api_key_workflow_access(api_key, workflow_id)
+
+    scope = run_history_filter(current_user, api_key)
+    if scope is None:
+        return success(
+            data={"items": [], "total": 0, "page": page, "page_size": page_size}
+        )
+
+    query = WorkflowRun.filter(workflow_id=workflow_id, is_debug=False, **scope)
     if status:
         query = query.filter(status=status)
     if search_text := (search or "").strip():
@@ -1892,22 +2135,24 @@ async def list_my_workflow_runs(
 async def get_my_workflow_run(
     workflow_id: UUID,
     run_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+    auth_result: Any = Depends(get_run_history_principal),
 ) -> Any:
-    """Get one of the current user's published workflow runs."""
+    """Get one run from the caller's own history."""
+    current_user, api_key = split_run_principal(auth_result)
     await check_workflow_access(workflow_id, current_user)
+    await deps.check_api_key_workflow_access(api_key, workflow_id)
+
+    scope = run_history_filter(current_user, api_key)
+    if scope is None:
+        raise run_not_found_error()
     run = await WorkflowRun.filter(
         id=run_id,
         workflow_id=workflow_id,
-        triggered_by_id=current_user.id,
         is_debug=False,
+        **scope,
     ).first()
     if not run:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_run_not_found",
-            status_code=404,
-        )
+        raise run_not_found_error()
 
     return success(
         data=sanitize_workflow_run_payload(
@@ -1923,22 +2168,24 @@ async def get_my_workflow_run(
 async def list_my_run_node_executions(
     workflow_id: UUID,
     run_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
+    auth_result: Any = Depends(get_run_history_principal),
 ) -> Any:
-    """Get node executions for one of the current user's published runs."""
+    """Get node executions for one run in the caller's own history."""
+    current_user, api_key = split_run_principal(auth_result)
     await check_workflow_access(workflow_id, current_user)
+    await deps.check_api_key_workflow_access(api_key, workflow_id)
+
+    scope = run_history_filter(current_user, api_key)
+    if scope is None:
+        raise run_not_found_error()
     run_exists = await WorkflowRun.filter(
         id=run_id,
         workflow_id=workflow_id,
-        triggered_by_id=current_user.id,
         is_debug=False,
+        **scope,
     ).exists()
     if not run_exists:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_run_not_found",
-            status_code=404,
-        )
+        raise run_not_found_error()
 
     executions = await NodeExecution.filter(run_id=run_id).order_by("execution_order")
     return success(
@@ -1958,6 +2205,8 @@ async def list_workflow_runs(
     workflow_id: UUID,
     status: RunStatus | None = None,
     is_debug: bool | None = None,
+    own_only: bool = False,
+    api_key_id: UUID | None = None,
     search: str | None = Query(None),
     created_after: datetime | None = Query(None),
     created_before: datetime | None = Query(None),
@@ -1965,10 +2214,20 @@ async def list_workflow_runs(
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
-    """List runs for a workflow."""
+    """List runs for a workflow (the orchestration log).
+
+    This is the workflow-scoped debugging view: it keeps every source, including
+    API-key and embed traffic, for callers that pass the workflow log
+    permission. ``own_only`` limits callers to runs they triggered, without
+    dropping API-key runs. The credential-filtered history is ``/runs/mine``.
+    """
     await check_workflow_access(workflow_id, current_user)
 
     query = WorkflowRun.filter(workflow_id=workflow_id)
+    if own_only:
+        query = query.filter(triggered_by_id=current_user.id)
+    if api_key_id is not None:
+        query = query.filter(api_key_id=api_key_id)
 
     if status:
         query = query.filter(status=status)
@@ -2267,6 +2526,7 @@ async def restore_workflow_version(
     # Restore the workflow to the specified version
     from app.services.tool_connections import ToolConnectionService
 
+    await reject_container_approval_nodes(workflow.team_id, workflow_version.definition)
     await ToolConnectionService.assert_definition_bindings_allowed(
         actor=current_user,
         team_id=workflow.team_id,

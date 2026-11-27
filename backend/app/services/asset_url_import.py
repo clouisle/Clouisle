@@ -33,6 +33,7 @@ from app.services.asset import asset_service
 from app.services.asset_access import (
     authorize_asset_for_scope,
     authorize_asset_scope,
+    authorize_history_asset_import,
     resolve_authorized_asset_ref,
 )
 
@@ -369,6 +370,9 @@ async def load_url_document(
             scope_id=scope_id,
             user=user,
             expected_team_id=team_id,
+        )
+        await authorize_history_asset_import(
+            asset, scope_type=scope_type, scope_id=scope_id, user=user
         )
         binding = await asset_service.get_or_create_ref(
             scope_type=scope_type,

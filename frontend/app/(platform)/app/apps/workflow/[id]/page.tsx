@@ -49,6 +49,7 @@ import {
   GitBranch,
   Code,
   GraduationCap,
+  ShieldCheck,
 } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -70,6 +71,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition, type WorkflowRunPagePresentation } from '@/lib/api/workflows'
+import { ApiError } from '@/lib/api/client'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
@@ -1068,8 +1070,15 @@ export function WorkflowEditorContent({
       setHasChanges(false)
       setLastSavedAt(new Date())
       toast.success(t('saved'))
-    } catch {
-      // toast handled by API interceptor
+    } catch (error) {
+      // Field-level validation errors are normally shown inline by the editor,
+      // but a structural refusal (a node that cannot live inside a container)
+      // has no field to attach to, so surface the server message instead of
+      // leaving the save apparently doing nothing.
+      if (error instanceof ApiError && error.isValidationError()) {
+        toast.error(error.message || t('saveFailed'))
+      }
+      // Other errors are toasted by the API interceptor.
     } finally {
       setIsSaving(false)
     }
@@ -1557,6 +1566,13 @@ export function WorkflowEditorContent({
                       <span>{t('monitor')}</span>
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onClick={() => router.push(`${baseUrl}/permissions`)}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>{t('permissions')}</span>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

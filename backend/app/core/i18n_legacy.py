@@ -2107,13 +2107,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The decision model returned no answers",
         "zh": "决策模型未返回任何答案",
     },
-    "model_test_empty_ocr_result": {
-        "en": "The OCR model returned no pages",
-        "zh": "OCR 模型未返回任何页面",
-    },
     "model_test_empty_embedding_result": {
         "en": "The embedding model returned an empty result",
         "zh": "Embedding 模型返回了空结果",
+    },
+    "model_test_empty_ocr_result": {
+        "en": "The OCR model returned no pages",
+        "zh": "OCR 模型未返回任何页面",
     },
     "model_test_empty_rerank_result": {
         "en": "The rerank model returned an empty result",
@@ -4139,6 +4139,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "workflow_access_denied": {
         "en": "You do not have access to this workflow",
         "zh": "您无权访问此工作流",
+    },
+    "workflow_approval_inside_container": {
+        "en": "A tool approval cannot pause a run inside an iteration/loop body",
+        "zh": "迭代/循环节点内部无法通过工具审批暂停运行",
     },
     "workflow_approval_pending": {"en": "Awaiting approval", "zh": "等待审批"},
     "workflow_approval_rejected": {"en": "Approval was rejected", "zh": "审批未通过"},

@@ -28,6 +28,13 @@ afterEach(() => {
 })
 
 describe('agents API requests', () => {
+  it('serializes API key history filters', async () => {
+    const get = spyOnApi('get').mockResolvedValue({})
+    await agentsApi.getAgentLogConversations('agent-1', { apiKeyId: 'key-1' })
+    await conversationsApi.listAll({ api_key_id: 'key-1' })
+    expect(get).toHaveBeenNthCalledWith(1, '/agents/agent-1/logs/conversations?page=1&page_size=20&api_key_id=key-1')
+    expect(get).toHaveBeenNthCalledWith(2, '/conversations?page=1&page_size=20&api_key_id=key-1')
+  })
   it('serializes default and complete agent list queries', async () => {
     const get = spyOnApi('get').mockResolvedValue({})
 
@@ -77,8 +84,8 @@ describe('agents API requests', () => {
     const post = spyOnApi('post').mockResolvedValue({})
     const del = spyOnApi('delete').mockResolvedValue(undefined)
 
-    await agentsApi.getAgentConversations('agent-1')
-    await agentsApi.getAgentConversations('agent-1', {
+    await agentsApi.getAgentLogConversations('agent-1')
+    await agentsApi.getAgentLogConversations('agent-1', {
       page: 3,
       pageSize: 4,
       search: 'quarterly review',
@@ -86,8 +93,10 @@ describe('agents API requests', () => {
       createdBefore: '2026-02-01',
       sortBy: 'message_count',
     })
+    await agentsApi.getAgentLogConversation('agent-1', 'conversation-1')
     await agentsApi.getConversation('conversation-1')
     await agentsApi.updateConversation('conversation-1', { title: 'Renamed' })
+    await agentsApi.deleteAgentLogConversation('agent-1', 'conversation-1')
     await agentsApi.deleteConversation('conversation-1')
     await agentsApi.deleteMessage('agent-1', 'conversation-1', 'message-1')
     await agentsApi.getMessageVersions('agent-1', 'message-1')
@@ -95,14 +104,16 @@ describe('agents API requests', () => {
     await agentsApi.chat('agent-1', { message: 'Hello' })
     await agentsApi.getVideoGenerationStatus('agent-1', 'task 1')
 
-    expect(get).toHaveBeenNthCalledWith(1, '/agents/agent-1/conversations?page=1&page_size=20')
-    expect(get).toHaveBeenNthCalledWith(2, '/agents/agent-1/conversations?page=3&page_size=4&search=quarterly+review&created_after=2026-01-01&created_before=2026-02-01&sort_by=message_count')
-    expect(get).toHaveBeenNthCalledWith(3, '/agents/conversations/conversation-1')
-    expect(get).toHaveBeenNthCalledWith(4, '/agents/agent-1/messages/message-1/versions')
-    expect(get).toHaveBeenNthCalledWith(5, '/agents/agent-1/media/video-status?task_id=task+1')
+    expect(get).toHaveBeenNthCalledWith(1, '/agents/agent-1/logs/conversations?page=1&page_size=20')
+    expect(get).toHaveBeenNthCalledWith(2, '/agents/agent-1/logs/conversations?page=3&page_size=4&search=quarterly+review&created_after=2026-01-01&created_before=2026-02-01&sort_by=message_count')
+    expect(get).toHaveBeenNthCalledWith(3, '/agents/agent-1/logs/conversations/conversation-1')
+    expect(get).toHaveBeenNthCalledWith(4, '/agents/conversations/conversation-1')
+    expect(get).toHaveBeenNthCalledWith(5, '/agents/agent-1/messages/message-1/versions')
+    expect(get).toHaveBeenNthCalledWith(6, '/agents/agent-1/media/video-status?task_id=task+1')
     expect(patch).toHaveBeenCalledWith('/agents/conversations/conversation-1', { title: 'Renamed' })
-    expect(del).toHaveBeenNthCalledWith(1, '/agents/conversations/conversation-1')
-    expect(del).toHaveBeenNthCalledWith(2, '/agents/agent-1/conversations/conversation-1/messages/message-1')
+    expect(del).toHaveBeenNthCalledWith(1, '/agents/agent-1/logs/conversations/conversation-1')
+    expect(del).toHaveBeenNthCalledWith(2, '/agents/conversations/conversation-1')
+    expect(del).toHaveBeenNthCalledWith(3, '/agents/agent-1/conversations/conversation-1/messages/message-1')
     expect(post).toHaveBeenNthCalledWith(1, '/agents/agent-1/messages/message-1/switch-version', { version_id: 'version-2' })
     expect(post).toHaveBeenNthCalledWith(2, '/agents/agent-1/chat', { message: 'Hello' })
   })

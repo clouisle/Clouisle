@@ -68,6 +68,7 @@ mock.module('lucide-react', () => ({
   FileText: icon('FileText'), LayoutGrid: icon('LayoutGrid'), GitBranch: icon('GitBranch'),
   CheckCircle: icon('CheckCircle'), XCircle: icon('XCircle'), Clock: icon('Clock'), Ban: icon('Ban'),
   AlertTriangle: icon('AlertTriangle'), Search: icon('Search'), X: icon('X'), Loader2: icon('Loader2'),
+  ShieldCheck: icon('ShieldCheck'),
 }))
 
 const children = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>
@@ -162,7 +163,7 @@ describe('WorkflowLogsPage', () => {
 
     await act(async () => resolveWorkflow(workflow))
     await flush()
-    expect(getWorkflowRuns).toHaveBeenCalledWith(workflow.id, { page: 1, pageSize: 20, status: undefined, search: undefined, createdAfter: undefined })
+    expect(getWorkflowRuns).toHaveBeenCalledWith(workflow.id, { page: 1, pageSize: 20, ownOnly: true, status: undefined, search: undefined, createdAfter: undefined })
     expect(text(renderer)).toContain('run-1234')
     expect(text(renderer)).toContain('completed')
     expect(text(renderer)).not.toContain('secret-free')
@@ -181,7 +182,7 @@ describe('WorkflowLogsPage', () => {
     const selects = () => renderer.root.findAll((node) => node.type === 'section' && node.props['data-select'])
 
     getWorkflowRuns.mockRejectedValueOnce(new Error('temporary secret-token failure'))
-    await act(async () => selects()[0].props['data-change']('failed'))
+    await act(async () => selects()[1].props['data-change']('failed'))
     expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ status: 'failed', page: 1 }))
     expect(text(renderer)).not.toContain('temporary secret-token failure')
 
@@ -192,7 +193,7 @@ describe('WorkflowLogsPage', () => {
     expect(text(renderer)).toContain('noRuns')
 
     getWorkflowRuns.mockResolvedValueOnce(pageOne)
-    await act(async () => selects()[1].props['data-change']('7d'))
+    await act(async () => selects()[2].props['data-change']('7d'))
     const dateRequest = getWorkflowRuns.mock.calls.at(-1)?.[1]
     expect(dateRequest.createdAfter).toBeString()
     expect(Date.now() - new Date(dateRequest.createdAfter as string).getTime()).toBeGreaterThan(6 * 24 * 60 * 60 * 1000)

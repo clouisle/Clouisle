@@ -74,6 +74,18 @@ except Exception as e:
 - Keep migrations focused on the exact schema/bootstrap change being introduced.
 - When a model change needs database support, do not rely on `generate_schemas()` alone.
 
+## Agent and Workflow history isolation
+
+Deploy this change with a **coordinated cutover**: stop the old API and task workers before starting the new version. Old processes can write conversations and runs without their credential binding; do not run mixed versions during the cutover or roll back to an old binary while relying on these access boundaries.
+
+The startup migration records API key UUIDs on Agent conversations and Workflow runs. The UUID is not a foreign key: deleting or rotating a key must not make old records visible in personal history or transferable to a new key.
+
+Records written before these columns existed become **the owner's own history**: `api_key_id` stays `NULL`, so they are served exactly like a web-login record and appear in the owner's personal history. A historical API call is deliberately **not** reconstructed as a separate origin — the migration does not guess which key created an old conversation or run, and it never splits or deletes a record. Only records written from now on carry a credential, and those stay bound to that exact key (another key of the same owner, a browser session, or another user cannot read, continue or replay them).
+
+The `api_key_origin_unknown` column is added by the same statement because the access filters read it, but this migration never sets it. It stays in place so a database that already ran the earlier, evidence-based classification keeps those rows out of personal history; no new quarantine state is produced.
+
+The backfill (now removed) used to classify rows once; the current migration only adds columns, so a record written by an old binary after the migration stays `api_key_id = NULL` and is served as the owner's own history. That is the intended outcome, not a leak: a historical API call is treated as ordinary user history. The coordinated cutover is still required because an old process also cannot write the key binding that *new* key-created records need.
+
 ## Related docs
 
 - `./api-conventions.md`

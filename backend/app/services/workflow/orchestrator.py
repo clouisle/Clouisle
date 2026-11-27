@@ -204,6 +204,8 @@ class WorkflowOrchestrator:
         team_id: UUID | None = None,
         stream: bool = True,
         origin: WorkflowExecutionOrigin | None = None,
+        api_key_id: UUID | None = None,
+        api_key_origin_unknown: bool = False,
     ) -> str:
         """
         Run a workflow.
@@ -217,6 +219,11 @@ class WorkflowOrchestrator:
             origin: Trusted entrypoint that started this run. Background callers
                 (cron, nested workflow) must pass it; omitted means the workflow
                 surface.
+            api_key_id: Credential the run belongs to. A nested run forwards its
+                parent's, so the child is never briefly visible as an app-session
+                run.
+            api_key_origin_unknown: Parent carried an unattributable API-key
+                origin; the child inherits that.
 
         Returns:
             Run ID (UUID string)
@@ -239,6 +246,8 @@ class WorkflowOrchestrator:
             inputs=inputs,
             user_id=user_id,
             team_id=team_id,
+            api_key_id=api_key_id,
+            api_key_origin_unknown=api_key_origin_unknown,
         )
         run.context_snapshot = {
             "workflow_definition": workflow_def,
@@ -707,12 +716,18 @@ class WorkflowOrchestrator:
         inputs: dict,
         user_id: UUID,
         team_id: UUID | None,
+        api_key_id: UUID | None = None,
+        api_key_origin_unknown: bool = False,
     ) -> WorkflowRun:
         """Create a new workflow run record."""
         run = await WorkflowRun.create(
             workflow_id=workflow.id,
             triggered_by_id=user_id,
             trigger_type=workflow.trigger_type,
+            # Credential provenance is written at creation: a row must never
+            # exist even briefly without the credential that produced it.
+            api_key_id=api_key_id,
+            api_key_origin_unknown=api_key_origin_unknown,
             inputs=inputs,
             status=RunStatus.RUNNING,
         )
@@ -1312,14 +1327,22 @@ class WorkflowOrchestrator:
                     stream_manager=stream_manager,
                 )
 
-                # Defensive: pause nodes are rejected inside iteration/loop
-                # bodies by validation; if one still pauses, surface it as an
-                # execution error instead of corrupting the loop state.
+                # Pause nodes are rejected inside iteration/loop bodies by
+                # validation. A tool node can also report waiting when its policy
+                # requires approval; the container cannot resume mid-round, so
+                # both are surfaced as an execution error instead of leaving the
+                # loop state half-advanced.
                 if getattr(result, "waiting", False):
+                    body_node = plan.get_node(node_id)
+                    is_pause = bool(body_node and body_node.node_type == "pause")
                     raise NodeExecutionError(
                         node_id=node_id,
-                        node_type="pause",
-                        message=t("workflow_pause_inside_container"),
+                        node_type="pause" if is_pause else "tool",
+                        message=t(
+                            "workflow_pause_inside_container"
+                            if is_pause
+                            else "workflow_approval_inside_container"
+                        ),
                     )
 
                 logger.info(f"Iteration body node {node_id} result: {result.outputs}")

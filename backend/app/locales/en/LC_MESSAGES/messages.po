@@ -3149,6 +3149,9 @@ msgstr "Awaiting approval"
 msgid "workflow_approval_rejected"
 msgstr "Approval was rejected"
 
+msgid "workflow_approval_inside_container"
+msgstr "A tool approval cannot pause a run inside an iteration/loop body"
+
 msgid "workflow_pause_inside_container"
 msgstr "Pause nodes are not allowed inside iteration/loop bodies"
 

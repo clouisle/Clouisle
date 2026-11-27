@@ -202,11 +202,27 @@ Output Variable: result
 
 **Built-in tools available:** `web_search`, `fetch_webpage`, `calculate`, `unit_convert`, `get_weather`, `get_current_time`, `format_datetime`, `markitdown`, plus sandbox tools (`bash`, `read`, `edit`, `write`, `artifact`).
 
-Tool nodes never pause for tool approval and do not apply a tool's approval
-policy, even when that tool or its Agent binding requires confirmation. This
-also holds for runs started with a workflow API key and for nested or
-sub-workflow calls; use an explicit `pause` node when the workflow itself needs
-a human decision. Connection and tool authorization checks still apply.
+A tool node applies the tool's stored approval policy. When that policy
+requires approval, the node parks the run: the run becomes **WAITING**, the
+task stops, and the run resumes automatically once the gate is decided. This
+holds for runs started by a person, a schedule, a webhook, an API key, or an
+embed, and for nested Agent nodes.
+
+Who may decide: the run's initiator, or a team owner/admin as fallback (a
+scheduled or webhook run may have no reachable initiator). Nobody else sees the
+gate in their approval inbox. Stopping the run cancels its pending gate.
+
+Explicit `pause` nodes remain the way to stop a workflow for a business
+decision; tool approval is about side effects. Connection and tool
+authorization checks still apply.
+
+A tool node inside an iteration or loop body cannot pause: the container round
+cannot resume mid-way without re-running earlier rounds. Saving such a
+definition is refused (`workflow_approval_inside_container`), and the same goes
+for a pause node in a container. Move the tool call outside the loop, or drop
+its approval requirement. If a tool's policy is changed to require approval
+after the workflow was saved, the run fails closed with the same error instead
+of hanging.
 
 ### agent
 

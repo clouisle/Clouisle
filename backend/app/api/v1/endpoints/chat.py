@@ -25,6 +25,11 @@ from tortoise.expressions import F, Q
 from tortoise.transactions import in_transaction
 
 from app.api import deps
+from app.api.chat_history_origin import (
+    conversation_matches_origin,
+    history_origin_filter,
+    run_matches_origin,
+)
 from app.core.i18n import resolve_language, t
 from app.models.asset import MessageAsset
 from app.models.user import User, Team
@@ -213,6 +218,7 @@ async def _resolve_message_assets(
                 user=user,
                 api_key=api_key,
                 expected_team_id=team_id,
+                enforce_history_origin=True,
             )
             if asset_id is not None and asset.id != asset_id:
                 raise BusinessError(
@@ -228,6 +234,7 @@ async def _resolve_message_assets(
                 user=user,
                 api_key=api_key,
                 expected_team_id=team_id,
+                enforce_history_origin=True,
             )
             binding = await asset_service.get_or_create_ref(
                 scope_type=scope_type,
@@ -273,6 +280,7 @@ async def _resolve_workflow_asset_refs(
             user=user,
             api_key=api_key,
             expected_team_id=team_id,
+            enforce_history_origin=True,
         )
         if asset.id not in seen_assets:
             assets.append(asset)
@@ -312,6 +320,7 @@ async def _bind_workflow_assets_to_conversation(
             user=user,
             api_key=api_key,
             expected_team_id=expected_team_id,
+            enforce_history_origin=True,
         )
         binding = await asset_service.get_or_create_ref(
             scope_type=AssetScopeType.CONVERSATION,
@@ -543,14 +552,25 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
 
 
 async def get_or_create_conversation(
-    agent: Agent, user: User, conversation_id: UUID | None, variables: dict
+    agent: Agent,
+    user: User,
+    conversation_id: UUID | None,
+    variables: dict,
+    api_key: Any = None,
 ) -> Conversation:
-    """Get existing conversation or create a new one."""
+    """Get the caller's conversation for this chat surface, or create one.
+
+    A conversation belongs to the surface that created it: the platform chat
+    (``api_key=None``) or one API key. Continuing a conversation is scoped the
+    same way, so a key cannot append to a JWT session and a JWT session cannot
+    append to a key's.
+    """
     if conversation_id:
         conversation = await Conversation.filter(
             id=conversation_id,
             agent_id=agent.id,
             user=user,
+            **history_origin_filter(api_key),
         ).first()
         if not conversation:
             raise BusinessError(
@@ -565,6 +585,7 @@ async def get_or_create_conversation(
         agent=agent,
         user=user,
         variables=variables,
+        api_key_id=getattr(api_key, "id", None),
     )
 
     # Update agent stats atomically to prevent race conditions
@@ -1636,9 +1657,12 @@ async def get_message_version_list(
             status_code=404,
         )
 
-    # Check access - user must own the conversation
+    # Check access - the caller must own a platform-chat conversation here; an
+    # API key's history is not reachable through the JWT chat surface.
     conversation = await Conversation.filter(
-        id=message.conversation_id, user=current_user
+        id=message.conversation_id,
+        user=current_user,
+        **history_origin_filter(),
     ).first()
     if not conversation:
         raise BusinessError(
@@ -1679,7 +1703,9 @@ async def switch_message_version(
 
     # Check access
     conversation = await Conversation.filter(
-        id=message.conversation_id, user=current_user
+        id=message.conversation_id,
+        user=current_user,
+        **history_origin_filter(),
     ).first()
     if not conversation:
         raise BusinessError(
@@ -1766,6 +1792,7 @@ async def edit_user_message_stream(
         id=message.conversation_id,
         agent_id=agent_id,
         user=current_user,
+        **history_origin_filter(),
     ).first()
     if not conversation:
         raise BusinessError(
@@ -2353,30 +2380,6 @@ def _split_run_auth(auth_result: Any) -> tuple[User, "APIKey | None"]:
     return auth_result, None
 
 
-def _api_key_may_read_run(run: Any, api_key: Any) -> bool:
-    """Key-scoped run read, never just the key owner.
-
-    The explicit run column wins; pre-column rows are resolved from the worker
-    payload written by the same submitter. A run with no API-key evidence at
-    all (JWT session or pre-feature row) keeps the previous owner-scoped
-    contract.
-    """
-    key_id = getattr(api_key, "id", None)
-    if key_id is None or not getattr(api_key, "is_active", True):
-        return False
-    stored = getattr(run, "api_key_id", None)
-    if stored is not None:
-        return str(stored) == str(key_id)
-    payload = run.worker_payload if isinstance(run.worker_payload, dict) else {}
-    payload_key_id = payload.get("api_key_id")
-    if payload_key_id:
-        return str(payload_key_id) == str(key_id)
-    if payload.get("tool_entrypoint") == "api_key":
-        entrypoint_id = payload.get("tool_entrypoint_id")
-        return bool(entrypoint_id) and str(entrypoint_id) == str(key_id)
-    return True
-
-
 async def _load_owned_run(
     agent_id: UUID,
     run_id: UUID,
@@ -2386,39 +2389,43 @@ async def _load_owned_run(
 ) -> _AgentRunModel:
     """Owner/agent scoped run lookup used by all run endpoints.
 
-    An API-key request is additionally bound to the credential that submitted
-    the run: another key of the same owner cannot read it, replay its events or
-    drive its inputs. Runs persisted before API-key binding existed keep the
-    previous owner-scoped behaviour.
+    Run access follows the conversation's history origin, so status, events,
+    stream replay, inputs, answers and stop cannot be used to reach the other
+    surface's content: a platform-chat run is invisible to every API key and a
+    key's run is invisible to the platform chat and to the user's other keys.
     """
     from app.models.agent_run import AgentRun
     from app.models.agent import Conversation as _Conv
 
     run = await AgentRun.get_or_none(id=run_id, agent_id=agent_id)
-    if not run:
+    if not run or (api_key is not None and run.user_id != current_user.id):
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="run_not_found",
             status_code=404,
         )
-    if api_key is not None and not _api_key_may_read_run(run, api_key):
-        # Do not disclose whether another credential's run exists.
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="run_not_found",
-            status_code=404,
-        )
-    if getattr(current_user, "is_superuser", False):
+    if api_key is None and getattr(current_user, "is_superuser", False):
         conversation = await _Conv.get_or_none(id=run.conversation_id)
     else:
         conversation = await _Conv.get_or_none(
             id=run.conversation_id, user=current_user
         )
-    if not conversation:
+    if not conversation and api_key is None:
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,
             msg_key="access_denied",
             status_code=403,
+        )
+    if (
+        not conversation
+        or not conversation_matches_origin(conversation, api_key)
+        or not run_matches_origin(run, api_key)
+    ):
+        # Do not disclose whether another surface's run exists.
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="run_not_found",
+            status_code=404,
         )
     return run
 
@@ -2470,6 +2477,7 @@ async def regenerate_message(
         id=message.conversation_id,
         agent_id=agent_id,
         user=current_user,
+        **history_origin_filter(),
     ).first()
     if not conversation:
         raise BusinessError(

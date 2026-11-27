@@ -25,6 +25,7 @@ import {
   GraduationCap,
   RotateCcw,
   Lock,
+  ShieldCheck,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { imApi } from '@/lib/api'
@@ -97,6 +98,13 @@ const navItems: PlatformNavItem[] = [
     key: 'models',
     href: '/app/models',
     icon: Bot,
+  },
+  {
+    // A workflow run parks in the background with no open chat, so its tool
+    // approval has to be reachable from the app shell rather than a chat card.
+    key: 'approvals',
+    href: '/app/approvals',
+    icon: ShieldCheck,
   },
 ]
 

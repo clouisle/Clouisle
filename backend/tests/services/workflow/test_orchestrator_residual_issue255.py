@@ -294,8 +294,18 @@ async def test_persist_skipped_node_does_not_duplicate_existing_execution():
     query.first.assert_awaited_once()
 
 
-@pytest.mark.anyio
-async def test_iteration_body_rejects_waiting_child_node():
+@pytest.mark.parametrize(
+    "node_type,expected_message",
+    [
+        ("pause", "Pause nodes"),
+        # A tool node parks for approval; a container body cannot resume
+        # mid-round, so it reports the approval-specific failure instead of
+        # claiming a pause node appeared in the loop.
+        ("tool", "tool approval cannot pause"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_iteration_body_rejects_waiting_child_node(node_type, expected_message):
     service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
     context = MagicMock(
         get_node_outputs=AsyncMock(return_value={}),
@@ -304,12 +314,14 @@ async def test_iteration_body_rejects_waiting_child_node():
     service._execute_node = AsyncMock(
         return_value=SimpleNamespace(waiting=True, outputs={})
     )
+    plan = MagicMock()
+    plan.get_node.return_value = SimpleNamespace(node_type=node_type)
 
-    with pytest.raises(NodeExecutionError, match="Pause nodes"):
+    with pytest.raises(NodeExecutionError, match=expected_message):
         await service._execute_iteration_body(
             "iteration",
             ["child"],
-            MagicMock(),
+            plan,
             context,
             MagicMock(),
             None,

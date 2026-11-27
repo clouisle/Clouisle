@@ -192,6 +192,92 @@ describe('embed API', () => {
     await expect(embedApi.getWorkflowInfo('workflow-1', 'secret')).resolves.toEqual(workflow)
   })
 
+  it('reads key-scoped conversation history for the embed page', async () => {
+    const page = { items: [{ id: 'conversation-1', title: 'Chat' }], total: 1, page: 2, page_size: 5 }
+    const listFetch = mockFetch(Response.json({ data: page }))
+
+    await expect(
+      embedApi.getConversations('agent-1', 'secret', { page: 2, pageSize: 5 })
+    ).resolves.toEqual(page)
+    expect(listFetch).toHaveBeenCalledWith(
+      '/api/v1/agents/agent-1/conversations?page=2&page_size=5',
+      {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+
+    const detail = { id: 'conversation-1', title: 'Chat', messages: [], active_run_id: null }
+    const detailFetch = mockFetch(Response.json({ data: detail }))
+    await expect(embedApi.getConversation('conversation-1', 'secret')).resolves.toEqual(detail)
+    expect(detailFetch).toHaveBeenCalledWith(
+      '/api/v1/agents/conversations/conversation-1',
+      {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+  })
+
+  it('renames and deletes through the embed conversation routes', async () => {
+    const renameFetch = mockFetch(Response.json({ data: { id: 'conversation-1', title: 'Renamed' } }))
+    await embedApi.renameConversation('agent-1', 'conversation-1', 'Renamed', 'secret')
+    expect(renameFetch).toHaveBeenCalledWith(
+      '/api/v1/embed/agents/agent-1/conversations/conversation-1',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+        body: JSON.stringify({ title: 'Renamed' }),
+      },
+    )
+
+    const deleteFetch = mockFetch(Response.json({ data: { id: 'conversation-1' } }))
+    await expect(embedApi.deleteConversation('agent-1', 'conversation-1', 'secret')).resolves.toBeUndefined()
+    expect(deleteFetch).toHaveBeenCalledWith(
+      '/api/v1/embed/agents/agent-1/conversations/conversation-1',
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+  })
+
+  it('reads key-scoped workflow run history for the embed page', async () => {
+    const runs = { items: [{ id: 'run-1' }], total: 1, page: 1, page_size: 20 }
+    const listFetch = mockFetch(Response.json({ data: runs }))
+
+    await expect(embedApi.getWorkflowRuns('workflow-1', 'secret')).resolves.toEqual(runs)
+    expect(listFetch).toHaveBeenCalledWith(
+      '/api/v1/workflows/workflow-1/runs/mine?page=1&page_size=20',
+      {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+
+    const run = { id: 'run-1', status: 'success' }
+    const runFetch = mockFetch(Response.json({ data: run }))
+    await expect(embedApi.getWorkflowRun('workflow-1', 'run-1', 'secret')).resolves.toEqual(run)
+    expect(runFetch).toHaveBeenCalledWith(
+      '/api/v1/workflows/workflow-1/runs/mine/run-1',
+      {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+
+    const nodes = [{ id: 'node-1', node_type: 'start' }]
+    const nodesFetch = mockFetch(Response.json({ data: nodes }))
+    await expect(embedApi.getWorkflowRunNodes('workflow-1', 'run-1', 'secret')).resolves.toEqual(nodes)
+    expect(nodesFetch).toHaveBeenCalledWith(
+      '/api/v1/workflows/workflow-1/runs/mine/run-1/nodes',
+      {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+      },
+    )
+  })
+
   it('falls back when error bodies are invalid or servers fail', async () => {
     const invalidJson = new Response('invalid', { status: 400 })
     mockFetch(invalidJson)

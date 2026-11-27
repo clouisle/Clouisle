@@ -199,6 +199,7 @@ async def submit_chat_run(
         current_user,
         conversation_id if conversation_id is not None else chat_in.conversation_id,
         chat_in.variables,
+        api_key,
     )
 
     rag_contexts: list[dict[str, Any]] | None = None

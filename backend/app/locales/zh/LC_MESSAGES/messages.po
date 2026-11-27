@@ -3185,6 +3185,9 @@ msgstr "等待审批"
 msgid "workflow_approval_rejected"
 msgstr "审批未通过"
 
+msgid "workflow_approval_inside_container"
+msgstr "迭代/循环节点内部无法通过工具审批暂停运行"
+
 msgid "workflow_pause_inside_container"
 msgstr "暂停节点不允许放在迭代/循环节点内部"
 

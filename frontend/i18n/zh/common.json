@@ -1,5 +1,6 @@
 {
   "common": {
+    "historyKeyFilter": { "label": "按 API Key 筛选", "search": "搜索 API Key", "all": "全部来源", "loadFailed": "无法加载 API Key", "inactive": "已停用", "expired": "已过期" },
     "appName": "云屿",
     "loading": "加载中...",
     "loadingMore": "正在加载更多...",

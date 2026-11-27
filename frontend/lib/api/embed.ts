@@ -10,7 +10,20 @@ import type {
   AgentRunEventOut,
   AgentRunStartOut,
   AgentRunStatusOut,
+  ConversationListItem,
+  PageData,
 } from './agents'
+import type { NodeExecution, WorkflowRun, WorkflowRunListItem } from './workflows'
+
+export interface EmbedWorkflowInputParameter {
+  name: string
+  type: string
+  required: boolean
+  label?: string
+  description?: string
+  default?: unknown
+  options?: string[]
+}
 
 export interface EmbedWorkflowInfo {
   id: string
@@ -18,6 +31,8 @@ export interface EmbedWorkflowInfo {
   description: string | null
   icon: string | null
   variables: Array<Record<string, unknown>>
+  /** Start-node parameters projected by the API for the embed run form. */
+  input_parameters?: EmbedWorkflowInputParameter[]
   embed_config: Record<string, unknown>
 }
 
@@ -73,6 +88,20 @@ async function requestEmbedRun<T>(path: string, apiKey: string, init?: RequestIn
     throw new Error(resolveEmbedApiErrorMessage(response.status, data.msg))
   }
   return data.data as T
+}
+
+export interface EmbedConversationSummary {
+  id: string
+  title?: string | null
+}
+
+export interface EmbedConversationDetail {
+  id: string
+  title?: string | null
+  /** Visible messages of the conversation, newest last. */
+  messages: EmbedMessage[]
+  /** Durable run this credential is still waiting on, if any. */
+  active_run_id?: string | null
 }
 
 export interface EmbedMessage {
@@ -286,6 +315,88 @@ export const embedApi = {
     const data = await response.json()
     return data.data
   },
+
+  // ============ Key-scoped history ============
+  //
+  // Embed history is read and mutated through the API-key scoped routes: they
+  // filter rows by the exact key that created them, so a page holding another
+  // key (or a logged-in session) can never read or change this history. Only
+  // the credential travels in the request; a browser session token is never
+  // added, which keeps the embed surface bound to its own key.
+
+  getConversations: (
+    agentId: string,
+    apiKey: string,
+    params: { page?: number; pageSize?: number } = {},
+  ): Promise<PageData<ConversationListItem>> => {
+    const { page = 1, pageSize = 20 } = params
+    return requestEmbedRun<PageData<ConversationListItem>>(
+      `/agents/${agentId}/conversations?page=${page}&page_size=${pageSize}`,
+      apiKey,
+      { cache: 'no-store' },
+    )
+  },
+
+  getConversation: (conversationId: string, apiKey: string): Promise<EmbedConversationDetail> =>
+    requestEmbedRun<EmbedConversationDetail>(
+      `/agents/conversations/${conversationId}`,
+      apiKey,
+      { cache: 'no-store' },
+    ),
+
+  renameConversation: (
+    agentId: string,
+    conversationId: string,
+    title: string,
+    apiKey: string,
+  ): Promise<EmbedConversationSummary> => requestEmbedRun<EmbedConversationSummary>(
+    `/embed/agents/${agentId}/conversations/${conversationId}`,
+    apiKey,
+    { method: 'PATCH', body: JSON.stringify({ title }) },
+  ),
+
+  deleteConversation: (
+    agentId: string,
+    conversationId: string,
+    apiKey: string,
+  ): Promise<void> => requestEmbedRun<{ id: string }>(
+    `/embed/agents/${agentId}/conversations/${conversationId}`,
+    apiKey,
+    { method: 'DELETE' },
+  ).then(() => undefined),
+
+  getWorkflowRuns: (
+    workflowId: string,
+    apiKey: string,
+    params: { page?: number; pageSize?: number } = {},
+  ): Promise<PageData<WorkflowRunListItem>> => {
+    const { page = 1, pageSize = 20 } = params
+    return requestEmbedRun<PageData<WorkflowRunListItem>>(
+      `/workflows/${workflowId}/runs/mine?page=${page}&page_size=${pageSize}`,
+      apiKey,
+      { cache: 'no-store' },
+    )
+  },
+
+  getWorkflowRun: (
+    workflowId: string,
+    runId: string,
+    apiKey: string,
+  ): Promise<WorkflowRun> => requestEmbedRun<WorkflowRun>(
+    `/workflows/${workflowId}/runs/mine/${runId}`,
+    apiKey,
+    { cache: 'no-store' },
+  ),
+
+  getWorkflowRunNodes: (
+    workflowId: string,
+    runId: string,
+    apiKey: string,
+  ): Promise<NodeExecution[]> => requestEmbedRun<NodeExecution[]>(
+    `/workflows/${workflowId}/runs/mine/${runId}/nodes`,
+    apiKey,
+    { cache: 'no-store' },
+  ),
 
   uploadFile: async (
     agentId: string,
